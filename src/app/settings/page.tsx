@@ -22,6 +22,8 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
+  const [locations, setLocations] = useState<string[]>([]);
+  const [activeLocation, setActiveLocation] = useState<string>("ทั้งหมด");
 
   // Form State
   const [formData, setFormData] = useState({
@@ -65,7 +67,6 @@ export default function SettingsPage() {
       if (settingsData && settingsData.value) {
         const locationsOrder = settingsData.value as string[];
         
-        // Sort rooms based on the index of their location in the locationsOrder array
         fetchedRooms.sort((a, b) => {
           const locA = a.location || "ไม่มีสถานที่";
           const locB = b.location || "ไม่มีสถานที่";
@@ -73,7 +74,6 @@ export default function SettingsPage() {
           let indexA = locationsOrder.indexOf(locA);
           let indexB = locationsOrder.indexOf(locB);
           
-          // If location is not in the array, put it at the end
           if (indexA === -1) indexA = 999;
           if (indexB === -1) indexB = 999;
           
@@ -81,10 +81,19 @@ export default function SettingsPage() {
             return indexA - indexB;
           }
           
-          // If in the same location, fallback to sort_order (which is already done by the DB query, 
-          // but Array.prototype.sort in JS might not be stable, so we explicitly compare sort_order)
           return (a.sort_order || 0) - (b.sort_order || 0);
         });
+
+        // Extract locations in correct order
+        const uniqueLocs = Array.from(new Set(fetchedRooms.map(r => r.location || "ไม่มีสถานที่")));
+        const sortedLocs = [
+          ...locationsOrder.filter(loc => uniqueLocs.includes(loc)),
+          ...uniqueLocs.filter(loc => !locationsOrder.includes(loc))
+        ];
+        setLocations(["ทั้งหมด", ...sortedLocs]);
+      } else {
+        const uniqueLocs = Array.from(new Set(fetchedRooms.map(r => r.location || "ไม่มีสถานที่")));
+        setLocations(["ทั้งหมด", ...uniqueLocs]);
       }
       
       setRooms(fetchedRooms);
@@ -185,6 +194,25 @@ export default function SettingsPage() {
         </a>
       </div>
 
+      {/* Location Filter Tabs */}
+      {locations.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-2 hide-scrollbar">
+          {locations.map(loc => (
+            <button
+              key={loc}
+              onClick={() => setActiveLocation(loc)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors ${
+                activeLocation === loc 
+                  ? "bg-slate-800 text-white shadow-md" 
+                  : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+              }`}
+            >
+              {loc}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Room List */}
       <div className="space-y-4">
         {loading ? (
@@ -194,7 +222,9 @@ export default function SettingsPage() {
             ยังไม่มีข้อมูลห้องพัก
           </div>
         ) : (
-          rooms.map((room) => (
+          rooms
+            .filter(room => activeLocation === "ทั้งหมด" || (room.location || "ไม่มีสถานที่") === activeLocation)
+            .map((room) => (
             <div key={room.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:shadow-md transition-shadow">
               <div className="flex items-center gap-4">
                 <div className="bg-slate-100 text-slate-800 text-xl font-bold py-2 px-4 rounded-xl">
