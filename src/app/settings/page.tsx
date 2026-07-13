@@ -42,11 +42,52 @@ export default function SettingsPage() {
 
   async function fetchRooms() {
     setLoading(true);
-    const { data, error } = await supabase.from("rooms").select("*").order("room_no");
+    
+    // Fetch locations order
+    const { data: settingsData } = await supabase
+      .from("system_settings")
+      .select("value")
+      .eq("key", "locations_order")
+      .single();
+      
+    // Fetch rooms ordered by their individual sort_order
+    const { data: roomsData, error } = await supabase
+      .from("rooms")
+      .select("*")
+      .order("sort_order", { ascending: true });
+
     if (error) {
       console.error("Error fetching rooms:", error);
     } else {
-      setRooms(data || []);
+      let fetchedRooms = roomsData || [];
+      
+      // Apply location-based grouping/sorting if available
+      if (settingsData && settingsData.value) {
+        const locationsOrder = settingsData.value as string[];
+        
+        // Sort rooms based on the index of their location in the locationsOrder array
+        fetchedRooms.sort((a, b) => {
+          const locA = a.location || "ไม่มีสถานที่";
+          const locB = b.location || "ไม่มีสถานที่";
+          
+          let indexA = locationsOrder.indexOf(locA);
+          let indexB = locationsOrder.indexOf(locB);
+          
+          // If location is not in the array, put it at the end
+          if (indexA === -1) indexA = 999;
+          if (indexB === -1) indexB = 999;
+          
+          if (indexA !== indexB) {
+            return indexA - indexB;
+          }
+          
+          // If in the same location, fallback to sort_order (which is already done by the DB query, 
+          // but Array.prototype.sort in JS might not be stable, so we explicitly compare sort_order)
+          return (a.sort_order || 0) - (b.sort_order || 0);
+        });
+      }
+      
+      setRooms(fetchedRooms);
     }
     setLoading(false);
   }
