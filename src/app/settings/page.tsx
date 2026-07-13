@@ -15,6 +15,7 @@ type Room = {
   tuya_ip: string | null;
   current_status: string;
   location: string | null;
+  last_active_at: string | null;
 };
 
 export default function SettingsPage() {
@@ -239,13 +240,32 @@ export default function SettingsPage() {
                   <div className="text-sm font-semibold text-slate-700">{room.location || "ไม่มีสถานที่"}</div>
                   <div className="text-xs text-slate-500 font-medium mb-1">สถานะอุปกรณ์ (IoT)</div>
                   {room.tuya_device_id ? (
-                    <div className="flex items-center gap-1.5 text-emerald-500 font-semibold text-sm">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                      ออนไลน์ (Online)
-                    </div>
+                    (() => {
+                      let isOnline = false;
+                      if (room.last_active_at) {
+                        const lastActive = new Date(room.last_active_at).getTime();
+                        const now = new Date().getTime();
+                        // 5 minutes = 5 * 60 * 1000 = 300000 ms
+                        if (now - lastActive <= 300000) {
+                          isOnline = true;
+                        }
+                      }
+                      
+                      return isOnline ? (
+                        <div className="text-sm font-bold text-emerald-600 flex items-center gap-1">
+                          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                          ออนไลน์ (Online)
+                        </div>
+                      ) : (
+                        <div className="text-sm font-bold text-red-500 flex items-center gap-1">
+                          <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                          ออฟไลน์ (Offline)
+                        </div>
+                      );
+                    })()
                   ) : (
-                    <div className="flex items-center gap-1.5 text-slate-400 font-medium text-sm">
-                      <span className="w-2 h-2 rounded-full bg-slate-300"></span>
+                    <div className="text-sm font-semibold text-slate-400 flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full bg-slate-300"></div>
                       ไม่มีระบบ IoT
                     </div>
                   )}

@@ -90,6 +90,14 @@ export async function GET(request: Request) {
     if (logs.length > 0) {
       const { error: insertError } = await supabase.from('energy_logs').insert(logs);
       if (insertError) throw insertError;
+      
+      // อัปเดตสถานะห้องล่าสุด (เวลา และ ค่าไฟ) ให้เช็คง่ายๆ ว่าออนไลน์หรือไม่
+      for (const log of logs) {
+        await supabase.from('rooms').update({
+          last_active_at: new Date().toISOString(),
+          latest_wattage: log.wattage
+        }).eq('id', log.room_id);
+      }
     }
 
     return NextResponse.json({ 
