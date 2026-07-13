@@ -14,6 +14,7 @@ type Room = {
   tuya_local_key: string | null;
   tuya_ip: string | null;
   current_status: string;
+  location: string | null;
 };
 
 export default function SettingsPage() {
@@ -29,6 +30,7 @@ export default function SettingsPage() {
     room_type: "Standard",
     price_night: 750,
     price_temp: 350,
+    location: "สถานที่หลัก",
     tuya_device_id: "",
     tuya_local_key: "",
     tuya_ip: "",
@@ -58,6 +60,7 @@ export default function SettingsPage() {
         room_type: room.room_type,
         price_night: room.price_night,
         price_temp: room.price_temp,
+        location: room.location || "สถานที่หลัก",
         tuya_device_id: room.tuya_device_id || "",
         tuya_local_key: room.tuya_local_key || "",
         tuya_ip: room.tuya_ip || "",
@@ -70,6 +73,7 @@ export default function SettingsPage() {
         room_type: "Standard",
         price_night: 750,
         price_temp: 350,
+        location: "สถานที่หลัก",
         tuya_device_id: "",
         tuya_local_key: "",
         tuya_ip: "",
@@ -122,13 +126,23 @@ export default function SettingsPage() {
         <p className="text-slate-500 mt-2">เพิ่ม ลบ หรือแก้ไขข้อมูลห้องพักในระบบ Hotel PMS</p>
       </header>
 
-      <button
-        onClick={() => openModal()}
-        className="w-full sm:w-auto bg-yellow-400 hover:bg-yellow-500 text-slate-900 font-bold py-3 px-6 rounded-xl shadow-sm transition-all active:scale-95 flex items-center justify-center gap-2"
-      >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
-        เพิ่มห้องพักใหม่ในสาขานี้
-      </button>
+      <div className="flex flex-col sm:flex-row gap-4 mb-4">
+        <button
+          onClick={() => openModal()}
+          className="w-full sm:w-auto bg-yellow-400 hover:bg-yellow-500 text-slate-900 font-bold py-3 px-6 rounded-xl shadow-sm transition-all active:scale-95 flex items-center justify-center gap-2"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
+          เพิ่มห้องพักใหม่ในสาขานี้
+        </button>
+        
+        <a
+          href="/settings/sorting"
+          className="w-full sm:w-auto bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold py-3 px-6 rounded-xl shadow-sm transition-all active:scale-95 flex items-center justify-center gap-2"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h7"></path></svg>
+          จัดการการจัดเรียงสถานที่ (Sorting)
+        </a>
+      </div>
 
       {/* Room List */}
       <div className="space-y-4">
@@ -146,6 +160,7 @@ export default function SettingsPage() {
                   {room.room_no}
                 </div>
                 <div>
+                  <div className="text-sm font-semibold text-slate-700">{room.location || "ไม่มีสถานที่"}</div>
                   <div className="text-xs text-slate-500 font-medium mb-1">สถานะอุปกรณ์ (IoT)</div>
                   {room.tuya_device_id ? (
                     <div className="flex items-center gap-1.5 text-emerald-500 font-semibold text-sm">
@@ -211,13 +226,26 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">ประเภทห้อง *</label>
-                  <input 
-                    type="text" required
-                    value={formData.room_type} onChange={e => setFormData({...formData, room_type: e.target.value})}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                  />
+
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">สถานที่ (Location) *</label>
+                    <input 
+                      type="text" required
+                      value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                      placeholder="เช่น ซอย 1, ตึก A"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">ประเภทห้อง *</label>
+                    <input 
+                      type="text" required
+                      value={formData.room_type} onChange={e => setFormData({...formData, room_type: e.target.value})}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 mb-6">
