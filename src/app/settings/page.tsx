@@ -217,9 +217,9 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">ชั้น *</label>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">ชั้น</label>
                     <input 
-                      type="text" required
+                      type="text"
                       value={formData.floor} onChange={e => setFormData({...formData, floor: e.target.value})}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                     />
@@ -250,17 +250,17 @@ export default function SettingsPage() {
 
                 <div className="grid grid-cols-2 gap-4 mb-6">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">ราคาค้างคืน (บาท) *</label>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">ราคาค้างคืน (บาท)</label>
                     <input 
-                      type="number" required
+                      type="number"
                       value={formData.price_night} onChange={e => setFormData({...formData, price_night: Number(e.target.value)})}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">ราคาชั่วคราว (บาท) *</label>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">ราคาชั่วคราว (บาท)</label>
                     <input 
-                      type="number" required
+                      type="number"
                       value={formData.price_temp} onChange={e => setFormData({...formData, price_temp: Number(e.target.value)})}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                     />
