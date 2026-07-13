@@ -29,7 +29,7 @@ export default function SettingsPage() {
   const [formData, setFormData] = useState({
     room_no: "",
     floor: "1",
-    room_type: "Standard",
+    room_type: "เดี่ยว",
     price_night: 750,
     price_temp: 350,
     location: "สถานที่หลัก",
@@ -120,7 +120,7 @@ export default function SettingsPage() {
       setFormData({
         room_no: "",
         floor: "1",
-        room_type: "Standard",
+        room_type: "เดี่ยว",
         price_night: 750,
         price_temp: 350,
         location: "สถานที่หลัก",
@@ -316,11 +316,15 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 mb-1">ประเภทห้อง *</label>
-                    <input 
-                      type="text" required
+                    <select
+                      required
                       value={formData.room_type} onChange={e => setFormData({...formData, room_type: e.target.value})}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                    />
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none"
+                    >
+                      <option value="เดี่ยว">เดี่ยว</option>
+                      <option value="คู่">คู่</option>
+                      <option value="บ้าน">บ้าน</option>
+                    </select>
                   </div>
                 </div>
 
