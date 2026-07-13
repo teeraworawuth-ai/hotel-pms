@@ -100,11 +100,11 @@ export default function SettingsPage() {
     if (editingRoom) {
       // Update
       const { error } = await supabase.from("rooms").update(payload).eq("id", editingRoom.id);
-      if (error) alert("Error updating room");
+      if (error) alert("Error updating room: " + error.message);
     } else {
       // Insert
       const { error } = await supabase.from("rooms").insert([payload]);
-      if (error) alert("Error adding room");
+      if (error) alert("Error adding room: " + error.message);
     }
 
     closeModal();
