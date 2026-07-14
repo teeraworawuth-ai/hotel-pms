@@ -36,8 +36,8 @@ export async function GET(request: Request) {
       // จีน: https://openapi.tuyacn.com
       // อเมริกา: https://openapi.tuyaus.com
       // ยุโรป: https://openapi.tuyaeu.com
-      // อินเดีย: https://openapi.tuyain.com
-      baseUrl: 'https://openapi.tuyaus.com', // ใช้ US เซิฟเวอร์เป็นค่าเริ่มต้นสำหรับไทย
+      // สิงคโปร์: https://openapi-sg.iotbing.com
+      baseUrl: 'https://openapi-sg.iotbing.com', // ใช้เซิร์ฟเวอร์สิงคโปร์ตามที่ตั้งไว้ในเว็บ Tuya
       accessKey: accessKey,
       secretKey: secretKey,
     });
