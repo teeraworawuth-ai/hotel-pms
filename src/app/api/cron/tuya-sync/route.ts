@@ -15,6 +15,16 @@ export async function GET(request: Request) {
       );
     }
 
+    // DEBUG: ตรวจสอบค่า credentials (ลบบรรทัดนี้หลังจาก debug เสร็จ)
+    const debugInfo = {
+      accessKey_length: accessKey.length,
+      accessKey_first4: accessKey.substring(0, 4),
+      accessKey_last4: accessKey.substring(accessKey.length - 4),
+      secretKey_length: secretKey.length,
+      secretKey_first4: secretKey.substring(0, 4),
+    };
+    console.log('DEBUG credentials:', JSON.stringify(debugInfo));
+
     // 2. ดึงข้อมูลห้องพักทั้งหมดที่มีรหัส Tuya Device ID
     const { data: rooms, error: dbError } = await supabase
       .from('rooms')
