@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "src/app/api/cron/tuya-sync/route.ts": {
+      "regions": ["sin1"]
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/tuya-sync",

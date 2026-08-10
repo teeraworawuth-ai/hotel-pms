@@ -15,16 +15,6 @@ export async function GET(request: Request) {
       );
     }
 
-    // DEBUG: ตรวจสอบค่า credentials (ลบบรรทัดนี้หลังจาก debug เสร็จ)
-    const debugInfo = {
-      accessKey_length: accessKey.length,
-      accessKey_first4: accessKey.substring(0, 4),
-      accessKey_last4: accessKey.substring(accessKey.length - 4),
-      secretKey_length: secretKey.length,
-      secretKey_first4: secretKey.substring(0, 4),
-    };
-    console.log('DEBUG credentials:', JSON.stringify(debugInfo));
-
     // 2. ดึงข้อมูลห้องพักทั้งหมดที่มีรหัส Tuya Device ID
     const { data: rooms, error: dbError } = await supabase
       .from('rooms')
@@ -52,25 +42,60 @@ export async function GET(request: Request) {
       secretKey: secretKey,
     });
 
-    // 4. ดึงข้อมูลสถานะแบบกลุ่ม (Batch) เพื่อประหยัดโควต้า
-    const response = await tuya.request({
-      method: 'GET',
-      path: `/v1.0/iot-03/devices/status`,
-      query: {
-        device_ids: deviceIds.join(',')
-      }
-    });
+    // 4. ดึงข้อมูลสถานะโดยใช้ Promise.all แบบแบ่งกลุ่ม (Chunk) เพื่อให้ทำงานขนานกัน (เร็วขึ้น ไม่ติด Timeout)
+    // สาเหตุที่กลับมาใช้ API เดี่ยว เพราะ Batch API (iot-03) อาจติด Permission Deny ในบางบัญชี
+    const tuyaData = [];
+    const failedDevices = [];
+    let hasError = false;
+    let lastError = '';
+    
+    // ดึงพร้อมกันทีละ 5 อุปกรณ์ เพื่อไม่ให้โดน Tuya บล็อคจากการดึงรัวเกินไป (Rate Limit)
+    const CHUNK_SIZE = 5;
+    
+    for (let i = 0; i < deviceIds.length; i += CHUNK_SIZE) {
+      const chunk = deviceIds.slice(i, i + CHUNK_SIZE);
+      
+      const promises = chunk.map(async (deviceId) => {
+        try {
+          const response = await tuya.request({
+            method: 'GET',
+            path: `/v1.0/iot-03/devices/${deviceId}/status`,
+          });
+          return { deviceId, response };
+        } catch (err: any) {
+          return { deviceId, error: err };
+        }
+      });
 
-    if (!response.success) {
-      console.error('Tuya API Error:', response);
+      const results = await Promise.all(promises);
+
+      for (const res of results) {
+        if (res.error) {
+          console.error(`Device ${res.deviceId} request error:`, res.error);
+          failedDevices.push({ id: res.deviceId, error: res.error.message || 'Request failed' });
+          hasError = true;
+          lastError = res.error.message || 'Request failed';
+        } else if (res.response.success && res.response.result) {
+          tuyaData.push({
+            id: res.deviceId,
+            status: res.response.result
+          });
+        } else {
+          console.error(`Device ${res.deviceId} failed:`, res.response);
+          failedDevices.push({ id: res.deviceId, error: res.response.msg || 'Unknown error' });
+          lastError = res.response.msg || 'Unknown error';
+          hasError = true;
+        }
+      }
+    }
+
+    if (tuyaData.length === 0) {
       return NextResponse.json(
-        { error: 'Tuya API Request failed', details: response.msg },
+        { error: 'All devices failed to sync', details: lastError, failed_devices: failedDevices },
         { status: 500 }
       );
     }
 
-    const tuyaData = response.result;
-    
     // 5. ประมวลผลและสร้างข้อมูล Log
     const logs = [];
     
@@ -79,15 +104,15 @@ export async function GET(request: Request) {
       if (!room) continue;
 
       // ค้นหาค่ากำลังไฟ (Power) ปกติ Tuya จะใช้ code ว่า 'cur_power'
-      const powerStatus = device.status.find((s: any) => s.code === 'cur_power');
+      const powerStatus = device.status?.find((s: any) => s.code === 'cur_power');
       
-      let wattage = 0;
-      if (powerStatus && powerStatus.value) {
-         wattage = Number(powerStatus.value);
+      let wattage: number | null = null;
+      if (powerStatus && powerStatus.value !== undefined) {
+         wattage = Number(powerStatus.value) / 10; // หาร 10 ตามที่ Tuya ส่งมา
       } else {
          // ลองหา code อื่นที่ใกล้เคียงเผื่อเซ็นเซอร์ส่งมาชื่ออื่น
-         const anyPower = device.status.find((s: any) => s.code.includes('power') || s.code.includes('watt'));
-         if (anyPower) wattage = Number(anyPower.value);
+         const anyPower = device.status?.find((s: any) => s.code.includes('power') || s.code.includes('watt'));
+         if (anyPower && anyPower.value !== undefined) wattage = Number(anyPower.value) / 10;
       }
       
       logs.push({
@@ -113,6 +138,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ 
       success: true, 
       processed_devices: logs.length,
+      failed_devices: failedDevices,
       data: tuyaData // ส่งกลับมาให้ดูเป็นตัวอย่างตอนทดสอบด้วย
     });
 

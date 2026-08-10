@@ -16,6 +16,7 @@ type Room = {
   current_status: string;
   location: string | null;
   last_active_at: string | null;
+  has_balcony: boolean;
 };
 
 export default function SettingsPage() {
@@ -37,6 +38,7 @@ export default function SettingsPage() {
     tuya_device_id: "",
     tuya_local_key: "",
     tuya_ip: "",
+    has_balcony: false,
   });
 
   useEffect(() => {
@@ -115,6 +117,7 @@ export default function SettingsPage() {
         tuya_device_id: room.tuya_device_id || "",
         tuya_local_key: room.tuya_local_key || "",
         tuya_ip: room.tuya_ip || "",
+        has_balcony: room.has_balcony || false,
       });
     } else {
       setEditingRoom(null);
@@ -128,6 +131,7 @@ export default function SettingsPage() {
         tuya_device_id: "",
         tuya_local_key: "",
         tuya_ip: "",
+        has_balcony: false,
       });
     }
     setIsModalOpen(true);
@@ -148,14 +152,33 @@ export default function SettingsPage() {
       tuya_ip: formData.tuya_ip || null,
     };
 
+    let savedRoomId = editingRoom?.id;
+
     if (editingRoom) {
       // Update
       const { error } = await supabase.from("rooms").update(payload).eq("id", editingRoom.id);
       if (error) alert("Error updating room: " + error.message);
     } else {
       // Insert
-      const { error } = await supabase.from("rooms").insert([payload]);
-      if (error) alert("Error adding room: " + error.message);
+      const { data, error } = await supabase.from("rooms").insert([payload]).select().single();
+      if (error) {
+        alert("Error adding room: " + error.message);
+      } else if (data) {
+        savedRoomId = data.id;
+      }
+    }
+
+    // กระตุ้น Tuya API ให้ดึงข้อมูลทันทีเพื่ออัปเดตสถานะออนไลน์
+    try {
+      await fetch("/api/cron/tuya-sync");
+      
+      // กระตุ้นดึงประวัติย้อนหลังด้วย (ถ้ามี Device ID)
+      if (savedRoomId && payload.tuya_device_id) {
+        fetch(`/api/tuya-sync-history?room_id=${savedRoomId}&device_id=${payload.tuya_device_id}`)
+          .catch(err => console.error("History sync error", err));
+      }
+    } catch (err) {
+      console.error("Tuya sync error", err);
     }
 
     closeModal();
@@ -346,6 +369,19 @@ export default function SettingsPage() {
                       <option value="บ้าน">บ้าน</option>
                     </select>
                   </div>
+                </div>
+
+                <div className="flex items-center gap-2 mb-6 mt-2">
+                  <input 
+                    type="checkbox" 
+                    id="has_balcony"
+                    checked={formData.has_balcony}
+                    onChange={e => setFormData({...formData, has_balcony: e.target.checked})}
+                    className="w-4 h-4 text-blue-600 bg-slate-50 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
+                  />
+                  <label htmlFor="has_balcony" className="text-sm font-semibold text-slate-700 cursor-pointer select-none">
+                    มีระเบียง (Has Balcony)
+                  </label>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 mb-6">
