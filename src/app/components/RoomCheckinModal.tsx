@@ -329,6 +329,30 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     setLoading(false);
   };
 
+  const handleCheckInChange = (newDateStr: string) => {
+    if (!newDateStr) return;
+    const oldIn = new Date(rescheduleCheckIn);
+    const newIn = new Date(newDateStr);
+    
+    if (!isNaN(oldIn.getTime()) && rescheduleCheckOut) {
+      const outDate = new Date(rescheduleCheckOut);
+      const diffMs = newIn.getTime() - oldIn.getTime();
+      outDate.setTime(outDate.getTime() + diffMs);
+      
+      const yyyy = outDate.getFullYear();
+      const mm = String(outDate.getMonth() + 1).padStart(2, '0');
+      const dd = String(outDate.getDate()).padStart(2, '0');
+      setRescheduleCheckOut(`${yyyy}-${mm}-${dd}`);
+    }
+    setRescheduleCheckIn(newDateStr);
+  };
+
+  useEffect(() => {
+    if (isReschedulingBooking && rescheduleCheckIn && rescheduleCheckOut) {
+      fetchAvailableRoomsForDate(rescheduleCheckIn, rescheduleCheckOut);
+    }
+  }, [rescheduleCheckIn, rescheduleCheckOut, isReschedulingBooking]);
+
   const handleRescheduleBooking = async () => {
     if (!room.booking_id) {
       alert("ไม่พบรหัสการจอง");
@@ -351,12 +375,17 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       newActualPrice = room.stay_type === 'overnight' ? targetRoom.price_night : targetRoom.price_temp;
     }
 
+    const newCheckInDate = new Date(rescheduleCheckIn);
+    newCheckInDate.setHours(14, 0, 0, 0);
+    const newCheckOutDate = new Date(rescheduleCheckOut);
+    newCheckOutDate.setHours(12, 0, 0, 0);
+
     const { error: updateError } = await supabase
       .from('bookings')
       .update({
         room_id: targetRoom.id,
-        check_in_time: new Date(rescheduleCheckIn).toISOString(),
-        check_out_time: new Date(rescheduleCheckOut).toISOString(),
+        check_in_time: newCheckInDate.toISOString(),
+        check_out_time: newCheckOutDate.toISOString(),
         actual_price: newActualPrice
       })
       .eq('id', room.booking_id);
@@ -717,15 +746,13 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     <div className="flex-1">
                       <label className="block text-xs font-medium text-slate-700 mb-1">วันเช็คอินใหม่</label>
                       <input type="date" value={rescheduleCheckIn} onChange={(e) => {
-                        setRescheduleCheckIn(e.target.value);
-                        if (e.target.value && rescheduleCheckOut) fetchAvailableRoomsForDate(e.target.value, rescheduleCheckOut);
+                        handleCheckInChange(e.target.value);
                       }} className="w-full border-slate-200 rounded-lg px-2 py-2 text-sm bg-white" />
                     </div>
                     <div className="flex-1">
                       <label className="block text-xs font-medium text-slate-700 mb-1">วันเช็คเอาท์ใหม่</label>
                       <input type="date" value={rescheduleCheckOut} onChange={(e) => {
                         setRescheduleCheckOut(e.target.value);
-                        if (rescheduleCheckIn && e.target.value) fetchAvailableRoomsForDate(rescheduleCheckIn, e.target.value);
                       }} className="w-full border-slate-200 rounded-lg px-2 py-2 text-sm bg-white" />
                     </div>
                   </div>
