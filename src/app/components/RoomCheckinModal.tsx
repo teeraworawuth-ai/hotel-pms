@@ -151,8 +151,8 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   };
 
   const handleCheckIn = async (type: 'overnight' | 'short_stay') => {
-    if (!guestName.trim() || !guestPhone.trim() || guestPhone.length !== 10 || !/^\d+$/.test(guestPhone)) {
-      alert('กรุณากรอกชื่อและเบอร์โทรศัพท์ลูกค้า (ตัวเลข 10 หลัก) ให้ครบถ้วน');
+    if (!guestPhone.trim() || guestPhone.length !== 10 || !/^\d+$/.test(guestPhone)) {
+      alert('กรุณากรอกเบอร์โทรศัพท์ลูกค้า (ตัวเลข 10 หลัก) ให้ถูกต้อง');
       return;
     }
     setLoading(true);
