@@ -141,15 +141,19 @@ export default function CheckinPage() {
         if (incomingBookingToday) {
           if (finalRoom.status === 'available' || !finalRoom.status) {
             // ถ้าห้องว่าง (ทำความสะอาดเสร็จแล้ว) ให้เอาคิวจองวันนี้มาทับเป็นสถานะ reserved
-            finalRoom = {
-              ...finalRoom,
-              status: 'reserved',
-              stay_type: 'overnight',
-              check_in_time: incomingBookingToday.check_in_time,
-              check_out_time: incomingBookingToday.check_out_time,
-              guest_count: incomingBookingToday.guest_count,
-              guest_name: incomingBookingToday.guest_name
-            };
+              finalRoom = {
+                ...finalRoom,
+                status: 'reserved',
+                stay_type: 'overnight',
+                check_in_time: incomingBookingToday.check_in_time,
+                check_out_time: incomingBookingToday.check_out_time,
+                guest_count: incomingBookingToday.guest_count,
+                guest_name: incomingBookingToday.guest_name,
+                guest_phone: incomingBookingToday.guest_phone,
+                actual_price: incomingBookingToday.actual_price,
+                staff_name: incomingBookingToday.staff_name,
+                booking_id: incomingBookingToday.id
+              };
           }
         }
         

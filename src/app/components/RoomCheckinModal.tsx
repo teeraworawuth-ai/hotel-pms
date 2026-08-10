@@ -150,15 +150,15 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     return d;
   };
 
-  const handleCheckIn = async (type: 'overnight' | 'short_stay') => {
+  const handleCheckIn = async (type: 'overnight' | 'short_stay', isReservationForToday: boolean = false) => {
     if (!guestPhone.trim() || guestPhone.length !== 10 || !/^\d+$/.test(guestPhone)) {
       alert('กรุณากรอกเบอร์โทรศัพท์ลูกค้า (ตัวเลข 10 หลัก) ให้ถูกต้อง');
       return;
     }
     setLoading(true);
     const startDate = new Date(displayDate);
-    if (dateOffset > 0) {
-      // ถ้าจองล่วงหน้า ให้เวลาเริ่มคือ 14:00 น. ของวันนั้น
+    if (dateOffset > 0 || isReservationForToday) {
+      // ถ้าจองล่วงหน้า หรือจองของวันนี้ที่ยังไม่มาถึง ให้เวลาเริ่มคือ 14:00 น. ของวันนั้น
       startDate.setHours(14, 0, 0, 0);
     }
 
@@ -179,14 +179,14 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         guest_phone: guestPhone.trim(),
         check_in_time: startDate.toISOString(),
         check_out_time: checkoutDate.toISOString(),
-        status: dateOffset === 0 ? 'checked_in' : 'reserved',
+        status: (dateOffset === 0 && !isReservationForToday) ? 'checked_in' : 'reserved',
         guest_count: guestCount,
         actual_price: actualPrice === '' ? null : Number(actualPrice),
         staff_name: staffName || null
       });
 
-    // 2. ถ้าเป็น "วันนี้" ให้บันทึกลงตาราง Rooms ด้วย เพื่อให้ระบบ IoT (หน้า Report/Energy) ทำงานได้
-    if (dateOffset === 0 && !bookingError) {
+    // 2. ถ้าเป็นการ Check-in จริงๆ ใน "วันนี้" (ไม่ใช่แค่จอง) ให้บันทึกลงตาราง Rooms ด้วย
+    if (dateOffset === 0 && !isReservationForToday && !bookingError) {
       await supabase
         .from('rooms')
         .update({
@@ -202,6 +202,40 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         .eq('id', room.id);
     }
 
+    setLoading(false);
+    onUpdate();
+  };
+
+  const handleCheckInReserved = async () => {
+    if (!room.booking_id) {
+      alert('ไม่พบข้อมูลการจอง');
+      return;
+    }
+    setLoading(true);
+    
+    // 1. Update Booking Status
+    const { error: bookingError } = await supabase
+      .from('bookings')
+      .update({ status: 'checked_in' })
+      .eq('id', room.booking_id);
+
+    // 2. Update Rooms Table (To activate IoT)
+    if (!bookingError) {
+      await supabase
+        .from('rooms')
+        .update({
+          status: 'occupied',
+          stay_type: 'overnight',
+          check_in_time: room.check_in_time, // original booked time
+          check_out_time: room.check_out_time, // original checkout time
+          guest_count: room.guest_count,
+          current_status: `มีแขก (ค้างคืน)`,
+          actual_price: room.actual_price,
+          staff_name: room.staff_name || null
+        })
+        .eq('id', room.id);
+    }
+    
     setLoading(false);
     onUpdate();
   };
@@ -689,13 +723,22 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                   </div>
                 )}
               </div>
-
-              <button 
-                onClick={() => handleCheckIn(activeTab)} disabled={loading}
-                className={`w-full py-4 text-white font-bold rounded-xl text-lg transition-all active:scale-95 ${dateOffset > 0 ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-600/20 shadow-lg' : activeTab === 'overnight' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 shadow-lg' : 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20 shadow-lg'}`}
-              >
-                {loading ? 'กำลังบันทึก...' : dateOffset > 0 ? '📅 บันทึกการจองล่วงหน้า' : activeTab === 'overnight' ? (timeBand === 'late_night' ? `✅ check-in (เมื่อวานนี้) = ${nights} คืน` : timeBand === 'early_in' ? `✅ early+check-in = ${nights} คืน` : `✅ check-in = ${nights} คืน`) : `✅ Check-in ชั่วคราว`}
-              </button>
+              <div className="flex gap-2 w-full mt-6">
+                {dateOffset === 0 && activeTab === 'overnight' && (
+                  <button 
+                    onClick={() => handleCheckIn(activeTab, true)} disabled={loading}
+                    className="w-1/2 py-4 text-white font-bold rounded-xl text-lg transition-all active:scale-95 bg-purple-600 hover:bg-purple-700 shadow-purple-600/20 shadow-lg"
+                  >
+                    📝 จองไว้ก่อน
+                  </button>
+                )}
+                <button 
+                  onClick={() => handleCheckIn(activeTab)} disabled={loading}
+                  className={`${dateOffset === 0 && activeTab === 'overnight' ? 'w-1/2' : 'w-full'} py-4 text-white font-bold rounded-xl text-lg transition-all active:scale-95 ${dateOffset > 0 ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-600/20 shadow-lg' : activeTab === 'overnight' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 shadow-lg' : 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20 shadow-lg'}`}
+                >
+                  {loading ? 'กำลังบันทึก...' : dateOffset > 0 ? '📅 บันทึกการจองล่วงหน้า' : activeTab === 'overnight' ? (timeBand === 'late_night' ? `✅ check-in (เมื่อวานนี้) = ${nights} คืน` : timeBand === 'early_in' ? `✅ early+check-in = ${nights} คืน` : `✅ check-in = ${nights} คืน`) : `✅ Check-in ชั่วคราว`}
+                </button>
+              </div>
             </div>
           )}
 
