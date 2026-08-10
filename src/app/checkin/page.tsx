@@ -463,11 +463,6 @@ export default function CheckinPage() {
 
                         {/* Center Section (Room No & Price) */}
                         <div className="flex-1 w-full h-full relative flex flex-col items-center justify-start pt-[22px] sm:pt-6 z-10">
-                          {room.incoming_today && (room.status === 'occupied' || room.status === 'dirty') && (
-                            <div className="absolute top-0 text-[11px] font-black text-emerald-500 animate-[pulse_2s_ease-in-out_infinite] leading-none pt-0.5">
-                              {displayDate.getDate()}
-                            </div>
-                          )}
                           {(() => {
                             let isOverdue = false;
                             let overdueMinutes = 0;
@@ -480,7 +475,7 @@ export default function CheckinPage() {
                               }
                             }
                             return (
-                              <div className={`absolute ${room.incoming_today && (room.status === 'occupied' || room.status === 'dirty') ? 'top-2.5 sm:top-3' : 'top-0'} text-lg sm:text-xl font-black text-slate-700 transition-all leading-none flex items-center justify-center`}>
+                              <div className={`absolute top-0 text-lg sm:text-xl font-black text-slate-700 transition-all leading-none flex items-center justify-center`}>
                                 <span>{room.room_no}</span>
                                 {isOverdue && (
                                   <span className="absolute -right-[14px] sm:-right-[18px] top-1/2 -translate-y-1/2 flex items-center justify-center">
@@ -566,11 +561,17 @@ export default function CheckinPage() {
                         </div>
 
                         {/* Right Section (7-Day Availability Indicator) */}
-                        {room.has_upcoming && room.upcoming_days && room.upcoming_days.length > 0 && (
-                          <div className={`absolute top-0 right-1 bottom-0.5 flex flex-col items-end ${room.upcoming_days.length >= 6 ? 'justify-between py-1 gap-0' : 'gap-[2px] pt-1'} text-slate-400 overflow-hidden pr-0.5`}>
-                            {room.upcoming_days.map((dateNum, i) => {
+                        {((room.has_upcoming && room.upcoming_days && room.upcoming_days.length > 0) || (room.incoming_today && (room.status === 'occupied' || room.status === 'dirty'))) && (
+                          <div className={`absolute top-0 right-1 bottom-0.5 flex flex-col items-end ${((room.upcoming_days?.length || 0) + (room.incoming_today && (room.status === 'occupied' || room.status === 'dirty') ? 1 : 0)) >= 6 ? 'justify-between py-1 gap-0' : 'gap-[2px] pt-1'} text-slate-400 overflow-hidden pr-0.5`}>
+                            {room.incoming_today && (room.status === 'occupied' || room.status === 'dirty') && (
+                              <span className="font-black leading-none text-[11px] text-emerald-500 animate-[pulse_1s_ease-in-out_infinite]">
+                                {displayDate.getDate()}
+                              </span>
+                            )}
+                            {room.upcoming_days?.map((dateNum, i) => {
                               const isUrgent = dateNum === tomorrowDayNum;
-                              const textSize = room.upcoming_days!.length >= 6 ? (isUrgent ? 'text-[9px]' : 'text-[8px]') : (isUrgent ? 'text-[11px]' : 'text-[10px]');
+                              const totalItems = (room.upcoming_days?.length || 0) + (room.incoming_today && (room.status === 'occupied' || room.status === 'dirty') ? 1 : 0);
+                              const textSize = totalItems >= 6 ? (isUrgent ? 'text-[9px]' : 'text-[8px]') : (isUrgent ? 'text-[11px]' : 'text-[10px]');
                               return (
                                 <span 
                                   key={i} 
