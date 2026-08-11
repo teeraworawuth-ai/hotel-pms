@@ -904,8 +904,8 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                 </div>
               )}
 
-              {/* ต่อเวลาเป็นคืน (แสดงเฉพาะเมื่อดูของวันนี้) */}
-              {dateOffset === 0 && (
+              {/* ต่อเวลาเป็นคืน (แสดงเฉพาะเมื่อดูของวันนี้ และสถานะเข้าพักแล้ว) */}
+              {dateOffset === 0 && room.status === 'occupied' && (
                 <>
                   <div className="flex gap-3">
                     <div className="flex-1 relative">
