@@ -20,6 +20,18 @@ export default function AnomalyReport({ dateOffset }: AnomalyReportProps) {
   const fetchData = async () => {
     setLoading(true);
     
+    // ดึง Location Order
+    const { data: settingsData } = await supabase
+      .from("system_settings")
+      .select("value")
+      .eq("key", "locations_order")
+      .single();
+    
+    let locationsOrder: string[] = [];
+    if (settingsData && settingsData.value) {
+      locationsOrder = settingsData.value as string[];
+    }
+
     const targetDate = new Date();
     targetDate.setDate(targetDate.getDate() + dateOffset);
     const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0);
@@ -180,7 +192,14 @@ export default function AnomalyReport({ dateOffset }: AnomalyReportProps) {
         };
       }).filter(Boolean);
 
-      anomalies.sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+      anomalies.sort((a: any, b: any) => {
+        let indexA = locationsOrder.indexOf(a.location);
+        let indexB = locationsOrder.indexOf(b.location);
+        if (indexA === -1) indexA = 999;
+        if (indexB === -1) indexB = 999;
+        if (indexA !== indexB) return indexA - indexB;
+        return a.sortOrder - b.sortOrder;
+      });
       setData(anomalies);
     }
     setLoading(false);
