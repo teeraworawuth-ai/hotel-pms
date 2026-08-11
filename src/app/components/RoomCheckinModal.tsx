@@ -643,7 +643,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
               <div className="space-y-4">
                 <div className="flex gap-4">
                   <div className="flex-1">
-                    <label className="block text-sm font-medium text-slate-700 mb-1">ชื่อลูกค้า <span className="text-red-500">*</span></label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">ชื่อลูกค้า</label>
                     <input 
                       type="text" 
                       value={guestName} onChange={(e) => setGuestName(e.target.value)}
@@ -774,6 +774,14 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     className="w-full mt-2 py-2 text-purple-600 bg-white border border-purple-200 rounded-lg text-sm font-bold shadow-sm hover:bg-purple-50 transition-colors"
                   >
                     📅 เลื่อนวัน / ย้ายห้อง
+                  </button>
+                )}
+                {room.status === 'reserved' && dateOffset === 0 && !isReschedulingBooking && (
+                  <button 
+                    onClick={handleCheckInReserved} disabled={loading}
+                    className="w-full py-4 mt-4 text-white font-bold rounded-xl text-lg bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    {timeBand === 'early_in' ? '🚪 Early Check-in (เข้าพักก่อนเวลา)' : '🚪 Check-in (เข้าพักเลย)'}
                   </button>
                 )}
               </div>
