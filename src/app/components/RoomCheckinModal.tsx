@@ -590,12 +590,12 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
       <div 
-        className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden" 
+        className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-full flex flex-col overflow-hidden" 
         onClick={e => e.stopPropagation()}
       >
-        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
           <div>
             <h2 className="text-xl font-black text-slate-800">ห้อง {room.room_no}</h2>
             {dateOffset > 0 && <p className="text-xs text-purple-600 font-bold">โหมดจองล่วงหน้า (วันที่ {displayDate.toLocaleDateString('th-TH')})</p>}
@@ -605,7 +605,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           </button>
         </div>
 
-        <div className="p-6">
+        <div className="p-6 overflow-y-auto">
           
           {/* 1. ห้องว่าง -> รอการเข้าพัก หรือ เพิ่มการจองล่วงหน้า */}
           {(!room.status || room.status === 'available') && (
