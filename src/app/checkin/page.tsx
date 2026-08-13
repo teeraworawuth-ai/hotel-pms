@@ -97,6 +97,7 @@ export default function CheckinPage() {
       .from("bookings")
       .select("*")
       .neq("status", "cancelled")
+      .neq("status", "checked_out") // สำคัญ! ข้าม booking ที่เช็คเอาท์ไปแล้ว เพื่อไม่ให้ห้องกลับไปเป็น reserved
       .lte("check_in_time", endOfNext7Days.toISOString())
       .gt("check_out_time", startOfDay.toISOString());
 
