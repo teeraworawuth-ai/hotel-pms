@@ -221,8 +221,17 @@ export default function CheckinPage() {
       })
       .subscribe();
 
+    // ตั้งค่า Supabase Realtime สำหรับตาราง bookings
+    const bookingSubscription = supabase
+      .channel('bookings-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, (payload) => {
+        fetchData(true);
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(roomSubscription);
+      supabase.removeChannel(bookingSubscription);
     };
   }, [dateOffset]);
 
