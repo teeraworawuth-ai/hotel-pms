@@ -212,7 +212,7 @@ export default function CheckinPage() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(() => fetchData(true), 60000); // รีเฟรชทุก 1 นาทีแบบไม่กะพริบ
+    const interval = setInterval(() => fetchData(true), 15000); // รีเฟรชแบบไม่กะพริบ ทุก 15 วินาทีเพื่อให้เห็นห้องอัปเดตแบบเรียลไทม์
     return () => clearInterval(interval);
   }, [dateOffset]);
 
