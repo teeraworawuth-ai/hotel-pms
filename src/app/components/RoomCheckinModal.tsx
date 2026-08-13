@@ -243,32 +243,34 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const handleCheckOut = async () => {
     setLoading(true);
     
+    const isCancelling = room.status === 'reserved';
+
     // 1. อัปเดตตาราง Rooms (เคลียร์ห้อง)
     if (dateOffset === 0) {
       await supabase
         .from('rooms')
         .update({
-          status: 'dirty',
+          status: isCancelling ? 'available' : 'dirty',
           stay_type: null,
           check_in_time: null,
           check_out_time: null,
           guest_count: 0,
           actual_price: null,
           staff_name: null,
-          current_status: 'รอทำความสะอาด'
+          current_status: isCancelling ? 'ว่าง' : 'รอทำความสะอาด'
         })
         .eq('id', room.id);
     }
 
-    // 2. อัปเดตตาราง Bookings (ตั้งสถานะเป็น checked_out หรือ cancelled ถ้าเป็นอนาคต)
+    // 2. อัปเดตตาราง Bookings (ตั้งสถานะเป็น checked_out หรือ cancelled ถ้าเป็นอนาคตหรือการยกเลิก)
     const startOfDay = new Date(displayDate.getFullYear(), displayDate.getMonth(), displayDate.getDate(), 0, 0, 0);
     const endOfDay = new Date(displayDate.getFullYear(), displayDate.getMonth(), displayDate.getDate(), 23, 59, 59);
     
     await supabase
       .from('bookings')
-      .update({ status: dateOffset > 0 ? 'cancelled' : 'checked_out' })
+      .update({ status: dateOffset > 0 || isCancelling ? 'cancelled' : 'checked_out' })
       .eq('room_id', room.id)
-      .eq('status', dateOffset > 0 ? 'reserved' : 'checked_in')
+      .eq('status', dateOffset > 0 || isCancelling ? 'reserved' : 'checked_in')
       .lte('check_in_time', endOfDay.toISOString())
       .gt('check_out_time', startOfDay.toISOString());
     
