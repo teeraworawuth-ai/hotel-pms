@@ -26,6 +26,7 @@ export type RoomStatus = {
   staff_name?: string | null;
   guest_phone?: string | null;
   booking_id?: string;
+  booking_created_at?: string; // Time the booking was made
   map_x?: number;
   map_y?: number;
   map_width?: number;
@@ -172,8 +173,11 @@ export default function CheckinPage() {
                 guest_phone: incomingBookingToday.guest_phone,
                 actual_price: incomingBookingToday.actual_price,
                 staff_name: incomingBookingToday.staff_name,
-                booking_id: incomingBookingToday.id
+                booking_id: incomingBookingToday.id,
+                booking_created_at: incomingBookingToday.created_at
               };
+          } else if (finalRoom.status === 'reserved') {
+            finalRoom.booking_created_at = incomingBookingToday.created_at;
           }
         }
         
@@ -192,7 +196,8 @@ export default function CheckinPage() {
             guest_phone: targetDayBooking.guest_phone,
             actual_price: targetDayBooking.actual_price,
             staff_name: targetDayBooking.staff_name,
-            booking_id: targetDayBooking.id
+            booking_id: targetDayBooking.id,
+            booking_created_at: targetDayBooking.created_at
           };
         } else {
           finalRoom = {
@@ -515,7 +520,18 @@ export default function CheckinPage() {
                         {/* Left Section (Details) */}
                         {(room.status === 'occupied' || room.status === 'reserved' || room.status === 'dirty') && (
                           <div className="absolute top-0.5 left-0 bottom-0.5 w-[30%] flex flex-col justify-between items-start text-[8.5px] sm:text-[9.5px] leading-none font-semibold opacity-90 pl-0.5 py-0.5">
-                            {room.check_in_time && (
+                            {room.status === 'reserved' && room.booking_created_at ? (
+                              <div className="flex flex-col items-start gap-[1px] w-full text-purple-600">
+                                <div className="text-purple-400 h-[10px] flex items-center">
+                                  {formatDateStr(room.booking_created_at) === formatDateStr(displayDate.toISOString()) ? (
+                                    <span>&nbsp;</span>
+                                  ) : (
+                                    <>{formatDateStr(room.booking_created_at)}</>
+                                  )}
+                                </div>
+                                <div className="font-bold text-purple-700">{formatTimeStr(room.booking_created_at)}</div>
+                              </div>
+                            ) : room.check_in_time && (
                               <div className="flex flex-col items-start gap-[1px] w-full">
                                 <div className="text-slate-500 h-[10px] flex items-center">
                                   {formatDateStr(room.check_in_time) ? (
