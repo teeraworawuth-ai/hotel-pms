@@ -710,7 +710,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                       className="w-full border-slate-200 rounded-xl px-4 py-3 text-lg font-bold focus:ring-blue-500 focus:border-blue-500 bg-slate-50"
                     />
                     <p className="text-xs text-slate-500 mt-2">
-                      ออกวันที่: {getNextNoon(displayDate, nights).toLocaleString('th-TH')}
+                      ออกวันที่: {getNextNoon(displayDate, Number(nights) || 0).toLocaleString('th-TH')}
                     </p>
                   </div>
                 ) : (
