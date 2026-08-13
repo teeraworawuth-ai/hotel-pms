@@ -33,7 +33,7 @@ export type RoomStatus = {
 };
 
 export default function CheckinPage() {
-  const { getNow } = useSimulatedTime();
+  const { getNow, simulatedTime } = useSimulatedTime();
   const [rooms, setRooms] = useState<RoomStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [locationsOrder, setLocationsOrder] = useState<string[]>([]);
@@ -125,6 +125,7 @@ export default function CheckinPage() {
         const currentDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1 + i);
         
         const isBooked = roomBookings.some(b => {
+          if (b.status !== 'reserved') return false;
           const bStartDate = new Date(b.check_in_time).setHours(0,0,0,0);
           const bEndDate = new Date(b.check_out_time).setHours(0,0,0,0);
           const currentDayDate = currentDay.setHours(0,0,0,0);
@@ -234,7 +235,7 @@ export default function CheckinPage() {
       supabase.removeChannel(roomSubscription);
       supabase.removeChannel(bookingSubscription);
     };
-  }, [dateOffset]);
+  }, [dateOffset, simulatedTime]);
 
   const handleCleanAllDirtyRooms = async () => {
     const dirtyRooms = rooms.filter(r => r.status === 'dirty');
