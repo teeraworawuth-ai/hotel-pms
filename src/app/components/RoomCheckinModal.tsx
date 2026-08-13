@@ -268,6 +268,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       .from('bookings')
       .update({ status: dateOffset > 0 ? 'cancelled' : 'checked_out' })
       .eq('room_id', room.id)
+      .eq('status', dateOffset > 0 ? 'reserved' : 'checked_in')
       .lte('check_in_time', endOfDay.toISOString())
       .gt('check_out_time', startOfDay.toISOString());
     
