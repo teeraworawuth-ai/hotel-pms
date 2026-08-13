@@ -263,6 +263,14 @@ export default function CheckinPage() {
     if (!window.confirm(`[สำหรับทดสอบ] ยืนยันการเคลียร์แขกออกจากห้องที่มีคนพักอยู่จำนวน ${occupiedRooms.length} ห้องหรือไม่? (สถานะห้องจะกลายเป็น รอทำความสะอาด)`)) return;
 
     setLoading(true);
+
+    // อัปเดตตาราง bookings ให้เป็น checked_out ด้วย จะได้ไม่เด้งกลับมาเป็น reserved อีก
+    await supabase
+      .from('bookings')
+      .update({ status: 'checked_out' })
+      .in('room_id', occupiedRooms.map(r => r.id))
+      .eq('status', 'checked_in');
+
     const { error } = await supabase
       .from('rooms')
       .update({ 
