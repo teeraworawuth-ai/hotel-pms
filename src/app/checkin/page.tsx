@@ -256,6 +256,37 @@ export default function CheckinPage() {
     }
   };
 
+  const handleClearAllOccupiedRooms = async () => {
+    const occupiedRooms = rooms.filter(r => r.status === 'occupied');
+    if (occupiedRooms.length === 0) return;
+    
+    if (!window.confirm(`[สำหรับทดสอบ] ยืนยันการเคลียร์แขกออกจากห้องที่มีคนพักอยู่จำนวน ${occupiedRooms.length} ห้องหรือไม่? (สถานะห้องจะกลายเป็น รอทำความสะอาด)`)) return;
+
+    setLoading(true);
+    const { error } = await supabase
+      .from('rooms')
+      .update({ 
+        status: 'dirty', 
+        check_in_time: null, 
+        check_out_time: null, 
+        stay_type: null, 
+        guest_count: null, 
+        price_night: null, 
+        price_temp: null, 
+        actual_price: null, 
+        staff_name: null 
+      })
+      .in('id', occupiedRooms.map(r => r.id));
+      
+    if (!error) {
+      fetchData();
+    } else {
+      console.error(error);
+      alert('เกิดข้อผิดพลาดในการเคลียร์ห้อง');
+      setLoading(false);
+    }
+  };
+
   // จัดเรียงและจัดกลุ่มตามสถานที่
   const groupedRooms: { [key: string]: RoomStatus[] } = {};
   rooms.forEach((room) => {
@@ -430,6 +461,16 @@ export default function CheckinPage() {
               className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 text-sm font-bold rounded-xl shadow-sm transition-colors active:scale-95"
             >
               🧹 ทำความสะอาดทุกห้อง
+            </button>
+          )}
+
+          {dateOffset === 0 && rooms.some(r => r.status === 'occupied') && (
+            <button 
+              onClick={handleClearAllOccupiedRooms}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 bg-orange-50 text-orange-600 border border-orange-200 hover:bg-orange-100 hover:border-orange-300 text-sm font-bold rounded-xl shadow-sm transition-colors active:scale-95"
+            >
+              🚪 เคลียร์แขก (สำหรับทดสอบ)
             </button>
           )}
         </div>
