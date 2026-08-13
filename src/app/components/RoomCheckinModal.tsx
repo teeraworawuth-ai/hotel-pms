@@ -15,19 +15,19 @@ interface ModalProps {
 export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }: ModalProps) {
   const { getNow } = useSimulatedTime();
   const [loading, setLoading] = useState(false);
-  const [guestCount, setGuestCount] = useState<number>(room.guest_count || 2);
+  const [guestCount, setGuestCount] = useState<number | ''>(room.guest_count || 2);
   const [guestName, setGuestName] = useState<string>(room.guest_name || "");
   const [guestPhone, setGuestPhone] = useState<string>(room.guest_phone || "");
-  const [nights, setNights] = useState<number>(() => {
+  const [nights, setNights] = useState<number | ''>(() => {
     if (dateOffset === 0) {
       const h = getNow().getHours();
       if (h >= 0 && h < 7) return 0; // Late night defaults to 0 nights (checkout today noon)
     }
     return 1;
   });
-  const [hours, setHours] = useState<number>(3);
-  const [extendHours, setExtendHours] = useState<number>(1);
-  const [extendNights, setExtendNights] = useState<number>(1);
+  const [hours, setHours] = useState<number | ''>(3);
+  const [extendHours, setExtendHours] = useState<number | ''>(1);
+  const [extendNights, setExtendNights] = useState<number | ''>(1);
   const [activeTab, setActiveTab] = useState<'overnight' | 'short_stay'>('overnight');
   const [actualPrice, setActualPrice] = useState<number | ''>(room.actual_price || room.price_night || '');
   const [staffName, setStaffName] = useState<string>(room.staff_name || '');
@@ -165,9 +165,9 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     let checkoutDate = new Date(startDate);
 
     if (type === 'overnight') {
-      checkoutDate = getNextNoon(startDate, nights);
+      checkoutDate = getNextNoon(startDate, Number(nights) || 0);
     } else {
-      checkoutDate = new Date(startDate.getTime() + hours * 60 * 60 * 1000);
+      checkoutDate = new Date(startDate.getTime() + (Number(hours) || 1) * 60 * 60 * 1000);
     }
 
     // 1. บันทึกลงตาราง Bookings (ประวัติ/สมุดจอง)
@@ -180,7 +180,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         check_in_time: startDate.toISOString(),
         check_out_time: checkoutDate.toISOString(),
         status: (dateOffset === 0 && !isReservationForToday) ? 'checked_in' : 'reserved',
-        guest_count: guestCount,
+        guest_count: Number(guestCount) || 1,
         actual_price: actualPrice === '' ? null : Number(actualPrice),
         staff_name: staffName || null
       });
@@ -194,7 +194,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           stay_type: type,
           check_in_time: startDate.toISOString(),
           check_out_time: checkoutDate.toISOString(),
-          guest_count: guestCount,
+          guest_count: Number(guestCount) || 1,
           current_status: `มีแขก (${type === 'overnight' ? 'ค้างคืน' : 'ชั่วคราว'})`,
           actual_price: actualPrice === '' ? null : Number(actualPrice),
           staff_name: staffName || null
@@ -536,9 +536,9 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     
     const currentCheckout = new Date(room.check_out_time);
     if (type === 'nights') {
-      currentCheckout.setDate(currentCheckout.getDate() + extendNights);
+      currentCheckout.setDate(currentCheckout.getDate() + (Number(extendNights) || 1));
     } else {
-      currentCheckout.setHours(currentCheckout.getHours() + extendHours);
+      currentCheckout.setHours(currentCheckout.getHours() + (Number(extendHours) || 1));
     }
 
     // อัปเดตเวลาออกในตาราง rooms (ถ้าเป็นวันนี้)
@@ -665,7 +665,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                   <label className="block text-sm font-medium text-slate-700 mb-1">จำนวนผู้เข้าพัก (คน)</label>
                   <input 
                     type="number" min="1" 
-                    value={guestCount} onChange={(e) => setGuestCount(Number(e.target.value))}
+                    value={guestCount} onChange={(e) => setGuestCount(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full border-slate-200 rounded-xl px-4 py-3 text-lg font-bold focus:ring-blue-500 focus:border-blue-500 bg-slate-50"
                   />
                 </div>
@@ -705,7 +705,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     <label className="block text-sm font-medium text-slate-700 mb-1">จำนวนคืน 🌙</label>
                     <input 
                       type="number" min="0" 
-                      value={nights} onChange={(e) => setNights(Number(e.target.value))}
+                      value={nights} onChange={(e) => setNights(e.target.value === '' ? '' : Number(e.target.value))}
                       className="w-full border-slate-200 rounded-xl px-4 py-3 text-lg font-bold focus:ring-blue-500 focus:border-blue-500 bg-slate-50"
                     />
                     <p className="text-xs text-slate-500 mt-2">
@@ -717,7 +717,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     <label className="block text-sm font-medium text-slate-700 mb-1">จำนวนชั่วโมง ⏳</label>
                     <input 
                       type="number" min="1" 
-                      value={hours} onChange={(e) => setHours(Number(e.target.value))}
+                      value={hours} onChange={(e) => setHours(e.target.value === '' ? '' : Number(e.target.value))}
                       className="w-full border-slate-200 rounded-xl px-4 py-3 text-lg font-bold focus:ring-amber-500 focus:border-amber-500 bg-slate-50"
                     />
                   </div>
@@ -916,7 +916,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                       <span className="absolute left-3 top-3.5 text-slate-400">🌙</span>
                       <input 
                         type="number" min="1" 
-                        value={extendNights} onChange={(e) => setExtendNights(Number(e.target.value))}
+                        value={extendNights} onChange={(e) => setExtendNights(e.target.value === '' ? '' : Number(e.target.value))}
                         className="w-full border-slate-200 rounded-xl pl-9 pr-4 py-3 font-bold focus:ring-blue-500 focus:border-blue-500 bg-slate-50 placeholder-slate-300"
                       />
                     </div>
@@ -934,7 +934,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                       <span className="absolute left-3 top-3.5 text-slate-400">⏳</span>
                       <input 
                         type="number" min="1" 
-                        value={extendHours} onChange={(e) => setExtendHours(Number(e.target.value))}
+                        value={extendHours} onChange={(e) => setExtendHours(e.target.value === '' ? '' : Number(e.target.value))}
                         className="w-full border-slate-200 rounded-xl pl-9 pr-4 py-3 font-bold focus:ring-amber-500 focus:border-amber-500 bg-slate-50 placeholder-slate-300"
                       />
                     </div>
@@ -978,3 +978,5 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     </div>
   );
 }
+
+
