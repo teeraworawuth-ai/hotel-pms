@@ -26,6 +26,10 @@ export type RoomStatus = {
   staff_name?: string | null;
   guest_phone?: string | null;
   booking_id?: string;
+  map_x?: number;
+  map_y?: number;
+  map_width?: number;
+  map_height?: number;
 };
 
 export default function CheckinPage() {
@@ -35,11 +39,14 @@ export default function CheckinPage() {
   const [locationsOrder, setLocationsOrder] = useState<string[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<RoomStatus | null>(null);
   
+  const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
+  const [floorPlans, setFloorPlans] = useState<Record<string, string>>({});
+
   // 0 = Today, -1 = Yesterday, 1 = Tomorrow
   const [dateOffset, setDateOffset] = useState<number>(0);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (silentRefresh = false) => {
+    if (!silentRefresh) setLoading(true);
     // ดึง Location Order
     const { data: settingsData } = await supabase
       .from("system_settings")
@@ -51,10 +58,21 @@ export default function CheckinPage() {
       setLocationsOrder(settingsData.value as string[]);
     }
 
+    // ดึงแผนผัง
+    const { data: planData } = await supabase
+      .from("system_settings")
+      .select("value")
+      .eq("key", "floor_plans")
+      .single();
+      
+    if (planData && planData.value) {
+      setFloorPlans(planData.value as Record<string, string>);
+    }
+
     // ดึงโครงสร้างห้องทั้งหมด
     const { data: roomsData, error } = await supabase
       .from("rooms")
-      .select("id, room_no, room_type, location, sort_order, status, stay_type, check_in_time, check_out_time, guest_count, price_night, price_temp, actual_price, staff_name");
+      .select("id, room_no, room_type, location, sort_order, status, stay_type, check_in_time, check_out_time, guest_count, price_night, price_temp, actual_price, staff_name, map_x, map_y, map_width, map_height");
     
     if (error) {
       console.error("Error fetching rooms:", error);
@@ -194,7 +212,7 @@ export default function CheckinPage() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 60000); // รีเฟรชทุก 1 นาที
+    const interval = setInterval(() => fetchData(true), 60000); // รีเฟรชทุก 1 นาทีแบบไม่กะพริบ
     return () => clearInterval(interval);
   }, [dateOffset]);
 
@@ -358,8 +376,22 @@ export default function CheckinPage() {
 
       {/* Header & Legend */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
-        <div>
+        <div className="flex flex-col gap-2">
           <h1 className="text-2xl font-bold text-slate-800 tracking-tight">สมุดจอง & สถานะห้อง</h1>
+          <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
+            <button 
+              onClick={() => setViewMode('grid')}
+              className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${viewMode === 'grid' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              มุมมองตาราง
+            </button>
+            <button 
+              onClick={() => setViewMode('map')}
+              className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${viewMode === 'map' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              มุมมองแผนผัง
+            </button>
+          </div>
         </div>
         
         {/* Legend & Actions */}
@@ -398,6 +430,7 @@ export default function CheckinPage() {
                   <span className="text-sm font-normal text-slate-400">({locRooms.length} ห้อง)</span>
                 </h2>
                 
+                {viewMode === 'grid' ? (
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3">
                   {locRooms.map(room => {
                     const statusClass = getStatusClasses(room.status);
@@ -591,6 +624,13 @@ export default function CheckinPage() {
                     );
                   })}
                 </div>
+                ) : (
+                  <div className="relative w-full max-w-5xl mx-auto bg-slate-200 rounded-xl shadow-inner border border-slate-200 overflow-hidden flex flex-col items-center justify-center" style={{ minHeight: '300px' }}>
+                    <svg className="w-16 h-16 text-slate-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                    <h3 className="text-xl font-bold text-slate-700">อยู่ระหว่างการพัฒนา</h3>
+                    <p className="text-slate-500 mt-2 text-center max-w-md">ฟีเจอร์แผนผังห้องพักกำลังอยู่ในขั้นตอนการพัฒนา เพื่อประสบการณ์ใช้งานที่ดีที่สุด</p>
+                  </div>
+                )}
               </div>
             );
           })}
