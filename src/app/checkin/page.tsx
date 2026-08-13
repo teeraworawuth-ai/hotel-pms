@@ -148,7 +148,7 @@ export default function CheckinPage() {
         return bStart.getDate() === targetDate.getDate() && 
                bStart.getMonth() === targetDate.getMonth() && 
                bStart.getFullYear() === targetDate.getFullYear() &&
-               b.check_in_time !== room.check_in_time;
+               b.status === 'reserved'; // ใช้ status แทนการเทียบเวลา เพราะเวลาเช็คอินจริงอาจไม่ตรงกับเวลาจอง
       });
       const incoming_today = !!incomingBookingToday;
 
