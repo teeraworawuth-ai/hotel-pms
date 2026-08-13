@@ -212,8 +212,18 @@ export default function CheckinPage() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(() => fetchData(true), 15000); // รีเฟรชแบบไม่กะพริบ ทุก 15 วินาทีเพื่อให้เห็นห้องอัปเดตแบบเรียลไทม์
-    return () => clearInterval(interval);
+    
+    // ตั้งค่า Supabase Realtime ให้ดึงข้อมูลทันทีเมื่อมีการอัปเดตตาราง rooms
+    const roomSubscription = supabase
+      .channel('rooms-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, (payload) => {
+        fetchData(true);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(roomSubscription);
+    };
   }, [dateOffset]);
 
   const handleCleanAllDirtyRooms = async () => {
