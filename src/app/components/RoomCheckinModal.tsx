@@ -226,7 +226,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         .update({
           status: 'occupied',
           stay_type: 'overnight',
-          check_in_time: room.check_in_time, // original booked time
+          check_in_time: getNow().toISOString(), // actual check-in time instead of booked time
           check_out_time: room.check_out_time, // original checkout time
           guest_count: room.guest_count,
           current_status: `มีแขก (ค้างคืน)`,
