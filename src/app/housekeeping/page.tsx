@@ -97,6 +97,12 @@ export default function HousekeepingPage() {
       tapTimeoutRef.current[room.id] = setTimeout(() => {
         // ถ้าเวลาผ่านไป 400ms และไม่มีการแตะครั้งที่ 2 -> ถือว่าเป็น Single Tap
         if (room.status === 'dirty') {
+          const location = room.location;
+          const concurrentCount = rooms.filter(r => r.location === location && r.status === 'cleaning').length;
+          if (concurrentCount >= 2) {
+            alert(`พื้นที่ ${location || 'โซนนี้'} มีแม่บ้านกำลังทำความสะอาดครบ 2 ห้องแล้ว (โปรดกดเสร็จสิ้นห้องที่ทำเสร็จก่อน)`);
+            return;
+          }
           updateStatus(room.id, 'cleaning'); // เปลี่ยนเป็นเหลือง
         } else if (room.status === 'cleaning') {
           updateStatus(room.id, 'dirty'); // เปลี่ยนกลับเป็นส้ม

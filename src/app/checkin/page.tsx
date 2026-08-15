@@ -75,6 +75,13 @@ export default function CheckinPage() {
         
         tapTimeoutRef.current[room.id] = setTimeout(async () => {
           if (room.status === 'dirty') {
+            const location = room.location;
+            const concurrentCount = rooms.filter(r => r.location === location && r.status === 'cleaning').length;
+            if (concurrentCount >= 2) {
+              alert(`พื้นที่ ${location || 'โซนนี้'} มีแม่บ้านกำลังทำความสะอาดครบ 2 ห้องแล้ว (โปรดกดเสร็จสิ้นห้องที่ทำเสร็จก่อน)`);
+              return;
+            }
+            
             setRooms(prev => prev.map(r => r.id === room.id ? { ...r, status: 'cleaning', current_status: 'กำลังทำความสะอาด' } : r));
             await supabase.from('rooms').update({ status: 'cleaning', current_status: 'กำลังทำความสะอาด' }).eq('id', room.id);
           } else if (room.status === 'cleaning') {
@@ -668,9 +675,9 @@ export default function CheckinPage() {
                             );
                           })()}
                           
-                          {room.status === 'dirty' && (
+                          {(room.status === 'dirty' || room.status === 'cleaning') && (
                             <div className="absolute bottom-1 sm:bottom-1.5 text-base sm:text-lg opacity-80 flex items-center justify-center">
-                              🧹
+                              <span className={room.status === 'cleaning' ? 'animate-broom-swing inline-block' : ''}>🧹</span>
                             </div>
                           )}
 
