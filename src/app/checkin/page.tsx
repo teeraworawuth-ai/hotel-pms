@@ -27,6 +27,7 @@ export type RoomStatus = {
   guest_phone?: string | null;
   booking_id?: string;
   booking_created_at?: string; // Time the booking was made
+  unpaid_balance?: number;
   map_x?: number;
   map_y?: number;
   map_width?: number;
@@ -77,7 +78,7 @@ export default function CheckinPage() {
           if (room.status === 'dirty') {
             const location = room.location;
             const concurrentCount = rooms.filter(r => r.location === location && r.status === 'cleaning').length;
-            if (concurrentCount >= 2) {
+            if (concurrentCount >= 3) {
               alert(`พื้นที่ ${location || 'โซนนี้'} มีแม่บ้านกำลังทำความสะอาดครบ 2 ห้องแล้ว (โปรดกดเสร็จสิ้นห้องที่ทำเสร็จก่อน)`);
               return;
             }
@@ -159,6 +160,25 @@ export default function CheckinPage() {
       console.error("Error fetching bookings:", bookingsError);
     }
 
+    // [NEW] Fetch ledger transactions for active bookings to calculate unpaid balances
+    const activeBookingIds = allTargetBookings?.map(b => b.id) || [];
+    const unpaidBalances: Record<string, number> = {};
+    
+    if (activeBookingIds.length > 0) {
+      const { data: ledgers, error: ledgerError } = await supabase
+        .from('ledger_transactions')
+        .select('booking_id, amount')
+        .in('booking_id', activeBookingIds);
+        
+      if (!ledgerError && ledgers) {
+        ledgers.forEach(tx => {
+          if (tx.booking_id) {
+            unpaidBalances[tx.booking_id] = (unpaidBalances[tx.booking_id] || 0) + Number(tx.amount);
+          }
+        });
+      }
+    }
+
     const mergedRooms = allRooms.map(room => {
       const roomBookings = allTargetBookings?.filter(b => b.room_id === room.id) || [];
       
@@ -227,10 +247,21 @@ export default function CheckinPage() {
                 actual_price: incomingBookingToday.actual_price,
                 staff_name: incomingBookingToday.staff_name,
                 booking_id: incomingBookingToday.id,
-                booking_created_at: incomingBookingToday.created_at
+                booking_created_at: incomingBookingToday.created_at,
+                unpaid_balance: unpaidBalances[incomingBookingToday.id] || 0
               };
           } else if (finalRoom.status === 'reserved') {
             finalRoom.booking_created_at = incomingBookingToday.created_at;
+            finalRoom.unpaid_balance = unpaidBalances[incomingBookingToday.id] || 0;
+          }
+        }
+        
+        // ถ้าสถานะเป็น occupied ให้ดึง booking_id จากการจองของวันนี้ที่เป็น checked_in
+        if (finalRoom.status === 'occupied') {
+          const activeBooking = roomBookings.find(b => b.status === 'checked_in');
+          if (activeBooking) {
+            finalRoom.booking_id = activeBooking.id;
+            finalRoom.unpaid_balance = unpaidBalances[activeBooking.id] || 0;
           }
         }
         
@@ -250,7 +281,8 @@ export default function CheckinPage() {
             actual_price: targetDayBooking.actual_price,
             staff_name: targetDayBooking.staff_name,
             booking_id: targetDayBooking.id,
-            booking_created_at: targetDayBooking.created_at
+            booking_created_at: targetDayBooking.created_at,
+            unpaid_balance: unpaidBalances[targetDayBooking.id] || 0
           };
         } else {
           finalRoom = {
@@ -731,6 +763,21 @@ export default function CheckinPage() {
                                       <span className="text-[8px] sm:text-[9px] text-slate-400 font-medium leading-none">{staffNameText}</span>
                                     )}
                                   </div>
+
+                                  {/* Payment Status Badge (Top Center) */}
+                                  {(room.status === 'occupied' || room.status === 'reserved') && room.unpaid_balance !== undefined && (
+                                    <div className="absolute top-1 sm:top-1.5 left-1/2 -translate-x-1/2 flex items-center justify-center z-30">
+                                      {room.unpaid_balance > 0 ? (
+                                        <span className="bg-rose-500 text-white text-[8px] sm:text-[9px] font-black px-1.5 py-[2px] rounded-full shadow-sm">
+                                          ค้าง ฿{room.unpaid_balance.toLocaleString()}
+                                        </span>
+                                      ) : room.unpaid_balance <= 0 && room.status === 'occupied' ? (
+                                        <span className="bg-emerald-500 text-white text-[8px] sm:text-[9px] font-black px-1.5 py-[2px] rounded-full shadow-sm">
+                                          ชำระแล้ว
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })()}

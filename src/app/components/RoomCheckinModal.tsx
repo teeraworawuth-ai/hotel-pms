@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { RoomStatus } from "../checkin/page";
 import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
+import BillingModal from "./BillingModal";
+import { useShift } from "@/contexts/ShiftContext";
 
 interface ModalProps {
   room: RoomStatus;
@@ -14,6 +16,8 @@ interface ModalProps {
 
 export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }: ModalProps) {
   const { getNow } = useSimulatedTime();
+  const { activeShift } = useShift();
+  const [showBilling, setShowBilling] = useState(false);
   const [loading, setLoading] = useState(false);
   const [guestCount, setGuestCount] = useState<number | ''>(room.guest_count || 2);
   const [guestName, setGuestName] = useState<string>(room.guest_name || "");
@@ -151,6 +155,10 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   };
 
   const handleCheckIn = async (type: 'overnight' | 'short_stay', isReservationForToday: boolean = false) => {
+    if (!activeShift) {
+      alert('กรุณาเปิดกะก่อนทำการจองหรือ Check-in');
+      return;
+    }
     if (!guestPhone.trim() || guestPhone.length !== 10 || !/^\d+$/.test(guestPhone)) {
       alert('กรุณากรอกเบอร์โทรศัพท์ลูกค้า (ตัวเลข 10 หลัก) ให้ถูกต้อง');
       return;
@@ -171,7 +179,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     }
 
     // 1. บันทึกลงตาราง Bookings (ประวัติ/สมุดจอง)
-    const { error: bookingError } = await supabase
+    const { data: insertedBooking, error: bookingError } = await supabase
       .from('bookings')
       .insert({
         room_id: room.id,
@@ -183,7 +191,22 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         guest_count: Number(guestCount) || 1,
         actual_price: actualPrice === '' ? null : Number(actualPrice),
         staff_name: staffName || null
+      })
+      .select('id')
+      .single();
+
+    // 1.5 บันทึกรายได้ค่าห้อง (Revenue) อัตโนมัติ (เฉพาะครั้งแรก)
+    if (insertedBooking && actualPrice !== '') {
+      await supabase.from('ledger_transactions').insert({
+        shift_id: activeShift.id,
+        staff_name: activeShift.staff_name,
+        room_id: room.id,
+        booking_id: insertedBooking.id,
+        transaction_type: 'revenue',
+        category: 'room_charge',
+        amount: Number(actualPrice)
       });
+    }
 
     // 2. ถ้าเป็นการ Check-in จริงๆ ใน "วันนี้" (ไม่ใช่แค่จอง) ให้บันทึกลงตาราง Rooms ด้วย
     if (dateOffset === 0 && !isReservationForToday && !bookingError) {
@@ -241,6 +264,11 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   };
 
   const handleCheckOut = async () => {
+    if (room.unpaid_balance && room.unpaid_balance > 0) {
+      alert(`ลูกค้ามียอดค้างชำระ ${room.unpaid_balance.toLocaleString()} บาท กรุณากด "จัดการบิล / ชำระเงิน" เพื่อรับชำระให้ครบก่อน Check-out`);
+      return;
+    }
+    
     setLoading(true);
     
     const isCancelling = room.status === 'reserved';
@@ -951,7 +979,15 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                 </>
               )}
 
-              <div className="pt-4 border-t border-slate-100">
+              <div className="pt-4 border-t border-slate-100 flex flex-col gap-3">
+                {room.status === 'occupied' && (
+                  <button 
+                    onClick={() => setShowBilling(true)} disabled={loading || !room.booking_id}
+                    className="w-full py-4 text-emerald-700 font-bold rounded-xl text-lg bg-emerald-100 hover:bg-emerald-200 shadow-emerald-500/10 shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    💳 จัดการบิล / ชำระเงิน / POS
+                  </button>
+                )}
                 <button 
                   onClick={handleCheckOut} disabled={loading}
                   className="w-full py-4 text-white font-bold rounded-xl text-lg bg-red-500 hover:bg-red-600 shadow-red-500/20 shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
@@ -996,6 +1032,16 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
         </div>
       </div>
+      
+      {showBilling && room.booking_id && (
+        <BillingModal 
+          roomId={room.id}
+          roomNo={room.room_no}
+          bookingId={room.booking_id}
+          onClose={() => setShowBilling(false)}
+          onSuccess={() => { setShowBilling(false); onUpdate(); }}
+        />
+      )}
     </div>
   );
 }
