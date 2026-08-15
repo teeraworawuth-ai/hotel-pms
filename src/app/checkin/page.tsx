@@ -11,7 +11,7 @@ export type RoomStatus = {
   room_type: string;
   location: string | null;
   sort_order: number;
-  status: 'available' | 'occupied' | 'dirty' | 'reserved' | null;
+  status: 'available' | 'occupied' | 'dirty' | 'cleaning' | 'reserved' | null;
   stay_type: 'overnight' | 'short_stay' | null;
   check_in_time: string | null;
   check_out_time: string | null;
