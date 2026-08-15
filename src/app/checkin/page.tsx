@@ -344,9 +344,10 @@ export default function CheckinPage() {
 
   const getStatusClasses = (status: string | null) => {
     switch (status) {
-      case 'occupied': return "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100 hover:border-blue-300";
+      case 'occupied': return "bg-blue-100 border-blue-300 text-blue-800 hover:bg-blue-200 hover:border-blue-400 shadow-sm";
       case 'dirty': return "bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100 hover:border-orange-300";
-      case 'reserved': return "bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100 hover:border-purple-300"; // อนาคต (จอง)
+      case 'cleaning': return "bg-yellow-100 border-yellow-300 text-yellow-800 hover:bg-yellow-200 hover:border-yellow-400 shadow-sm"; // สำหรับแม่บ้าน
+      case 'reserved': return "bg-purple-100 border-purple-300 text-purple-800 hover:bg-purple-200 hover:border-purple-400 shadow-sm"; // อนาคต (จอง)
       default: return "bg-white border-emerald-200 text-slate-700 hover:bg-emerald-50 hover:border-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.05)]";
     }
   };
