@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import RoomCheckinModal from "@/app/components/RoomCheckinModal";
 import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
@@ -42,6 +42,52 @@ export default function CheckinPage() {
   
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
   const [floorPlans, setFloorPlans] = useState<Record<string, string>>({});
+
+  // สำหรับจับเวลา Double Tap ของแม่บ้านบนหน้ากระดานหลัก
+  const lastTapRef = useRef<{ [key: string]: number }>({});
+  const tapTimeoutRef = useRef<{ [key: string]: NodeJS.Timeout }>({});
+
+  const handleRoomClick = async (room: RoomStatus) => {
+    if (room.status === 'dirty' || room.status === 'cleaning') {
+      const now = Date.now();
+      const lastTap = lastTapRef.current[room.id] || 0;
+      const timeSinceLastTap = now - lastTap;
+      
+      lastTapRef.current[room.id] = now;
+
+      if (timeSinceLastTap < 400 && timeSinceLastTap > 0) {
+        // DOUBLE TAP
+        if (tapTimeoutRef.current[room.id]) {
+          clearTimeout(tapTimeoutRef.current[room.id]);
+        }
+        
+        if (room.status === 'cleaning') {
+          // อัปเดต UI ชั่วคราวให้เร็วขึ้น
+          setRooms(prev => prev.map(r => r.id === room.id ? { ...r, status: 'available', current_status: 'ว่าง' } : r));
+          await supabase.from('rooms').update({ status: 'available', current_status: 'ว่าง' }).eq('id', room.id);
+        }
+        lastTapRef.current[room.id] = 0;
+      } else {
+        // SINGLE TAP
+        if (tapTimeoutRef.current[room.id]) {
+          clearTimeout(tapTimeoutRef.current[room.id]);
+        }
+        
+        tapTimeoutRef.current[room.id] = setTimeout(async () => {
+          if (room.status === 'dirty') {
+            setRooms(prev => prev.map(r => r.id === room.id ? { ...r, status: 'cleaning', current_status: 'กำลังทำความสะอาด' } : r));
+            await supabase.from('rooms').update({ status: 'cleaning', current_status: 'กำลังทำความสะอาด' }).eq('id', room.id);
+          } else if (room.status === 'cleaning') {
+            setRooms(prev => prev.map(r => r.id === room.id ? { ...r, status: 'dirty', current_status: 'รอทำความสะอาด' } : r));
+            await supabase.from('rooms').update({ status: 'dirty', current_status: 'รอทำความสะอาด' }).eq('id', room.id);
+          }
+        }, 400);
+      }
+    } else {
+      // สำหรับห้องสถานะอื่นๆ ให้เปิด Modal ปกติ
+      setSelectedRoom(room);
+    }
+  };
 
   // 0 = Today, -1 = Yesterday, 1 = Tomorrow
   const [dateOffset, setDateOffset] = useState<number>(0);
@@ -515,7 +561,7 @@ export default function CheckinPage() {
                     return (
                       <button
                         key={room.id}
-                        onClick={() => setSelectedRoom(room)}
+                        onClick={() => handleRoomClick(room)}
                         className={`relative aspect-[4/3] flex items-center justify-center rounded-xl border-2 transition-all active:scale-95 group overflow-hidden ${statusClass}`}
                       >
                         {/* Left Section (Details) */}
