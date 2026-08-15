@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Navbar from "./components/Navbar";
 import { SimulatedTimeProvider } from "@/contexts/SimulatedTimeContext";
+import { ShiftProvider } from "@/contexts/ShiftContext";
 import TimeSimulatorOverlay from "./components/TimeSimulatorOverlay";
 
 const geistSans = Geist({
@@ -29,15 +30,17 @@ export default function RootLayout({
     <html lang="th" className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
       <body className="flex flex-col min-h-screen">
         <SimulatedTimeProvider>
-          {/* Top Navbar - รองรับมือถือแล้ว */}
-          <Navbar />
+          <ShiftProvider>
+            {/* Top Navbar - รองรับมือถือแล้ว */}
+            <Navbar />
 
-          {/* Main Content */}
-          <main className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
-            {children}
-          </main>
-          
-          <TimeSimulatorOverlay />
+            {/* Main Content */}
+            <main className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+              {children}
+            </main>
+            
+            <TimeSimulatorOverlay />
+          </ShiftProvider>
         </SimulatedTimeProvider>
       </body>
     </html>

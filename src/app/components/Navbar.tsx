@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import ShiftManager from "./ShiftManager";
 
 const navLinks = [
   { href: "/", label: "Dashboard" },
@@ -55,6 +56,10 @@ export default function Navbar() {
               );
             })}
           </nav>
+          
+          <div className="hidden md:flex items-center ml-auto">
+            <ShiftManager />
+          </div>
 
           {/* Mobile Menu Button */}
           <div className="md:hidden flex items-center">
