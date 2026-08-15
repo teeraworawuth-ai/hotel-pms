@@ -1,9 +1,9 @@
-﻿"use client";
+"use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 
-export type Shift = {
+export interface Shift {
   id: string;
   staff_id: string;
   staff_name: string;
@@ -15,7 +15,7 @@ export type Shift = {
   discrepancy: number | null;
   status: 'open' | 'closed';
   signature_data: string | null;
-};
+}
 
 type ShiftContextType = {
   activeShift: Shift | null;

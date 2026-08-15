@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
@@ -144,10 +144,13 @@ export default function HousekeepingPage() {
                     <button
                       key={room.id}
                       onClick={() => handleTap(room)}
-                      className={
+                      className={`
                         relative w-full aspect-square flex flex-col items-center justify-center rounded-2xl border-4 transition-all active:scale-95 select-none
-                        
-                      }
+                        ${room.status === 'dirty' 
+                          ? 'bg-orange-50 border-orange-400 text-orange-700 shadow-md' 
+                          : 'bg-yellow-100 border-yellow-400 text-yellow-800 shadow-md animate-pulse'
+                        }
+                      `}
                     >
                       <span className="text-4xl font-black tracking-tighter mb-1">
                         {room.room_no}

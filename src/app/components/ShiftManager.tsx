@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useRef, useEffect } from "react";
 import { useShift } from "@/contexts/ShiftContext";
@@ -274,7 +274,7 @@ export default function ShiftManager() {
                     className="w-full text-2xl text-center font-bold text-blue-600 p-3 rounded-xl border border-blue-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none bg-blue-50"
                   />
                   {finalCash !== 0 && finalCash !== activeShift.expected_cash && (
-                    <p className={	ext-xs mt-1 font-bold }>
+                    <p className={`text-xs mt-1 font-bold ${finalCash > activeShift.expected_cash ? 'text-emerald-600' : 'text-red-500'}`}>
                       {finalCash > activeShift.expected_cash ? 'ยอดเงินเกิน' : 'ยอดเงินขาด'}: ฿{Math.abs(finalCash - activeShift.expected_cash).toLocaleString()}
                     </p>
                   )}
