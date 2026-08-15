@@ -962,17 +962,35 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
             </div>
           )}
 
-          {/* 3. ห้องรอทำความสะอาด (มีเฉพาะวันนี้) */}
-          {room.status === 'dirty' && dateOffset === 0 && (
+          {/* 3. ห้องรอทำความสะอาด / กำลังทำความสะอาด (เฉพาะวันนี้) */}
+          {(room.status === 'dirty' || room.status === 'cleaning') && dateOffset === 0 && (
             <div className="text-center py-4">
               <div className="text-5xl mb-4 animate-bounce">🧹</div>
-              <h3 className="text-lg font-bold text-slate-700 mb-6">ห้องนี้กำลังรอทำความสะอาด</h3>
-              <button 
-                onClick={handleClean} disabled={loading}
-                className="w-full py-4 text-white font-bold rounded-xl text-lg bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20 shadow-lg transition-all active:scale-95"
-              >
-                {loading ? 'กำลังบันทึก...' : '✨ ทำความสะอาดเรียบร้อย'}
-              </button>
+              <h3 className="text-lg font-bold text-slate-700 mb-6">
+                {room.status === 'dirty' ? 'ห้องนี้กำลังรอทำความสะอาด' : 'กำลังทำความสะอาด...'}
+              </h3>
+              
+              {room.status === 'dirty' ? (
+                <button 
+                  onClick={async () => {
+                    setLoading(true);
+                    await supabase.from('rooms').update({ status: 'cleaning', current_status: 'กำลังทำความสะอาด' }).eq('id', room.id);
+                    setLoading(false);
+                    onUpdate();
+                  }}
+                  disabled={loading}
+                  className="w-full py-4 text-white font-bold rounded-xl text-lg bg-yellow-500 hover:bg-yellow-600 shadow-yellow-500/20 shadow-lg transition-all active:scale-95 mb-3"
+                >
+                  {loading ? 'กำลังบันทึก...' : '▶️ เริ่มทำความสะอาด'}
+                </button>
+              ) : (
+                <button 
+                  onClick={handleClean} disabled={loading}
+                  className="w-full py-4 text-white font-bold rounded-xl text-lg bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20 shadow-lg transition-all active:scale-95"
+                >
+                  {loading ? 'กำลังบันทึก...' : '✅ ทำความสะอาดเรียบร้อย'}
+                </button>
+              )}
             </div>
           )}
 
