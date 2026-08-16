@@ -21,6 +21,10 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   
   const [payAmount, setPayAmount] = useState<number | ''>('');
   const [payMethod, setPayMethod] = useState<'cash' | 'transfer' | 'credit_card'>('cash');
+  
+  // Custom POS states
+  const [customItemName, setCustomItemName] = useState('');
+  const [customItemPrice, setCustomItemPrice] = useState<number | ''>('');
 
   useEffect(() => {
     fetchData();
@@ -60,6 +64,29 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     });
     
     if (!error) fetchData();
+  };
+
+  const handleAddCustomPos = async () => {
+    if (!activeShift) { alert('กรุณาเปิดกะก่อนทำรายการ'); return; }
+    if (!customItemName.trim() || !customItemPrice || Number(customItemPrice) <= 0) return;
+    
+    setLoading(true);
+    const { error } = await supabase.from('ledger_transactions').insert({
+      shift_id: activeShift.id,
+      staff_name: activeShift.staff_name,
+      room_id: roomId,
+      booking_id: bookingId,
+      transaction_type: 'revenue',
+      category: customItemName.trim(),
+      amount: Number(customItemPrice)
+    });
+    
+    if (!error) {
+      setCustomItemName('');
+      setCustomItemPrice('');
+      fetchData();
+    }
+    setLoading(false);
   };
 
   const handlePayment = async () => {
@@ -144,6 +171,34 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                     <span className="text-blue-600 font-bold text-xs">+{item.default_price}</span>
                   </button>
                 ))}
+              </div>
+              
+              {/* Custom Item Entry */}
+              <div className="border-t border-slate-100 pt-3">
+                <label className="block text-xs font-bold text-slate-500 mb-1">คีย์รายการรายได้อื่นๆ (พิมพ์เอง)</label>
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    placeholder="ชื่อรายการ..." 
+                    value={customItemName}
+                    onChange={e => setCustomItemName(e.target.value)}
+                    className="flex-[2] border-2 border-slate-200 rounded-lg p-2 text-sm focus:border-blue-500 outline-none"
+                  />
+                  <input 
+                    type="number" 
+                    placeholder="ราคา" 
+                    value={customItemPrice}
+                    onChange={e => setCustomItemPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="flex-1 border-2 border-slate-200 rounded-lg p-2 text-sm focus:border-blue-500 outline-none"
+                  />
+                  <button 
+                    onClick={handleAddCustomPos}
+                    disabled={!customItemName.trim() || !customItemPrice || loading}
+                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-bold px-3 rounded-lg text-sm shadow-sm transition-colors"
+                  >
+                    เพิ่ม
+                  </button>
+                </div>
               </div>
             </div>
 
