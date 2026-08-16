@@ -130,6 +130,61 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     calculateDynamicPrice();
   }, [activeTab, room.price_night, room.price_temp, room.status, getNow]);
 
+  const [currentLateFee, setCurrentLateFee] = useState<number>(0);
+  const [lateCheckoutApplied, setLateCheckoutApplied] = useState(false);
+
+  useEffect(() => {
+    async function checkAndApplyLateFee() {
+      if (room.status !== 'occupied' || !room.check_out_time || !room.booking_id || !activeShift) return;
+      
+      const coTime = new Date(room.check_out_time).getTime();
+      const nowTime = getNow().getTime();
+      if (nowTime <= coTime) return; // Not late
+      
+      const overdueMinutes = (nowTime - coTime) / (1000 * 60);
+      const hoursLate = Math.min(3, Math.ceil(overdueMinutes / 60));
+      
+      const type = (room.room_type || '').toLowerCase();
+      let baseHour1 = 150, addHour = 100; // Single
+      if (type.includes('บ้าน')) { baseHour1 = 400; addHour = 300; }
+      else if (type.includes('คู่')) { baseHour1 = 250; addHour = 200; }
+
+      let expectedFee = 0;
+      if (hoursLate === 1) expectedFee = baseHour1;
+      else if (hoursLate === 2) expectedFee = baseHour1 + addHour;
+      else if (hoursLate >= 3) expectedFee = baseHour1 + (addHour * 2);
+
+      setCurrentLateFee(expectedFee);
+
+      // Check ledger
+      const { data: ledgers } = await supabase
+        .from('ledger_transactions')
+        .select('id, amount')
+        .eq('booking_id', room.booking_id)
+        .eq('category', 'ค่าปรับออกช้า');
+        
+      const currentAppliedFee = ledgers?.reduce((sum, tx) => sum + Number(tx.amount), 0) || 0;
+
+      if (currentAppliedFee !== expectedFee) {
+        if (ledgers && ledgers.length > 0) {
+           await supabase.from('ledger_transactions').update({ amount: expectedFee }).eq('id', ledgers[0].id);
+        } else {
+           await supabase.from('ledger_transactions').insert({
+             shift_id: activeShift.id,
+             staff_name: activeShift.staff_name,
+             room_id: room.id,
+             booking_id: room.booking_id,
+             transaction_type: 'revenue',
+             category: 'ค่าปรับออกช้า',
+             amount: expectedFee
+           });
+        }
+        setLateCheckoutApplied(prev => !prev); // trigger re-render if needed
+      }
+    }
+    checkAndApplyLateFee();
+  }, [room.status, room.check_out_time, room.booking_id, activeShift]);
+
   const displayDate = getNow();
   displayDate.setDate(displayDate.getDate() + dateOffset);
 
@@ -562,12 +617,35 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   };
 
   const handleExtend = async (type: 'nights' | 'hours') => {
-    if (!room.check_out_time) return;
+    if (!room.check_out_time || !activeShift || !room.booking_id) return;
     setLoading(true);
     
     const currentCheckout = new Date(room.check_out_time);
+    const nNights = Number(extendNights) || 1;
+    
     if (type === 'nights') {
-      currentCheckout.setDate(currentCheckout.getDate() + (Number(extendNights) || 1));
+      currentCheckout.setDate(currentCheckout.getDate() + nNights);
+      
+      // 1. Void (ตั้งราคาเป็น 0) รายการ "ค่าปรับออกช้า" ทั้งหมดของ booking นี้
+      await supabase
+        .from('ledger_transactions')
+        .update({ amount: 0, category: 'ค่าปรับออกช้า (Voided)' })
+        .eq('booking_id', room.booking_id)
+        .eq('category', 'ค่าปรับออกช้า');
+        
+      // 2. ยิงบิล "ค่าห้องพัก" เพิ่มเข้าไปในระบบตามจำนวนคืนที่พักต่อ
+      await supabase
+        .from('ledger_transactions')
+        .insert({
+          shift_id: activeShift.id,
+          staff_name: activeShift.staff_name,
+          room_id: room.id,
+          booking_id: room.booking_id,
+          transaction_type: 'revenue',
+          category: `ค่าห้องพัก (พักต่อ ${nNights} คืน)`,
+          amount: (room.price_night || 0) * nNights
+        });
+        
     } else {
       currentCheckout.setHours(currentCheckout.getHours() + (Number(extendHours) || 1));
     }
@@ -960,22 +1038,41 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                   </div>
 
                   {/* ต่อเวลาเป็นชั่วโมง */}
-                  <div className="flex gap-3">
-                    <div className="flex-1 relative">
-                      <span className="absolute left-3 top-3.5 text-slate-400">⏳</span>
-                      <input 
-                        type="number" min="1" 
-                        value={extendHours} onChange={(e) => setExtendHours(e.target.value === '' ? '' : Number(e.target.value))}
-                        className="w-full border-slate-200 rounded-xl pl-9 pr-4 py-3 font-bold focus:ring-amber-500 focus:border-amber-500 bg-slate-50 placeholder-slate-300"
-                      />
-                    </div>
-                    <button 
-                      onClick={() => handleExtend('hours')} disabled={loading}
-                      className="bg-amber-100 text-amber-800 px-4 rounded-xl font-bold hover:bg-amber-200 active:scale-95 border border-amber-200"
-                    >
-                      ออกช้า (+ชม.)
-                    </button>
-                  </div>
+                  {(() => {
+                    let isForceExtend = false;
+                    if (room.status === 'occupied' && room.check_out_time) {
+                      const coTime = new Date(room.check_out_time).getTime();
+                      const nowTime = getNow().getTime();
+                      if (nowTime > coTime && (nowTime - coTime) / 60000 >= 180) {
+                        isForceExtend = true;
+                      }
+                    }
+                    if (isForceExtend) {
+                      return (
+                        <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm font-bold border border-red-200">
+                          🚫 เกินกำหนดเวลาออกช้า 3 ชม. แล้ว ลูกค้าต้องเปลี่ยนเป็นพักต่อ 1 คืนเท่านั้น
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="flex gap-3">
+                        <div className="flex-1 relative">
+                          <span className="absolute left-3 top-3.5 text-slate-400">⏳</span>
+                          <input 
+                            type="number" min="1" 
+                            value={extendHours} onChange={(e) => setExtendHours(e.target.value === '' ? '' : Number(e.target.value))}
+                            className="w-full border-slate-200 rounded-xl pl-9 pr-4 py-3 font-bold focus:ring-amber-500 focus:border-amber-500 bg-slate-50 placeholder-slate-300"
+                          />
+                        </div>
+                        <button 
+                          onClick={() => handleExtend('hours')} disabled={loading}
+                          className="bg-amber-100 text-amber-800 px-4 rounded-xl font-bold hover:bg-amber-200 active:scale-95 border border-amber-200"
+                        >
+                          ออกช้า (+ชม.)
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </>
               )}
 
