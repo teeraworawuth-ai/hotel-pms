@@ -49,7 +49,28 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
     if (error || !data) {
       setActiveShift(null);
     } else {
-      setActiveShift(data as Shift);
+      const shiftData = data as Shift;
+      
+      // คำนวณยอดเงินสดจาก Ledger
+      const { data: ledgers } = await supabase
+        .from('ledger_transactions')
+        .select('amount')
+        .eq('shift_id', shiftData.id)
+        .eq('category', 'cash');
+        
+      let cashReceived = 0;
+      if (ledgers) {
+        // ในระบบบัญชี (Guest Ledger) การรับชำระเงินถูกบันทึกเป็นค่าลบ (-) เพื่อหักล้างหนี้
+        // ดังนั้นต้องใช้ Math.abs เพื่อเอามูลค่าเงินสดที่รับเข้ามาจริงๆ มาบวกเข้าลิ้นชัก
+        cashReceived = ledgers.reduce((acc, curr) => acc + Math.abs(Number(curr.amount)), 0);
+      }
+      
+      shiftData.expected_cash = shiftData.initial_cash + cashReceived;
+      
+      // อัปเดตตาราง shifts ด้วยเพื่อความแน่ใจ
+      supabase.from('shifts').update({ expected_cash: shiftData.expected_cash }).eq('id', shiftData.id).then();
+      
+      setActiveShift(shiftData);
     }
     setLoading(false);
   };

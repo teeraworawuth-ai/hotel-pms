@@ -98,16 +98,22 @@ export default function Navbar() {
                   key={link.href}
                   href={link.href}
                   onClick={() => setIsOpen(false)}
-                  className={`px-4 py-3 rounded-lg font-medium text-base transition-colors ${
+                  className={`block px-3 py-2 rounded-md font-medium text-base ${
                     isActive
-                      ? "bg-blue-50 text-blue-600 font-semibold"
-                      : "text-slate-600 hover:bg-slate-50 hover:text-blue-600"
+                      ? "text-blue-600 bg-blue-50"
+                      : "text-slate-600 hover:text-blue-600 hover:bg-slate-50"
                   }`}
                 >
                   {link.label}
                 </Link>
               );
             })}
+            
+            <div className="pt-4 pb-2 border-t border-slate-200 mt-2">
+              <div className="px-3">
+                <ShiftManager />
+              </div>
+            </div>
           </nav>
         </div>
       )}

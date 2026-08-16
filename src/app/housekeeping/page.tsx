@@ -99,7 +99,7 @@ export default function HousekeepingPage() {
         if (room.status === 'dirty') {
           const location = room.location;
           const concurrentCount = rooms.filter(r => r.location === location && r.status === 'cleaning').length;
-          if (concurrentCount >= 2) {
+          if (concurrentCount >= 3) {
             alert(`พื้นที่ ${location || 'โซนนี้'} มีแม่บ้านกำลังทำความสะอาดครบ 2 ห้องแล้ว (โปรดกดเสร็จสิ้นห้องที่ทำเสร็จก่อน)`);
             return;
           }
