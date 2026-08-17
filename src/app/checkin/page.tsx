@@ -706,7 +706,7 @@ export default function CheckinPage() {
                                 <span>{room.room_no}</span>
                                 <div className="flex items-center text-[13px] leading-none">
                                   {isDouble ? (
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-[15px] h-[15px] mr-0.5 text-slate-700 opacity-70">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-[19px] h-[19px] mr-0.5 text-slate-700 opacity-70">
                                       <path fillRule="evenodd" d="M3 6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6zm2 2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V8zm10-2a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v13a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1V6zm2 2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1V8z" clipRule="evenodd" />
                                     </svg>
                                   ) : isHouse ? (
