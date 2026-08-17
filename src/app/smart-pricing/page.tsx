@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type RoomTypePrice = {
+  is_specific_room?: boolean;
+  room_id?: string;
+  room_no?: string;
   room_type: string;
   price_night: number;
   price_temp: number;
@@ -46,28 +49,43 @@ export default function SmartPricingPage() {
     // 1. Fetch rooms to group by type
     const { data: roomsData, error: roomsError } = await supabase
       .from("rooms")
-      .select("room_type, price_night, price_temp");
+      .select("id, room_no, room_type, price_night, price_temp");
       
     if (roomsError) {
       console.error("Error fetching rooms:", roomsError);
     } else if (roomsData) {
       const typeMap = new Map<string, RoomTypePrice>();
+      const specificRooms: RoomTypePrice[] = [];
       
       roomsData.forEach(room => {
         const type = room.room_type || "ไม่ระบุ";
-        if (typeMap.has(type)) {
-          typeMap.get(type)!.count += 1;
-        } else {
-          typeMap.set(type, {
-            room_type: type,
+        
+        if (type.includes("พิเศษ")) {
+          specificRooms.push({
+            is_specific_room: true,
+            room_id: room.id,
+            room_no: room.room_no,
+            room_type: type.replace(",พิเศษ", ""),
             price_night: room.price_night || 0,
             price_temp: room.price_temp || 0,
             count: 1
           });
+        } else {
+          if (typeMap.has(type)) {
+            typeMap.get(type)!.count += 1;
+          } else {
+            typeMap.set(type, {
+              is_specific_room: false,
+              room_type: type,
+              price_night: room.price_night || 0,
+              price_temp: room.price_temp || 0,
+              count: 1
+            });
+          }
         }
       });
       
-      setRoomTypes(Array.from(typeMap.values()));
+      setRoomTypes([...Array.from(typeMap.values()), ...specificRooms]);
     }
 
     // 2. Fetch Pricing Rules
@@ -92,18 +110,36 @@ export default function SmartPricingPage() {
 
   const saveBasePrices = async (type: RoomTypePrice) => {
     setSaving(true);
-    const { error } = await supabase
-      .from("rooms")
-      .update({
-        price_night: type.price_night,
-        price_temp: type.price_temp
-      })
-      .eq("room_type", type.room_type);
+    let error;
+
+    if (type.is_specific_room && type.room_id) {
+       const res = await supabase
+         .from("rooms")
+         .update({
+           price_night: type.price_night,
+           price_temp: type.price_temp
+         })
+         .eq("id", type.room_id);
+       error = res.error;
+    } else {
+       const res = await supabase
+         .from("rooms")
+         .update({
+           price_night: type.price_night,
+           price_temp: type.price_temp
+         })
+         .eq("room_type", type.room_type);
+       error = res.error;
+    }
       
     if (error) {
       alert("Error saving prices: " + error.message);
     } else {
-      alert(`บันทึกราคาสำหรับห้องพักประเภท "${type.room_type}" เรียบร้อยแล้ว`);
+      if (type.is_specific_room) {
+        alert(`บันทึกราคาสำหรับห้อง ${type.room_no} เรียบร้อยแล้ว`);
+      } else {
+        alert(`บันทึกราคาสำหรับห้องพักประเภท "${type.room_type}" เรียบร้อยแล้ว`);
+      }
     }
     setSaving(false);
   };
@@ -160,10 +196,18 @@ export default function SmartPricingPage() {
 
           <div className="space-y-4">
             {roomTypes.map((type, idx) => (
-              <div key={type.room_type} className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-col gap-4">
+              <div key={type.is_specific_room ? type.room_id : type.room_type} className={`p-4 rounded-2xl border ${type.is_specific_room ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-200'} flex flex-col gap-4`}>
                 <div className="flex justify-between items-center">
-                  <h3 className="font-black text-slate-700 text-lg">{type.room_type}</h3>
-                  <span className="text-xs font-bold text-slate-400 bg-white px-2 py-1 rounded border border-slate-200">{type.count} ห้อง</span>
+                  <h3 className={`font-black text-lg flex items-center gap-2 ${type.is_specific_room ? 'text-rose-700' : 'text-slate-700'}`}>
+                    {type.is_specific_room ? (
+                      <><span>⭐</span> ห้อง {type.room_no} <span className="text-sm font-medium opacity-60">({type.room_type})</span></>
+                    ) : (
+                      type.room_type
+                    )}
+                  </h3>
+                  <span className="text-xs font-bold text-slate-400 bg-white px-2 py-1 rounded border border-slate-200">
+                    {type.is_specific_room ? 'ราคาเฉพาะห้อง' : `${type.count} ห้อง`}
+                  </span>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-4">
@@ -173,7 +217,7 @@ export default function SmartPricingPage() {
                       type="number" 
                       value={type.price_night}
                       onChange={(e) => handlePriceChange(idx, 'price_night', Number(e.target.value))}
-                      className="w-full border-slate-300 rounded-xl px-3 py-2 text-sm font-bold focus:ring-blue-500 focus:border-blue-500"
+                      className={`w-full ${type.is_specific_room ? 'border-rose-300' : 'border-slate-300'} rounded-xl px-3 py-2 text-sm font-bold focus:ring-blue-500 focus:border-blue-500`}
                     />
                   </div>
                   <div>
@@ -182,7 +226,7 @@ export default function SmartPricingPage() {
                       type="number" 
                       value={type.price_temp}
                       onChange={(e) => handlePriceChange(idx, 'price_temp', Number(e.target.value))}
-                      className="w-full border-slate-300 rounded-xl px-3 py-2 text-sm font-bold focus:ring-blue-500 focus:border-blue-500"
+                      className={`w-full ${type.is_specific_room ? 'border-rose-300' : 'border-slate-300'} rounded-xl px-3 py-2 text-sm font-bold focus:ring-blue-500 focus:border-blue-500`}
                     />
                   </div>
                 </div>
