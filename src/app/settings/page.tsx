@@ -392,19 +392,19 @@ export default function SettingsPage() {
                 
                 {(() => {
                   const baseType = formData.room_type.includes('บ้าน') ? 'บ้าน' : formData.room_type.includes('คู่') ? 'คู่' : 'เดี่ยว';
-                  const addon = formData.room_type.includes('ระเบียง') ? 'ระเบียง' : formData.room_type.includes('หน้าต่าง') ? 'หน้าต่าง' : 'none';
+                  const addon = formData.room_type.includes('ระเบียงทะเล') ? 'ระเบียงทะเล' : formData.room_type.includes('ระเบียง') ? 'ระเบียง' : formData.room_type.includes('หน้าต่าง') ? 'หน้าต่าง' : 'none';
                   const isSpecial = formData.room_type.includes('พิเศษ');
 
                   const updateRoomType = (newBase: string, newAddon: string, newSpecial: boolean) => {
                     let rt = newBase;
-                    if (newAddon !== 'none') rt += `,${newAddon}`;
+                    if (newBase !== 'บ้าน' && newAddon !== 'none') rt += `,${newAddon}`;
                     if (newSpecial) rt += `,พิเศษ`;
                     setFormData({...formData, room_type: rt});
                   };
 
                   return (
                     <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className={`grid ${baseType === 'บ้าน' ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
                         <div>
                           <label className="block text-xs font-semibold text-slate-500 mb-1">ประเภทห้อง (Base) *</label>
                           <select
@@ -417,17 +417,20 @@ export default function SettingsPage() {
                             <option value="บ้าน">บ้าน</option>
                           </select>
                         </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-500 mb-1">ตัวเลือกเสริม (Add-on)</label>
-                          <select
-                            value={addon} onChange={e => updateRoomType(baseType, e.target.value, isSpecial)}
-                            className="w-full p-2.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none"
-                          >
-                            <option value="none">ไม่มี</option>
-                            <option value="หน้าต่าง">มีหน้าต่าง</option>
-                            <option value="ระเบียง">มีระเบียง</option>
-                          </select>
-                        </div>
+                        {baseType !== 'บ้าน' && (
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-500 mb-1">ตัวเลือกเสริม (Add-on)</label>
+                            <select
+                              value={addon} onChange={e => updateRoomType(baseType, e.target.value, isSpecial)}
+                              className="w-full p-2.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none"
+                            >
+                              <option value="none">ไม่มี</option>
+                              <option value="หน้าต่าง">มีหน้าต่าง (🪟)</option>
+                              <option value="ระเบียง">มีระเบียง</option>
+                              <option value="ระเบียงทะเล">ระเบียงทะเล (⛱️)</option>
+                            </select>
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-2 mt-2 pt-4 border-t border-slate-200/60">
@@ -439,7 +442,7 @@ export default function SettingsPage() {
                           className="w-4 h-4 text-rose-600 bg-white border-slate-300 rounded focus:ring-rose-500 cursor-pointer"
                         />
                         <label htmlFor="is_special" className="text-sm font-semibold text-rose-600 cursor-pointer select-none">
-                          ลดราคาพิเศษเฉพาะห้องนี้ (Special Discount)
+                          ตั้งราคาเฉพาะเจาะจง (ล็อกราคาแยกต่างหาก ไม่ใช้ราคาอิงกลุ่ม)
                         </label>
                       </div>
                     </div>

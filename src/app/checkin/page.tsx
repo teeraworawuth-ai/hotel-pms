@@ -697,7 +697,8 @@ export default function CheckinPage() {
 
                             const isDouble = room.room_type?.includes('คู่');
                             const isHouse = room.room_type?.includes('บ้าน');
-                            const isBalcony = room.room_type?.includes('ระเบียง');
+                            const isSeaBalcony = room.room_type?.includes('ระเบียงทะเล');
+                            const isBalcony = !isSeaBalcony && room.room_type?.includes('ระเบียง');
                             const isWindow = room.room_type?.includes('หน้าต่าง');
 
                             return (
@@ -709,7 +710,8 @@ export default function CheckinPage() {
                                   ) : isHouse ? (
                                     <span className="mr-0.5 text-slate-700 grayscale">🏠</span>
                                   ) : null}
-                                  {isBalcony && <span className="mr-0.5 text-slate-700 grayscale">🪴</span>}
+                                  {isSeaBalcony && <span className="mr-0.5 text-slate-700 grayscale">⛱️</span>}
+                                  {isBalcony && <img src="/balcony.png" className="w-[13px] h-[13px] mr-0.5 object-contain mix-blend-multiply opacity-70" alt="ระเบียง" />}
                                   {isWindow && <span className="mr-0.5 text-slate-700 grayscale">🪟</span>}
                                 </div>
 
