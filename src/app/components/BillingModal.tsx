@@ -106,8 +106,15 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     
     if (!error) {
       setPayAmount('');
-      await fetchData();
+      const currentBalance = balance - Number(payAmount);
       refreshShift(); // อัปเดตลิ้นชักเงินสด
+      
+      if (currentBalance <= 0) {
+        onSuccess();
+        return; // Exit early to prevent state updates on unmounted component
+      } else {
+        await fetchData();
+      }
     }
     setLoading(false);
   };

@@ -1173,7 +1173,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           roomId={room.id}
           roomNo={room.room_no}
           bookingId={room.booking_id}
-          onClose={() => setShowBilling(false)}
+          onClose={() => { setShowBilling(false); onUpdate(); }}
           onSuccess={() => { setShowBilling(false); onUpdate(); }}
         />
       )}
