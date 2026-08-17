@@ -42,7 +42,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     setLoading(false);
   };
 
-  const balance = transactions.reduce((acc, tx) => acc + Number(tx.amount), 0);
+  const balance = transactions.reduce((acc, tx) => acc + (tx.category.includes('Voided') ? 0 : Number(tx.amount)), 0);
 
   useEffect(() => {
     if (balance > 0 && payAmount === '') {
@@ -133,17 +133,20 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                 ) : transactions.length === 0 ? (
                   <p className="text-center text-slate-400 py-10">ไม่มีรายการค้างชำระ</p>
                 ) : (
-                  transactions.map(tx => (
-                    <div key={tx.id} className="flex justify-between items-center p-2 hover:bg-slate-50 rounded-lg text-sm border-b border-slate-50 last:border-0">
-                      <div>
-                        <p className="font-bold text-slate-700">{tx.category === 'room_charge' ? 'ค่าห้องพัก' : tx.category}</p>
-                        <p className="text-[10px] text-slate-400">{new Date(tx.created_at).toLocaleTimeString('th-TH')} ({tx.staff_name})</p>
+                  transactions.map(tx => {
+                    const isVoid = tx.category.includes('Voided');
+                    return (
+                      <div key={tx.id} className="flex justify-between items-center p-2 hover:bg-slate-50 rounded-lg text-sm border-b border-slate-50 last:border-0">
+                        <div className={isVoid ? 'line-through text-slate-400 opacity-60' : ''}>
+                          <p className="font-bold text-slate-700">{tx.category === 'room_charge' ? 'ค่าห้องพัก' : tx.category}</p>
+                          <p className="text-[10px] text-slate-400">{new Date(tx.created_at).toLocaleTimeString('th-TH')} ({tx.staff_name})</p>
+                        </div>
+                        <div className={`font-black ${isVoid ? 'line-through text-slate-400 opacity-60' : tx.amount < 0 ? 'text-emerald-600' : 'text-slate-800'}`}>
+                          {tx.amount < 0 ? '' : '+'}{Number(tx.amount).toLocaleString()}
+                        </div>
                       </div>
-                      <div className={`font-black ${tx.amount < 0 ? 'text-emerald-600' : 'text-slate-800'}`}>
-                        {tx.amount < 0 ? '' : '+'}{Number(tx.amount).toLocaleString()}
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
               

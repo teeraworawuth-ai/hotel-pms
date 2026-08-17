@@ -148,8 +148,8 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
          const newCheckout = new Date(coTime);
          newCheckout.setDate(newCheckout.getDate() + 1);
 
-         // 1. Void ค่าปรับออกช้า
-         await supabase.from('ledger_transactions').update({ amount: 0, category: 'ค่าปรับออกช้า (Voided)' }).eq('booking_id', room.booking_id).eq('category', 'ค่าปรับออกช้า');
+         // 1. Void ค่าปรับออกช้า (คง amount เดิมไว้ แต่เปลี่ยน category)
+         await supabase.from('ledger_transactions').update({ category: 'ค่าปรับออกช้า (Voided)' }).eq('booking_id', room.booking_id).eq('category', 'ค่าปรับออกช้า');
          
          // 2. ยิงค่าห้องพักบังคับพักต่อ
          await supabase.from('ledger_transactions').insert({
@@ -664,10 +664,10 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     if (type === 'nights') {
       currentCheckout.setDate(currentCheckout.getDate() + nNights);
       
-      // 1. Void (ตั้งราคาเป็น 0) รายการ "ค่าปรับออกช้า" ทั้งหมดของ booking นี้
+      // 1. Void รายการ "ค่าปรับออกช้า" ทั้งหมดของ booking นี้ (คง amount เดิมไว้)
       await supabase
         .from('ledger_transactions')
-        .update({ amount: 0, category: 'ค่าปรับออกช้า (Voided)' })
+        .update({ category: 'ค่าปรับออกช้า (Voided)' })
         .eq('booking_id', room.booking_id)
         .eq('category', 'ค่าปรับออกช้า');
         
