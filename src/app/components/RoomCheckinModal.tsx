@@ -142,7 +142,45 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       if (nowTime <= coTime) return; // Not late
       
       const overdueMinutes = (nowTime - coTime) / (1000 * 60);
-      const hoursLate = Math.min(3, Math.ceil(overdueMinutes / 60));
+
+      // ถ้าเกิน 225 นาที (15:45) บังคับพักต่ออัตโนมัติ
+      if (overdueMinutes >= 225) {
+         const newCheckout = new Date(coTime);
+         newCheckout.setDate(newCheckout.getDate() + 1);
+
+         // 1. Void ค่าปรับออกช้า
+         await supabase.from('ledger_transactions').update({ amount: 0, category: 'ค่าปรับออกช้า (Voided)' }).eq('booking_id', room.booking_id).eq('category', 'ค่าปรับออกช้า');
+         
+         // 2. ยิงค่าห้องพักบังคับพักต่อ
+         await supabase.from('ledger_transactions').insert({
+            shift_id: activeShift.id,
+            staff_name: activeShift.staff_name,
+            room_id: room.id,
+            booking_id: room.booking_id,
+            transaction_type: 'revenue',
+            category: 'ค่าห้องพัก (บังคับพักต่อ)',
+            amount: room.price_night || 0
+         });
+
+         // 3. อัปเดตเวลาออก
+         if (dateOffset === 0) {
+           await supabase.from('rooms').update({ check_out_time: newCheckout.toISOString(), stay_type: 'overnight' }).eq('id', room.id);
+         }
+         await supabase.from('bookings').update({ check_out_time: newCheckout.toISOString() }).eq('room_id', room.id).eq('id', room.booking_id);
+         
+         onUpdate();
+         return; 
+      }
+
+      // 12:00 ถึง 12:44 (ผ่อนผัน 44 นาที) ยังไม่มีค่าปรับ
+      if (overdueMinutes < 45) {
+         setCurrentLateFee(0);
+         return;
+      }
+      
+      let hoursLate = 1; // 12:45 - 13:44
+      if (overdueMinutes >= 165) hoursLate = 3; // 14:45 - 15:44
+      else if (overdueMinutes >= 105) hoursLate = 2; // 13:45 - 14:44
       
       const type = (room.room_type || '').toLowerCase();
       let baseHour1 = 150, addHour = 100; // Single
@@ -179,7 +217,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
              amount: expectedFee
            });
         }
-        setLateCheckoutApplied(prev => !prev); // trigger re-render if needed
+        setLateCheckoutApplied(prev => !prev);
       }
     }
     checkAndApplyLateFee();
@@ -1043,14 +1081,14 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     if (room.status === 'occupied' && room.check_out_time) {
                       const coTime = new Date(room.check_out_time).getTime();
                       const nowTime = getNow().getTime();
-                      if (nowTime > coTime && (nowTime - coTime) / 60000 >= 180) {
+                      if (nowTime > coTime && (nowTime - coTime) / 60000 >= 225) {
                         isForceExtend = true;
                       }
                     }
                     if (isForceExtend) {
                       return (
                         <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm font-bold border border-red-200">
-                          🚫 เกินกำหนดเวลาออกช้า 3 ชม. แล้ว ลูกค้าต้องเปลี่ยนเป็นพักต่อ 1 คืนเท่านั้น
+                          🚫 เกินกำหนดเวลา 15:45 น. (บังคับพักต่ออัตโนมัติแล้ว)
                         </div>
                       );
                     }
