@@ -388,32 +388,63 @@ export default function SettingsPage() {
                       placeholder="เช่น ซอย 1, ตึก A"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">ประเภทห้อง *</label>
-                    <select
-                      required
-                      value={formData.room_type} onChange={e => setFormData({...formData, room_type: e.target.value})}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none"
-                    >
-                      <option value="เดี่ยว">เดี่ยว</option>
-                      <option value="คู่">คู่</option>
-                      <option value="บ้าน">บ้าน</option>
-                    </select>
-                  </div>
                 </div>
+                
+                {(() => {
+                  const baseType = formData.room_type.includes('บ้าน') ? 'บ้าน' : formData.room_type.includes('คู่') ? 'คู่' : 'เดี่ยว';
+                  const addon = formData.room_type.includes('ระเบียง') ? 'ระเบียง' : formData.room_type.includes('หน้าต่าง') ? 'หน้าต่าง' : 'none';
+                  const isSpecial = formData.room_type.includes('พิเศษ');
 
-                <div className="flex items-center gap-2 mb-6 mt-2">
-                  <input 
-                    type="checkbox" 
-                    id="has_balcony"
-                    checked={formData.has_balcony}
-                    onChange={e => setFormData({...formData, has_balcony: e.target.checked})}
-                    className="w-4 h-4 text-blue-600 bg-slate-50 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
-                  />
-                  <label htmlFor="has_balcony" className="text-sm font-semibold text-slate-700 cursor-pointer select-none">
-                    มีระเบียง (Has Balcony)
-                  </label>
-                </div>
+                  const updateRoomType = (newBase: string, newAddon: string, newSpecial: boolean) => {
+                    let rt = newBase;
+                    if (newAddon !== 'none') rt += `,${newAddon}`;
+                    if (newSpecial) rt += `,พิเศษ`;
+                    setFormData({...formData, room_type: rt});
+                  };
+
+                  return (
+                    <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-500 mb-1">ประเภทห้อง (Base) *</label>
+                          <select
+                            required
+                            value={baseType} onChange={e => updateRoomType(e.target.value, addon, isSpecial)}
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none"
+                          >
+                            <option value="เดี่ยว">เดี่ยว</option>
+                            <option value="คู่">คู่</option>
+                            <option value="บ้าน">บ้าน</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-500 mb-1">ตัวเลือกเสริม (Add-on)</label>
+                          <select
+                            value={addon} onChange={e => updateRoomType(baseType, e.target.value, isSpecial)}
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none"
+                          >
+                            <option value="none">ไม่มี</option>
+                            <option value="หน้าต่าง">มีหน้าต่าง</option>
+                            <option value="ระเบียง">มีระเบียง</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 mt-2 pt-4 border-t border-slate-200/60">
+                        <input 
+                          type="checkbox" 
+                          id="is_special"
+                          checked={isSpecial}
+                          onChange={e => updateRoomType(baseType, addon, e.target.checked)}
+                          className="w-4 h-4 text-rose-600 bg-white border-slate-300 rounded focus:ring-rose-500 cursor-pointer"
+                        />
+                        <label htmlFor="is_special" className="text-sm font-semibold text-rose-600 cursor-pointer select-none">
+                          ลดราคาพิเศษเฉพาะห้องนี้ (Special Discount)
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="grid grid-cols-2 gap-4 mb-6">
                   <div>

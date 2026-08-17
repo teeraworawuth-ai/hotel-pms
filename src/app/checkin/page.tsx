@@ -685,9 +685,34 @@ export default function CheckinPage() {
                                 }
                               }
                             }
+                            
+                            let roomNoColor = 'text-slate-700';
+                            if (room.status === 'occupied') {
+                              if (room.unpaid_balance && room.unpaid_balance > 0) roomNoColor = 'text-rose-600';
+                              else roomNoColor = 'text-emerald-500';
+                            } else if (room.status === 'reserved') {
+                              if (room.unpaid_balance && room.unpaid_balance > 0) roomNoColor = 'text-rose-600';
+                              else roomNoColor = 'text-emerald-500';
+                            }
+
+                            const isDouble = room.room_type?.includes('คู่');
+                            const isHouse = room.room_type?.includes('บ้าน');
+                            const isBalcony = room.room_type?.includes('ระเบียง');
+                            const isWindow = room.room_type?.includes('หน้าต่าง');
+
                             return (
-                              <div className={`absolute top-0 text-lg sm:text-xl font-black text-slate-700 transition-all leading-none flex items-center justify-center`}>
+                              <div className={`absolute top-0 text-lg sm:text-xl font-black ${roomNoColor} transition-all leading-none flex items-center justify-center gap-0.5`}>
                                 <span>{room.room_no}</span>
+                                <div className="flex items-center text-[13px] leading-none">
+                                  {isDouble ? (
+                                    <div className="flex flex-col text-[10px] leading-[0.9] -space-y-[1px] mr-0.5"><span>🛏️</span><span>🛏️</span></div>
+                                  ) : isHouse ? (
+                                    <span className="mr-0.5 text-slate-700 grayscale">🏠</span>
+                                  ) : null}
+                                  {isBalcony && <span className="mr-0.5 text-slate-700 grayscale">🪴</span>}
+                                  {isWindow && <span className="mr-0.5 text-slate-700 grayscale">🪟</span>}
+                                </div>
+
                                 {isOverdue && (
                                   <span className="absolute -right-[14px] sm:-right-[18px] top-1/2 -translate-y-1/2 flex items-center justify-center">
                                     {overdueMinutes >= 195 ? (
@@ -765,21 +790,6 @@ export default function CheckinPage() {
                                       <span className="text-[8px] sm:text-[9px] text-slate-400 font-medium leading-none">{staffNameText}</span>
                                     )}
                                   </div>
-
-                                  {/* Payment Status Badge (Top Center) */}
-                                  {(room.status === 'occupied' || room.status === 'reserved') && room.unpaid_balance !== undefined && (
-                                    <div className="absolute top-1 sm:top-1.5 left-1/2 -translate-x-1/2 flex items-center justify-center z-30">
-                                      {room.unpaid_balance > 0 ? (
-                                        <span className="bg-rose-500 text-white text-[8px] sm:text-[9px] font-black px-1.5 py-[2px] rounded-full shadow-sm">
-                                          ค้าง ฿{room.unpaid_balance.toLocaleString()}
-                                        </span>
-                                      ) : room.unpaid_balance <= 0 && room.status === 'occupied' ? (
-                                        <span className="bg-emerald-500 text-white text-[8px] sm:text-[9px] font-black px-1.5 py-[2px] rounded-full shadow-sm">
-                                          ชำระแล้ว
-                                        </span>
-                                      ) : null}
-                                    </div>
-                                  )}
                                 </div>
                               );
                             })()}
