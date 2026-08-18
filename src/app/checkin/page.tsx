@@ -706,13 +706,9 @@ export default function CheckinPage() {
                                 <span>{room.room_no}</span>
                                 <div className="flex items-center text-[13px] leading-none">
                                   {isDouble ? (
-                                    <div className="flex flex-col items-center justify-center mr-1 leading-none" style={{ marginTop: '-2px' }}>
-                                      <span className="text-[8px] font-black text-slate-500 leading-none mb-[1px]">x2</span>
-                                      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-[14px] h-[14px] sm:w-[15px] sm:h-[15px] opacity-90 drop-shadow-sm">
-                                        <rect x="7.5" y="4" width="9" height="16" rx="2" fill="#94a3b8"/>
-                                        <rect x="9" y="5.5" width="6" height="3.5" rx="1" fill="#f8fafc"/>
-                                        <rect x="7.5" y="11" width="9" height="9" rx="2" fill="#475569"/>
-                                      </svg>
+                                    <div className="relative flex items-center justify-center mr-0.5">
+                                      <span className="text-[17px] sm:text-[19px] grayscale drop-shadow-sm leading-none opacity-90">🛏️</span>
+                                      <span className="absolute text-[9px] sm:text-[10px] font-black text-white drop-shadow-md" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)', marginTop: '1px' }}>2</span>
                                     </div>
                                   ) : isHouse ? (
                                     <span className="mr-0.5 text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🏠</span>
