@@ -707,12 +707,12 @@ export default function CheckinPage() {
                                 <div className="flex items-center text-[13px] leading-none">
                                   {isDouble ? (
                                     <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-[15px] h-[15px] sm:w-[17px] sm:h-[17px] mr-0.5 opacity-90 drop-shadow-sm">
-                                      <rect x="2" y="3" width="5" height="11" rx="1" fill="#94a3b8"/>
-                                      <rect x="2.5" y="4" width="4" height="2" rx="0.5" fill="#f8fafc"/>
-                                      <rect x="2" y="7" width="5" height="7" rx="1" fill="#475569"/>
-                                      <rect x="9" y="3" width="5" height="11" rx="1" fill="#94a3b8"/>
-                                      <rect x="9.5" y="4" width="4" height="2" rx="0.5" fill="#f8fafc"/>
-                                      <rect x="9" y="7" width="5" height="7" rx="1" fill="#475569"/>
+                                      <rect x="2" y="3" width="5" height="11" rx="1" fill="#cbd5e1"/>
+                                      <rect x="2.5" y="4" width="4" height="2" rx="0.5" fill="#ffffff"/>
+                                      <rect x="2" y="7" width="5" height="7" rx="1" fill="#64748b"/>
+                                      <rect x="9" y="3" width="5" height="11" rx="1" fill="#cbd5e1"/>
+                                      <rect x="9.5" y="4" width="4" height="2" rx="0.5" fill="#ffffff"/>
+                                      <rect x="9" y="7" width="5" height="7" rx="1" fill="#64748b"/>
                                     </svg>
                                   ) : isHouse ? (
                                     <span className="mr-0.5 text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🏠</span>
