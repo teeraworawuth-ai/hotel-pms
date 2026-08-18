@@ -706,18 +706,20 @@ export default function CheckinPage() {
                                 <span>{room.room_no}</span>
                                 <div className="flex items-center text-[13px] leading-none">
                                   {isDouble ? (
-                                    <div className="flex items-center mr-0.5">
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-[15px] h-[15px] text-slate-600 opacity-80">
-                                        <path fillRule="evenodd" d="M6 6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V6zm2 2a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V8z" clipRule="evenodd" />
-                                      </svg>
-                                      <span className="text-[9px] sm:text-[10px] font-black text-slate-500 ml-[1px]">x2</span>
-                                    </div>
+                                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-[18px] h-[18px] sm:w-[20px] sm:h-[20px] mr-0.5 opacity-90 drop-shadow-sm">
+                                      <rect x="2" y="4" width="9" height="16" rx="2" fill="#94a3b8"/>
+                                      <rect x="3.5" y="5.5" width="6" height="3.5" rx="1" fill="#f8fafc"/>
+                                      <rect x="2" y="11" width="9" height="9" rx="2" fill="#475569"/>
+                                      <rect x="13" y="4" width="9" height="16" rx="2" fill="#94a3b8"/>
+                                      <rect x="14.5" y="5.5" width="6" height="3.5" rx="1" fill="#f8fafc"/>
+                                      <rect x="13" y="11" width="9" height="9" rx="2" fill="#475569"/>
+                                    </svg>
                                   ) : isHouse ? (
-                                    <span className="mr-0.5 text-slate-700 grayscale text-sm">🏠</span>
+                                    <span className="mr-0.5 text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🏠</span>
                                   ) : null}
-                                  {isSeaBalcony && <span className="mr-0.5 text-slate-700 grayscale text-sm">⛱️</span>}
-                                  {isBalcony && <img src="/balcony.png" className="w-[16px] h-[16px] sm:w-[18px] sm:h-[18px] mr-0.5 object-contain mix-blend-multiply opacity-70" alt="ระเบียง" />}
-                                  {isWindow && <span className="mr-0.5 text-slate-700 grayscale text-sm">🪟</span>}
+                                  {isSeaBalcony && <span className="mr-0.5 text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">⛱️</span>}
+                                  {isBalcony && <img src="/balcony.png" className="w-[18px] h-[18px] sm:w-[20px] sm:h-[20px] mr-0.5 object-contain mix-blend-multiply opacity-80 drop-shadow-sm" alt="ระเบียง" />}
+                                  {isWindow && <span className="mr-0.5 text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🪟</span>}
                                 </div>
 
                                 {isOverdue && (
