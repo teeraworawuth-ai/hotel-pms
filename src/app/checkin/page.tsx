@@ -706,10 +706,14 @@ export default function CheckinPage() {
                                 <span>{room.room_no}</span>
                                 <div className="flex items-center text-[13px] leading-none">
                                   {isDouble ? (
-                                    <div className="relative flex items-center justify-center mr-0.5">
-                                      <span className="text-[17px] sm:text-[19px] grayscale drop-shadow-sm leading-none opacity-90">🛏️</span>
-                                      <span className="absolute text-[9px] sm:text-[10px] font-black text-slate-900 drop-shadow-sm" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)', marginTop: '1px' }}>2</span>
-                                    </div>
+                                    <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-[15px] h-[15px] sm:w-[17px] sm:h-[17px] mr-0.5 opacity-90 drop-shadow-sm">
+                                      <rect x="2" y="3" width="5" height="11" rx="1" fill="#94a3b8"/>
+                                      <rect x="2.5" y="4" width="4" height="2" rx="0.5" fill="#f8fafc"/>
+                                      <rect x="2" y="7" width="5" height="7" rx="1" fill="#475569"/>
+                                      <rect x="9" y="3" width="5" height="11" rx="1" fill="#94a3b8"/>
+                                      <rect x="9.5" y="4" width="4" height="2" rx="0.5" fill="#f8fafc"/>
+                                      <rect x="9" y="7" width="5" height="7" rx="1" fill="#475569"/>
+                                    </svg>
                                   ) : isHouse ? (
                                     <span className="mr-0.5 text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🏠</span>
                                   ) : null}
