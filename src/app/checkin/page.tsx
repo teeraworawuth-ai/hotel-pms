@@ -718,7 +718,7 @@ export default function CheckinPage() {
                                     <span className="mr-0.5 text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🏠</span>
                                   ) : null}
                                   {isSeaBalcony && <span className="mr-0.5 text-slate-700 grayscale text-[13px] sm:text-[14px] drop-shadow-sm opacity-60">⛱️</span>}
-                                  {isBalcony && <img src="/balcony.png" className="w-[20px] h-[20px] sm:w-[22px] sm:h-[22px] mr-0.5 object-contain mix-blend-multiply opacity-80" alt="ระเบียง" />}
+                                  {isBalcony && <img src="/balcony.png" className="w-[20px] h-[20px] sm:w-[22px] sm:h-[22px] mr-0.5 object-contain mix-blend-multiply opacity-80 translate-y-[1.5px]" alt="ระเบียง" />}
                                   {isWindow && <span className="mr-0.5 text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🪟</span>}
                                 </div>
 
