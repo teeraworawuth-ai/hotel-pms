@@ -708,7 +708,7 @@ export default function CheckinPage() {
                                   {isDouble ? (
                                     <div className="relative flex items-center justify-center mr-0.5">
                                       <span className="text-[17px] sm:text-[19px] grayscale drop-shadow-sm leading-none opacity-90">🛏️</span>
-                                      <span className="absolute text-[9px] sm:text-[10px] font-black text-white drop-shadow-md" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)', marginTop: '1px' }}>2</span>
+                                      <span className="absolute text-[9px] sm:text-[10px] font-black text-slate-900 drop-shadow-sm" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)', marginTop: '1px' }}>2</span>
                                     </div>
                                   ) : isHouse ? (
                                     <span className="mr-0.5 text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🏠</span>
