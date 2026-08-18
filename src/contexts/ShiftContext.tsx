@@ -50,22 +50,28 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
       setActiveShift(null);
     } else {
       const shiftData = data as Shift;
-      
-      // คำนวณยอดเงินสดจาก Ledger
-      const { data: ledgers } = await supabase
-        .from('ledger_transactions')
-        .select('amount')
-        .eq('shift_id', shiftData.id)
-        .eq('category', 'cash');
+            // คำนวณยอดเงินสดจาก Ledger
+        const { data: ledgers } = await supabase
+          .from('ledger_transactions')
+          .select('amount, category, transaction_type')
+          .eq('shift_id', shiftData.id);
+          
+        let cashReceived = 0;
+        let cashExpenses = 0;
+
+        if (ledgers) {
+          ledgers.forEach(txn => {
+            if (txn.category === 'cash' && txn.transaction_type === 'payment') {
+              // การรับชำระเงินถูกบันทึกเป็นค่าลบ (-) เพื่อหักล้างหนี้
+              cashReceived += Math.abs(Number(txn.amount));
+            } else if (txn.transaction_type === 'expense') {
+              // ค่าใช้จ่ายถูกบันทึกเป็นลบ
+              cashExpenses += Math.abs(Number(txn.amount));
+            }
+          });
+        }
         
-      let cashReceived = 0;
-      if (ledgers) {
-        // ในระบบบัญชี (Guest Ledger) การรับชำระเงินถูกบันทึกเป็นค่าลบ (-) เพื่อหักล้างหนี้
-        // ดังนั้นต้องใช้ Math.abs เพื่อเอามูลค่าเงินสดที่รับเข้ามาจริงๆ มาบวกเข้าลิ้นชัก
-        cashReceived = ledgers.reduce((acc, curr) => acc + Math.abs(Number(curr.amount)), 0);
-      }
-      
-      shiftData.expected_cash = shiftData.initial_cash + cashReceived;
+        shiftData.expected_cash = shiftData.initial_cash + cashReceived - cashExpenses;
       
       // อัปเดตตาราง shifts ด้วยเพื่อความแน่ใจ
       supabase.from('shifts').update({ expected_cash: shiftData.expected_cash }).eq('id', shiftData.id).then();

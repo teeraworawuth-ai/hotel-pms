@@ -5,9 +5,10 @@ import GuestReport from "./GuestReport";
 import AnomalyReport from "./AnomalyReport";
 import AnomalyHistory from "./AnomalyHistory";
 import OfflineSensors from "./OfflineSensors";
+import DailyReport from "./DailyReport";
 
 export default function AuditPage() {
-  const [activeTab, setActiveTab] = useState<"guest" | "anomaly" | "history" | "offline">("guest");
+  const [activeTab, setActiveTab] = useState<"daily_report" | "guest" | "anomaly" | "history" | "offline">("daily_report");
   const [dateOffset, setDateOffset] = useState<number>(0);
 
   // สร้างตัวเลือก Dropdown 15 วัน
@@ -31,6 +32,12 @@ export default function AuditPage() {
 
       {/* Tabs */}
       <div className="flex bg-white rounded-xl shadow-sm border border-slate-200 p-1 overflow-x-auto">
+        <button
+          onClick={() => setActiveTab("daily_report")}
+          className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${activeTab === "daily_report" ? "bg-purple-50 text-purple-700" : "text-slate-600 hover:bg-slate-50"}`}
+        >
+          💰 รายงานประจำวัน
+        </button>
         <button
           onClick={() => setActiveTab("guest")}
           className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${activeTab === "guest" ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-50"}`}
@@ -75,6 +82,7 @@ export default function AuditPage() {
 
       {/* Content */}
       <div className="mt-6">
+        {activeTab === "daily_report" && <DailyReport dateOffset={dateOffset} />}
         {activeTab === "guest" && <GuestReport dateOffset={dateOffset} />}
         {activeTab === "anomaly" && <AnomalyReport dateOffset={dateOffset} />}
         {activeTab === "history" && <AnomalyHistory dateOffset={dateOffset} />}

@@ -18,12 +18,20 @@ export default function ShiftManager() {
   // Close Shift State
   const [finalCash, setFinalCash] = useState(0);
   const [closePin, setClosePin] = useState("");
+  const [isCashCounted, setIsCashCounted] = useState(false);
+  const [isEndOfDay, setIsEndOfDay] = useState(false);
+  
+  // Expense State
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [expenseAmount, setExpenseAmount] = useState<number | ''>('');
+  const [expenseReason, setExpenseReason] = useState("");
+  const [expensePresets, setExpensePresets] = useState<string[]>([]);
   
   // Signature Canvas
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
-  // Initialize Canvas
+  // Initialize Canvas & Expense Presets
   useEffect(() => {
     if (showCloseModal && canvasRef.current) {
       const canvas = canvasRef.current;
@@ -35,6 +43,25 @@ export default function ShiftManager() {
       }
     }
   }, [showCloseModal]);
+
+  useEffect(() => {
+    async function loadPresets() {
+      const { data } = await supabase.from('system_settings').select('value').eq('key', 'expense_presets').maybeSingle();
+      if (data && Array.isArray(data.value)) {
+        setExpensePresets(data.value);
+      }
+    }
+    if (showExpenseModal) loadPresets();
+  }, [showExpenseModal]);
+
+  const handleRemovePreset = async (presetToRemove: string) => {
+    const newPresets = expensePresets.filter(p => p !== presetToRemove);
+    setExpensePresets(newPresets);
+    const { data: existing } = await supabase.from('system_settings').select('id').eq('key', 'expense_presets').maybeSingle();
+    if (existing) {
+      await supabase.from('system_settings').update({ value: newPresets }).eq('key', 'expense_presets');
+    }
+  };
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
     setIsDrawing(true);
@@ -160,10 +187,67 @@ export default function ShiftManager() {
       return;
     }
 
+    if (isEndOfDay) {
+      const now = new Date();
+      if (now.getHours() < 6 || (now.getHours() === 6 && now.getMinutes() < 45)) {
+        now.setDate(now.getDate() - 1);
+      }
+      const shiftDateStr = now.toISOString().split('T')[0];
+      const eodKey = `eod_shift_${shiftDateStr}`;
+
+      const { data: existing } = await supabase.from('system_settings').select('id').eq('key', eodKey).maybeSingle();
+      if (existing) {
+        await supabase.from('system_settings').update({ value: { shift_id: activeShift.id, closed_at: new Date().toISOString() } }).eq('key', eodKey);
+      } else {
+        await supabase.from('system_settings').insert({ key: eodKey, value: { shift_id: activeShift.id, closed_at: new Date().toISOString() } });
+      }
+    }
+
     setShowCloseModal(false);
     setClosePin("");
     setFinalCash(0);
+    setIsCashCounted(false);
+    setIsEndOfDay(false);
+    clearSignature();
     refreshShift();
+  };
+
+  const handleAddExpense = async () => {
+    setErrorMsg("");
+    if (!activeShift) return;
+    if (!expenseAmount || !expenseReason.trim()) {
+      setErrorMsg("กรุณากรอกจำนวนเงินและเหตุผล");
+      return;
+    }
+
+    const { error } = await supabase.from('ledger_transactions').insert({
+      shift_id: activeShift.id,
+      staff_name: activeShift.staff_name,
+      transaction_type: 'expense',
+      category: expenseReason.trim(),
+      amount: -Number(expenseAmount) // Expense removes cash from drawer
+    });
+
+    if (error) {
+      setErrorMsg("เกิดข้อผิดพลาดในการบันทึกค่าใช้จ่าย");
+      return;
+    }
+
+    if (!expensePresets.includes(expenseReason.trim())) {
+      const newPresets = [expenseReason.trim(), ...expensePresets].slice(0, 20);
+      setExpensePresets(newPresets);
+      const { data: existing } = await supabase.from('system_settings').select('id').eq('key', 'expense_presets').maybeSingle();
+      if (existing) {
+        await supabase.from('system_settings').update({ value: newPresets }).eq('key', 'expense_presets');
+      } else {
+        await supabase.from('system_settings').insert({ key: 'expense_presets', value: newPresets });
+      }
+    }
+
+    setShowExpenseModal(false);
+    setExpenseAmount('');
+    setExpenseReason('');
+    refreshShift(); // Refresh shift will recalculate expected_cash
   };
 
   if (loading) return <div className="text-xs opacity-50">Checking shift...</div>;
@@ -183,6 +267,12 @@ export default function ShiftManager() {
             <div className="text-xs text-slate-500 font-medium">กะปัจจุบัน: <span className="text-slate-800 font-bold">{activeShift.staff_name}</span></div>
             <div className="text-[10px] text-emerald-600 font-bold">เงินในลิ้นชัก: ฿{activeShift.expected_cash.toLocaleString()}</div>
           </div>
+          <button 
+            onClick={() => setShowExpenseModal(true)}
+            className="bg-orange-100 hover:bg-orange-200 text-orange-700 px-4 py-1.5 rounded-full text-sm font-bold shadow-sm"
+          >
+            บันทึกรายจ่าย
+          </button>
           <button 
             onClick={() => setShowCloseModal(true)}
             className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-sm"
@@ -253,72 +343,205 @@ export default function ShiftManager() {
               
               {errorMsg && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg mb-4">{errorMsg}</div>}
 
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-4">
-                <div className="flex justify-between items-center mb-2 text-slate-600">
-                  <span>เงินทอนเริ่มต้น:</span>
-                  <span>฿{activeShift.initial_cash.toLocaleString()}</span>
+              {isCashCounted && (
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-4 animate-in fade-in slide-in-from-top-2">
+                  <div className="flex justify-between items-center mb-2 text-slate-600">
+                    <span>เงินทอนเริ่มต้น:</span>
+                    <span>฿{activeShift.initial_cash.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-lg font-black text-emerald-700 pt-2 border-t border-slate-200">
+                    <span>ยอดที่ควรมีในลิ้นชัก:</span>
+                    <span>฿{activeShift.expected_cash.toLocaleString()}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center text-lg font-black text-emerald-700 pt-2 border-t border-slate-200">
-                  <span>ยอดที่ควรมีในลิ้นชัก:</span>
-                  <span>฿{activeShift.expected_cash.toLocaleString()}</span>
-                </div>
-              </div>
+              )}
 
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">ยอดเงินสดที่นับได้จริง (Final Cash Count)</label>
                   <input 
                     type="number" 
-                    value={finalCash}
+                    value={finalCash || ''}
                     onChange={(e) => setFinalCash(Number(e.target.value))}
-                    className="w-full text-2xl text-center font-bold text-blue-600 p-3 rounded-xl border border-blue-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none bg-blue-50"
+                    disabled={isCashCounted}
+                    className={`w-full text-2xl text-center font-bold p-3 rounded-xl border outline-none ${
+                      isCashCounted 
+                        ? 'bg-slate-100 border-slate-200 text-slate-600' 
+                        : 'bg-blue-50 border-blue-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-blue-600'
+                    }`}
                   />
-                  {finalCash !== 0 && finalCash !== activeShift.expected_cash && (
+                  {isCashCounted && finalCash !== activeShift.expected_cash && (
                     <p className={`text-xs mt-1 font-bold ${finalCash > activeShift.expected_cash ? 'text-emerald-600' : 'text-red-500'}`}>
                       {finalCash > activeShift.expected_cash ? 'ยอดเงินเกิน' : 'ยอดเงินขาด'}: ฿{Math.abs(finalCash - activeShift.expected_cash).toLocaleString()}
                     </p>
                   )}
                 </div>
                 
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1 flex justify-between">
-                    ลายเซ็นผู้ส่งกะ (Signature)
-                    <button onClick={clearSignature} className="text-xs text-blue-500 font-normal underline">ลบและเซ็นใหม่</button>
-                  </label>
-                  <div className="border-2 border-dashed border-slate-300 rounded-xl overflow-hidden bg-slate-50 touch-none">
-                    <canvas 
-                      ref={canvasRef}
-                      width={400}
-                      height={150}
-                      className="w-full h-[120px] cursor-crosshair"
-                      onMouseDown={startDrawing}
-                      onMouseMove={draw}
-                      onMouseUp={stopDrawing}
-                      onMouseLeave={stopDrawing}
-                      onTouchStart={startDrawing}
-                      onTouchMove={draw}
-                      onTouchEnd={stopDrawing}
-                    />
-                  </div>
-                </div>
+                {!isCashCounted ? (
+                  <button 
+                    onClick={() => {
+                      if (!finalCash) {
+                        setErrorMsg("กรุณากรอกยอดเงินที่นับได้");
+                        return;
+                      }
+                      setErrorMsg("");
+                      setIsCashCounted(true);
+                    }}
+                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-sm"
+                  >
+                    ตรวจสอบยอดส่วนต่าง
+                  </button>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1 flex justify-between">
+                        ลายเซ็นผู้ส่งกะ (Signature)
+                        <button onClick={clearSignature} className="text-xs text-blue-500 font-normal underline">ลบและเซ็นใหม่</button>
+                      </label>
+                      <div className="border-2 border-dashed border-slate-300 rounded-xl overflow-hidden bg-slate-50 touch-none">
+                        <canvas 
+                          ref={canvasRef}
+                          width={400}
+                          height={150}
+                          className="w-full h-[120px] cursor-crosshair"
+                          onMouseDown={startDrawing}
+                          onMouseMove={draw}
+                          onMouseUp={stopDrawing}
+                          onMouseLeave={stopDrawing}
+                          onTouchStart={startDrawing}
+                          onTouchMove={draw}
+                          onTouchEnd={stopDrawing}
+                        />
+                      </div>
+                    </div>
 
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">รหัส PIN ยืนยัน</label>
+                      <input 
+                        type="password" 
+                        maxLength={4}
+                        value={closePin}
+                        onChange={(e) => setClosePin(e.target.value.replace(/\D/g, ''))}
+                        className="w-full text-center tracking-[0.5em] text-xl p-3 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                        placeholder="••••"
+                      />
+                    </div>
+                    
+                    <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-100 p-4 rounded-xl mt-4">
+                      <input 
+                        type="checkbox" 
+                        id="eod-checkbox"
+                        checked={isEndOfDay}
+                        onChange={(e) => setIsEndOfDay(e.target.checked)}
+                        className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500 border-indigo-300"
+                      />
+                      <label htmlFor="eod-checkbox" className="text-sm font-bold text-indigo-800 cursor-pointer">
+                        นี่คือกะสุดท้ายของวัน (สรุปปิดยอดประจำวัน)
+                      </label>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+            
+            <div className="bg-slate-50 p-4 border-t border-slate-100 flex gap-3">
+              <button 
+                onClick={() => {
+                  setShowCloseModal(false);
+                  setIsCashCounted(false);
+                }} 
+                className="flex-1 py-3 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl"
+              >
+                ยกเลิก
+              </button>
+              <button 
+                onClick={handleCloseShift} 
+                disabled={!isCashCounted || !finalCash || !closePin || closePin.length < 4} 
+                className="flex-1 py-3 bg-slate-800 text-white font-bold rounded-xl disabled:opacity-50"
+              >
+                ยืนยันส่งกะ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EXPENSE MODAL */}
+      {showExpenseModal && activeShift && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="p-6">
+              <h3 className="text-xl font-black text-slate-800 mb-4">บันทึกรายจ่าย (Petty Cash)</h3>
+              
+              {errorMsg && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg mb-4">{errorMsg}</div>}
+
+              <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">รหัส PIN ยืนยัน</label>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">รายการ / เหตุผล (Description)</label>
                   <input 
-                    type="password" 
-                    maxLength={4}
-                    value={closePin}
-                    onChange={(e) => setClosePin(e.target.value.replace(/\D/g, ''))}
-                    className="w-full text-center tracking-[0.5em] text-xl p-3 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
-                    placeholder="••••"
+                    type="text" 
+                    value={expenseReason}
+                    onChange={(e) => setExpenseReason(e.target.value)}
+                    className="w-full p-3 rounded-xl border border-slate-200 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
+                    placeholder="เช่น ซื้อน้ำยาทำความสะอาด, คืนเงินมัดจำ"
+                  />
+                  {expensePresets.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {expensePresets
+                        .filter(p => p.toLowerCase().includes(expenseReason.toLowerCase()))
+                        .slice(0, 5)
+                        .map(preset => (
+                          <div key={preset} className="inline-flex items-center bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs rounded-full overflow-hidden border border-slate-200 transition-colors">
+                            <button 
+                              onClick={() => setExpenseReason(preset)}
+                              className="px-3 py-1.5 font-medium focus:outline-none"
+                            >
+                              {preset}
+                            </button>
+                            <button 
+                              onClick={() => handleRemovePreset(preset)}
+                              className="px-2 py-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 focus:outline-none border-l border-slate-200"
+                              title="ลบรายการนี้"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">จำนวนเงินสดที่จ่ายออก (Amount)</label>
+                  <input 
+                    type="number" 
+                    value={expenseAmount}
+                    onChange={(e) => setExpenseAmount(Number(e.target.value) || '')}
+                    className="w-full text-2xl text-center font-bold p-3 rounded-xl border border-slate-200 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
+                    placeholder="0"
                   />
                 </div>
               </div>
             </div>
             
             <div className="bg-slate-50 p-4 border-t border-slate-100 flex gap-3">
-              <button onClick={() => setShowCloseModal(false)} className="flex-1 py-3 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl">ยกเลิก</button>
-              <button onClick={handleCloseShift} disabled={!finalCash || !closePin || closePin.length < 4} className="flex-1 py-3 bg-slate-800 text-white font-bold rounded-xl disabled:opacity-50">ยืนยันส่งกะ</button>
+              <button 
+                onClick={() => {
+                  setShowExpenseModal(false);
+                  setExpenseAmount('');
+                  setExpenseReason('');
+                  setErrorMsg('');
+                }} 
+                className="flex-1 py-3 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl"
+              >
+                ยกเลิก
+              </button>
+              <button 
+                onClick={handleAddExpense} 
+                disabled={!expenseAmount || !expenseReason} 
+                className="flex-1 py-3 bg-orange-600 text-white font-bold rounded-xl disabled:opacity-50"
+              >
+                บันทึกรายจ่าย
+              </button>
             </div>
           </div>
         </div>
