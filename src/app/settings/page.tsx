@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import PosSettings from "@/app/components/PosSettings";
+import TuyaApiSettings from "@/app/components/TuyaApiSettings";
 
 type Room = {
   id: string;
@@ -21,7 +22,7 @@ type Room = {
 };
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'rooms' | 'pos'>('rooms');
+  const [activeTab, setActiveTab] = useState<'rooms' | 'pos' | 'tuya'>('rooms');
   
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
@@ -216,11 +217,19 @@ export default function SettingsPage() {
           >
             จัดการปุ่ม POS
           </button>
+          <button 
+            onClick={() => setActiveTab('tuya')} 
+            className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${activeTab === 'tuya' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+          >
+            ตั้งค่าคีย์ Tuya
+          </button>
         </div>
       </header>
 
       {activeTab === 'pos' ? (
         <PosSettings />
+      ) : activeTab === 'tuya' ? (
+        <TuyaApiSettings />
       ) : (
         <>
           <div className="flex flex-col sm:flex-row gap-4 mb-4">

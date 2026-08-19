@@ -9,8 +9,20 @@ export async function GET(request: Request) {
     const specificDeviceId = url.searchParams.get('device_id');
 
     // 1. ตรวจสอบตั้งค่า Tuya
-    const accessKey = process.env.TUYA_ACCESS_ID;
-    const secretKey = process.env.TUYA_ACCESS_SECRET;
+    let accessKey = process.env.TUYA_ACCESS_ID;
+    let secretKey = process.env.TUYA_ACCESS_SECRET;
+
+    // ดึงค่าจาก Database เผื่อผู้ใช้มีการอัปเดตผ่านหน้าเว็บ (Override)
+    const { data: tuyaSettings } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'tuya_api_keys')
+      .single();
+
+    if (tuyaSettings?.value) {
+      accessKey = tuyaSettings.value.accessId || accessKey;
+      secretKey = tuyaSettings.value.accessSecret || secretKey;
+    }
 
     if (!accessKey || !secretKey) {
       return NextResponse.json(
