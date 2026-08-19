@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 const { TuyaContext } = require('@tuya/tuya-connector-nodejs');
 
@@ -82,7 +82,7 @@ export async function GET(request: Request) {
           try {
             const response = await contexts[cachedIndex].request({
               method: 'GET',
-              path: \/v1.0/iot-03/devices/\/status\,
+              path: `/v1.0/iot-03/devices/${deviceId}/status`,
             });
             if (response.success && response.result) {
               return { deviceId, response };
@@ -101,7 +101,7 @@ export async function GET(request: Request) {
           try {
             const response = await contexts[idx].request({
               method: 'GET',
-              path: \/v1.0/iot-03/devices/\/status\,
+              path: `/v1.0/iot-03/devices/${deviceId}/status`,
             });
             
             if (response.success && response.result) {

@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 const { TuyaContext } = require('@tuya/tuya-connector-nodejs');
 
@@ -82,7 +82,7 @@ export async function GET(request: Request) {
         const cachedIndex = deviceMappings[deviceId];
         if (cachedIndex !== undefined && cachedIndex < contexts.length) {
           try {
-            const response = await contexts[cachedIndex].request({ method: 'GET', path: \/v1.0/iot-03/devices/\/status\ });
+            const response = await contexts[cachedIndex].request({ method: 'GET', path: `/v1.0/iot-03/devices/${deviceId}/status` });
             if (response.success && response.result) return { deviceId, response };
           } catch (err) { lastError = err; }
         }
@@ -90,7 +90,7 @@ export async function GET(request: Request) {
         for (let idx = 0; idx < contexts.length; idx++) {
           if (cachedIndex !== undefined && idx === cachedIndex && lastError) continue;
           try {
-            const response = await contexts[idx].request({ method: 'GET', path: \/v1.0/iot-03/devices/\/status\ });
+            const response = await contexts[idx].request({ method: 'GET', path: `/v1.0/iot-03/devices/${deviceId}/status` });
             if (response.success && response.result) {
               deviceMappings[deviceId] = idx;
               mappingsChanged = true;
