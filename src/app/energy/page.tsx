@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import EnergyGraph from "@/app/components/EnergyGraph";
+import OfflineSensors from "../audit/OfflineSensors";
 
 type Room = {
   id: string;
@@ -16,6 +17,7 @@ type Room = {
 };
 
 export default function EnergyPage() {
+  const [activeTab, setActiveTab] = useState<"active" | "offline">("active");
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [dateOffset, setDateOffset] = useState<number>(0);
@@ -133,20 +135,45 @@ export default function EnergyPage() {
         )}
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {loading && rooms.length === 0 ? (
-          <div className="col-span-full text-center py-10 text-slate-500">กำลังโหลดข้อมูล...</div>
-        ) : rooms.length === 0 ? (
-          <div className="col-span-full text-center py-10 bg-white rounded-xl shadow-sm border border-slate-100 text-slate-500">
-            ยังไม่มีห้องพักใดติดตั้งระบบ IoT
-          </div>
-        ) : (
-          rooms.map((room) => {
-            const online = isOnline(room.last_active_at);
-            const wattage = room.latest_wattage || 0;
-            const isAcOn = online && wattage > 100;
+      {/* Tabs */}
+      <div className="flex bg-white rounded-xl shadow-sm border border-slate-200 p-1 overflow-x-auto">
+        <button
+          onClick={() => setActiveTab("active")}
+          className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${activeTab === "active" ? "bg-emerald-50 text-emerald-700" : "text-slate-600 hover:bg-slate-50"}`}
+        >
+          ⚡ อุปกรณ์ที่กำลังใช้ไฟ
+        </button>
+        <button
+          onClick={() => setActiveTab("offline")}
+          className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${activeTab === "offline" ? "bg-slate-800 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+        >
+          🔌 อุปกรณ์ออฟไลน์
+        </button>
+      </div>
 
-            return (
+      {activeTab === "offline" ? (
+        <OfflineSensors />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {loading && rooms.length === 0 ? (
+            <div className="col-span-full text-center py-10 text-slate-500">กำลังโหลดข้อมูล...</div>
+          ) : rooms.length === 0 ? (
+            <div className="col-span-full text-center py-10 bg-white rounded-xl shadow-sm border border-slate-100 text-slate-500">
+              ยังไม่มีห้องพักใดติดตั้งระบบ IoT
+            </div>
+          ) : (
+            rooms.map((room) => {
+              const online = isOnline(room.last_active_at);
+              const wattage = room.latest_wattage || 0;
+              const isAcOn = online && wattage > 100;
+
+              // กรองอุปกรณ์ที่สแตนด์บายและไม่มีการใช้ไฟ (wattage === 0) หรือออฟไลน์ออกไป
+              // เพราะอุปกรณ์ที่ออฟไลน์ไปอยู่ในแท็บ OfflineSensors แล้ว
+              if (wattage === 0) {
+                return null;
+              }
+
+              return (
               <div key={room.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-md transition-shadow relative">
                 
                 {dateOffset === 0 && (
@@ -218,8 +245,9 @@ export default function EnergyPage() {
               </div>
             );
           })
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
