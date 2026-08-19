@@ -77,14 +77,11 @@ export default function TuyaApiSettings() {
       error = res.error;
     }
 
-    // ล้างข้อมูล cache การจับคู่อุปกรณ์เพื่อบังคับให้ระบบหาคู่ใหม่
-    await supabase.from('system_settings').delete().eq('key', 'tuya_device_mappings');
-
     setSaving(false);
     if (error) {
       setMessage({ text: "บันทึกไม่สำเร็จ: " + error.message, type: "error" });
     } else {
-      setMessage({ text: "บันทึกสำเร็จ ระบบจะรีเซ็ตและจับคู่อุปกรณ์ใหม่โดยอัตโนมัติภายใน 5 นาที", type: "success" });
+      setMessage({ text: "บันทึกสำเร็จ ระบบจะจดจำและพยายามจับคู่อุปกรณ์ด้วยตำแหน่งคีย์เดิมเป็นอันดับแรกเสมอ เพื่อความรวดเร็ว หากไม่สำเร็จระบบถึงจะค้นหาให้ใหม่โดยอัตโนมัติ", type: "success" });
     }
   };
 
