@@ -19,6 +19,7 @@ type Room = {
 export default function EnergyPage() {
   const [activeTab, setActiveTab] = useState<"active" | "offline">("active");
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [usedRoomIds, setUsedRoomIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [dateOffset, setDateOffset] = useState<number>(0);
 
@@ -56,6 +57,32 @@ export default function EnergyPage() {
     } else {
       let fetchedRooms = (roomsData as Room[]) || [];
       
+      // คำนวณขอบเขตเวลาของวันที่เลือก (06:45:00 ถึง 06:44:59 ของวันถัดไป)
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() + dateOffset);
+      const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0);
+      const nextDate = new Date(targetDate);
+      nextDate.setDate(nextDate.getDate() + 1);
+      const endOfDay = new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate(), 6, 44, 59);
+
+      // ตรวจสอบว่าแต่ละห้องมีการใช้ไฟ (> 0) ในช่วงเวลานี้หรือไม่
+      const usedIds = new Set<string>();
+      await Promise.all(fetchedRooms.map(async (room) => {
+        const { data } = await supabase
+          .from("energy_logs")
+          .select("id")
+          .eq("room_id", room.id)
+          .gte("recorded_at", startOfDay.toISOString())
+          .lte("recorded_at", endOfDay.toISOString())
+          .gt("wattage", 0)
+          .limit(1);
+        
+        if (data && data.length > 0) {
+          usedIds.add(room.id);
+        }
+      }));
+      setUsedRoomIds(usedIds);
+
       // จัดเรียง
       if (settingsData && settingsData.value) {
         const locationsOrder = settingsData.value as string[];
@@ -167,9 +194,8 @@ export default function EnergyPage() {
               const wattage = room.latest_wattage || 0;
               const isAcOn = online && wattage > 100;
 
-              // กรองอุปกรณ์ที่สแตนด์บายและไม่มีการใช้ไฟ (wattage === 0) หรือออฟไลน์ออกไป
-              // เพราะอุปกรณ์ที่ออฟไลน์ไปอยู่ในแท็บ OfflineSensors แล้ว
-              if (wattage === 0) {
+              // กรองอุปกรณ์ที่สแตนด์บายและไม่มีการใช้ไฟเลยทั้งวัน หรือออฟไลน์ออกไป
+              if (!usedRoomIds.has(room.id)) {
                 return null;
               }
 
