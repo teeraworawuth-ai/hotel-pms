@@ -9,7 +9,7 @@ export async function GET(request: Request) {
     const specificDeviceId = url.searchParams.get('device_id');
 
     // 1. ตรวจสอบและเตรียม Tuya Contexts
-    let contexts = [];
+    let contexts: any[] = [];
 
     const { data: tuyaSettings } = await supabase
       .from('system_settings')

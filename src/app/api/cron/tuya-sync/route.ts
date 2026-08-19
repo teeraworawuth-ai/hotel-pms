@@ -5,7 +5,7 @@ const { TuyaContext } = require('@tuya/tuya-connector-nodejs');
 export async function GET(request: Request) {
   try {
     // 1. ตรวจสอบและเตรียม Tuya Contexts (รองรับ 1 ถึง 3 บัญชี)
-    let contexts = [];
+    let contexts: any[] = [];
 
     const { data: tuyaSettings } = await supabase
       .from('system_settings')
