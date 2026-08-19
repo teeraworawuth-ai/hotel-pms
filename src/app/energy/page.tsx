@@ -25,13 +25,33 @@ export default function EnergyPage() {
 
   useEffect(() => {
     fetchIoTData();
-    // ตั้งเวลาให้รีเฟรชข้อมูลหน้าจอทุกๆ 30 วินาที เฉพาะเมื่อดูของวันนี้
+    // ตั้งเวลาให้รีเฟรชข้อมูลหน้าจอ (จาก Database) ทุกๆ 30 วินาที เฉพาะเมื่อดูของวันนี้
     let interval: NodeJS.Timeout;
     if (dateOffset === 0) {
       interval = setInterval(fetchIoTData, 30000);
     }
     return () => {
       if (interval) clearInterval(interval);
+    }
+  }, [dateOffset]);
+
+  // Background Sync: ยิง API เพื่อดึงข้อมูลใหม่จาก Tuya ลง Database ทุกๆ 5 นาที (ใช้แทน Cron Job)
+  useEffect(() => {
+    const triggerTuyaSync = async () => {
+      try {
+        console.log("Triggering background Tuya sync...");
+        await fetch("/api/cron/tuya-sync");
+      } catch (e) {
+        console.error("Background sync failed", e);
+      }
+    };
+    
+    if (dateOffset === 0) {
+      // ยิงครั้งแรกทันที
+      triggerTuyaSync();
+      // ตั้งเวลายิงซ้ำทุก 5 นาที (300,000 ms)
+      const syncInterval = setInterval(triggerTuyaSync, 300000);
+      return () => clearInterval(syncInterval);
     }
   }, [dateOffset]);
 
