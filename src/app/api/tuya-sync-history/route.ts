@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 const { TuyaContext } = require('@tuya/tuya-connector-nodejs');
 
@@ -8,144 +8,149 @@ export async function GET(request: Request) {
     const specificRoomId = url.searchParams.get('room_id');
     const specificDeviceId = url.searchParams.get('device_id');
 
-    // 1. ตรวจสอบตั้งค่า Tuya
-    let accessKey = process.env.TUYA_ACCESS_ID;
-    let secretKey = process.env.TUYA_ACCESS_SECRET;
+    // 1. ตรวจสอบและเตรียม Tuya Contexts
+    let contexts = [];
 
-    // ดึงค่าจาก Database เผื่อผู้ใช้มีการอัปเดตผ่านหน้าเว็บ (Override)
     const { data: tuyaSettings } = await supabase
       .from('system_settings')
       .select('value')
       .eq('key', 'tuya_api_keys')
       .single();
 
-    if (tuyaSettings?.value) {
-      accessKey = tuyaSettings.value.accessId || accessKey;
-      secretKey = tuyaSettings.value.accessSecret || secretKey;
+    if (tuyaSettings?.value?.keys && Array.isArray(tuyaSettings.value.keys)) {
+      const validKeys = tuyaSettings.value.keys.filter((k: any) => k.accessId && k.accessSecret);
+      if (validKeys.length > 0) {
+        contexts = validKeys.map((k: any) => new TuyaContext({
+          baseUrl: 'https://openapi-sg.iotbing.com',
+          accessKey: k.accessId,
+          secretKey: k.accessSecret,
+        }));
+      }
+    } else if (tuyaSettings?.value?.accessId && tuyaSettings?.value?.accessSecret) {
+      contexts = [new TuyaContext({
+        baseUrl: 'https://openapi-sg.iotbing.com',
+        accessKey: tuyaSettings.value.accessId,
+        secretKey: tuyaSettings.value.accessSecret,
+      })];
     }
 
-    if (!accessKey || !secretKey) {
-      return NextResponse.json(
-        { error: 'Missing Tuya credentials in environment variables.' },
-        { status: 400 }
-      );
+    if (contexts.length === 0) {
+      if (process.env.TUYA_ACCESS_ID && process.env.TUYA_ACCESS_SECRET) {
+        contexts = [new TuyaContext({
+          baseUrl: 'https://openapi-sg.iotbing.com',
+          accessKey: process.env.TUYA_ACCESS_ID,
+          secretKey: process.env.TUYA_ACCESS_SECRET,
+        })];
+      } else {
+        return NextResponse.json({ error: 'Missing Tuya credentials.' }, { status: 400 });
+      }
     }
 
-    // 2. เริ่มการเชื่อมต่อ Tuya Cloud
-    const tuya = new TuyaContext({
-      baseUrl: 'https://openapi-sg.iotbing.com',
-      accessKey: accessKey,
-      secretKey: secretKey,
-    });
+    // ดึงข้อมูลการจับคู่
+    const { data: mappingsData } = await supabase.from('system_settings').select('value').eq('key', 'tuya_device_mappings').single();
+    let deviceMappings = mappingsData?.value || {};
+    let mappingsChanged = false;
 
     let roomsToSync = [];
-
-    // 3. ถ้าไม่ได้ระบุห้องมา ให้ดึงทุกห้อง
     if (specificRoomId && specificDeviceId) {
-      roomsToSync.push({ id: specificRoomId, tuya_device_id: specificDeviceId });
+      roomsToSync = [{ id: specificRoomId, tuya_device_id: specificDeviceId }];
     } else {
       const { data: rooms, error: dbError } = await supabase
         .from('rooms')
-        .select('id, tuya_device_id')
+        .select('id, room_no, tuya_device_id')
         .not('tuya_device_id', 'is', null)
         .neq('tuya_device_id', '');
-      
       if (dbError) throw dbError;
-      if (!rooms || rooms.length === 0) {
-        return NextResponse.json({ message: 'No devices to sync.' });
-      }
-      roomsToSync = rooms;
+      roomsToSync = rooms || [];
     }
 
-    const endTime = Date.now();
-    // ดึงย้อนหลัง 7 วัน (7 * 24 * 60 * 60 * 1000)
-    const startTime = endTime - (7 * 24 * 60 * 60 * 1000);
-    
-    let totalLogsInserted = 0;
+    if (roomsToSync.length === 0) {
+      return NextResponse.json({ message: 'No devices to sync.' });
+    }
+
+    const deviceIds = roomsToSync.map(r => r.tuya_device_id).filter(Boolean);
+    const tuyaData = [];
     const failedDevices = [];
-
-    // 4. ลูปดึงข้อมูลทีละห้อง
-    for (const room of roomsToSync) {
-      try {
-        let hasNext = true;
-        let lastRowKey = '';
-        let loopCount = 0;
+    const CHUNK_SIZE = 5;
+    
+    for (let i = 0; i < deviceIds.length; i += CHUNK_SIZE) {
+      const chunk = deviceIds.slice(i, i + CHUNK_SIZE);
+      
+      const promises = chunk.map(async (deviceId) => {
+        let lastError = null;
         
-        while (hasNext && loopCount < 10) { // Limit to 10 loops (1000 items) to prevent infinite loops
-          loopCount++;
-          
-          const queryParams: any = {
-            type: '7', // Report Data
-            start_time: startTime.toString(),
-            end_time: endTime.toString(),
-            size: '100'
-          };
-          
-          if (lastRowKey) {
-            queryParams.last_row_key = lastRowKey;
-          }
-
-          const response = await tuya.request({
-            method: 'GET',
-            path: `/v1.0/devices/${room.tuya_device_id}/logs`,
-            query: queryParams
-          });
-
-          if (response.success && response.result && response.result.logs) {
-            const logsToInsert = [];
-            
-            for (const log of response.result.logs) {
-              if (log.code && (log.code.includes('power') || log.code.includes('watt'))) {
-                const wattage = Number(log.value) / 10;
-                const recordedAt = new Date(log.event_time).toISOString();
-                
-                logsToInsert.push({
-                  room_id: room.id,
-                  wattage: wattage,
-                  recorded_at: recordedAt
-                });
-              }
-            }
-
-            if (logsToInsert.length > 0) {
-              const { error: insertError } = await supabase
-                .from('energy_logs')
-                .insert(logsToInsert);
-                
-              if (insertError) {
-                  console.error("Insert history error for room", room.id, insertError.message);
-              } else {
-                  totalLogsInserted += logsToInsert.length;
-              }
-            }
-            
-            // Handle pagination
-            hasNext = response.result.has_next;
-            lastRowKey = response.result.last_row_key;
-            
-            if (!hasNext) break;
-          } else {
-             failedDevices.push({ id: room.tuya_device_id, msg: response.msg || 'No logs' });
-             break;
-          }
+        const cachedIndex = deviceMappings[deviceId];
+        if (cachedIndex !== undefined && cachedIndex < contexts.length) {
+          try {
+            const response = await contexts[cachedIndex].request({ method: 'GET', path: \/v1.0/iot-03/devices/\/status\ });
+            if (response.success && response.result) return { deviceId, response };
+          } catch (err) { lastError = err; }
         }
-      } catch (err: any) {
-        console.error(`Failed to fetch history for ${room.tuya_device_id}:`, err);
-        failedDevices.push({ id: room.tuya_device_id, error: err.message });
+
+        for (let idx = 0; idx < contexts.length; idx++) {
+          if (cachedIndex !== undefined && idx === cachedIndex && lastError) continue;
+          try {
+            const response = await contexts[idx].request({ method: 'GET', path: \/v1.0/iot-03/devices/\/status\ });
+            if (response.success && response.result) {
+              deviceMappings[deviceId] = idx;
+              mappingsChanged = true;
+              return { deviceId, response };
+            }
+          } catch (err) { lastError = err; }
+        }
+
+        return { deviceId, error: lastError || new Error('Device not found') };
+      });
+
+      const results = await Promise.all(promises);
+
+      for (const res of results) {
+        if (res.error) {
+          failedDevices.push({ id: res.deviceId, error: res.error.message });
+        } else if (res.response && res.response.result) {
+          tuyaData.push({ id: res.deviceId, status: res.response.result });
+        }
       }
     }
 
-    return NextResponse.json({
-      success: true,
-      message: `Inserted ${totalLogsInserted} historical logs.`,
-      failed_devices: failedDevices
-    });
+    if (mappingsChanged) {
+      const { data: existingMap } = await supabase.from('system_settings').select('key').eq('key', 'tuya_device_mappings').single();
+      if (existingMap) {
+        await supabase.from('system_settings').update({ value: deviceMappings }).eq('key', 'tuya_device_mappings');
+      } else {
+        await supabase.from('system_settings').insert({ key: 'tuya_device_mappings', value: deviceMappings });
+      }
+    }
+
+    const logs = [];
+    for (const device of tuyaData) {
+      const room = roomsToSync.find(r => r.tuya_device_id === device.id);
+      if (!room) continue;
+
+      const powerStatus = device.status?.find((s: any) => s.code === 'cur_power');
+      let wattage: number | null = null;
+      if (powerStatus && powerStatus.value !== undefined) {
+         wattage = Number(powerStatus.value) / 10;
+      } else {
+         const anyPower = device.status?.find((s: any) => s.code.includes('power') || s.code.includes('watt'));
+         if (anyPower && anyPower.value !== undefined) wattage = Number(anyPower.value) / 10;
+      }
+      logs.push({ room_id: room.id, wattage: wattage });
+    }
+
+    if (logs.length > 0) {
+      await supabase.from('energy_logs').insert(logs);
+      for (const log of logs) {
+        await supabase.from('rooms').update({
+          last_active_at: new Date().toISOString(),
+          latest_wattage: log.wattage
+        }).eq('id', log.room_id);
+      }
+    }
+
+    return NextResponse.json({ success: true, processed: logs.length, failed: failedDevices.length });
 
   } catch (error: any) {
-    console.error('History sync error:', error);
-    return NextResponse.json(
-      { error: 'Failed to sync history', details: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal Server Error', message: error.message }, { status: 500 });
   }
 }
