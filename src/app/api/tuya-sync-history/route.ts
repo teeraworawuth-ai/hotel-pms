@@ -106,7 +106,7 @@ export async function GET(request: Request) {
 
       for (const res of results) {
         if (res.error) {
-          failedDevices.push({ id: res.deviceId, error: res.error.message });
+          failedDevices.push({ id: res.deviceId, error: (res.error as any).message });
         } else if (res.response && res.response.result) {
           tuyaData.push({ id: res.deviceId, status: res.response.result });
         }

@@ -124,7 +124,7 @@ export async function GET(request: Request) {
       for (const res of results) {
         if (res.error) {
           console.error(`Device ${res.deviceId} request error:`, res.error);
-          failedDevices.push({ id: res.deviceId, error: res.error.message || 'Request failed' });
+          failedDevices.push({ id: res.deviceId, error: (res.error as any).message || 'Request failed' });
         } else if (res.response && res.response.result) {
           tuyaData.push({ id: res.deviceId, status: res.response.result });
         }
