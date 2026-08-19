@@ -264,11 +264,18 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
               dataKey="fullTime"
               type="number"
               domain={[startOfDayMs, startOfDayMs + 24 * 3600 * 1000 - 60000]}
-              ticks={ticksToUse}
-              tick={<CustomTick />}
-              tickLine={false}
+              ticks={showControls ? undefined : ticksToUse}
+              tick={showControls ? undefined : <CustomTick />}
+              tickFormatter={showControls ? (val) => {
+                const date = new Date(val);
+                return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+              } : undefined}
+              tickLine={showControls}
               axisLine={false}
-              interval={0}
+              interval={showControls ? 'preserveStartEnd' : 0}
+              minTickGap={40}
+              tickMargin={8}
+              style={showControls ? { fontSize: '12px', fill: '#64748b', fontWeight: 'bold' } : undefined}
             />
             <YAxis 
               type="number"
@@ -305,7 +312,10 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
                 stroke="#cbd5e1" 
                 fill="#f8fafc"
                 startIndex={startIndex}
-                tickFormatter={(val) => new Date(val).getHours().toString()} 
+                tickFormatter={(val) => {
+                  const d = new Date(val);
+                  return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+                }} 
               />
             )}
           </LineChart>
