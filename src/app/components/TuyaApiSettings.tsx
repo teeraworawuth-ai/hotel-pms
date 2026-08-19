@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -102,7 +102,7 @@ export default function TuyaApiSettings() {
             </div>
 
             {message.text && (
-              <div className={\"p-3 rounded-lg text-sm font-medium \\`}>
+              <div className={`p-3 rounded-lg text-sm font-medium ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
                 {message.text}
               </div>
             )}
