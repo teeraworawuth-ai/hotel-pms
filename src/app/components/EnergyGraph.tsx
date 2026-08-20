@@ -9,10 +9,10 @@ import {
   YAxis,
   CartesianGrid,
   ResponsiveContainer,
-  Brush,
   Tooltip,
   ReferenceArea
 } from "recharts";
+import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
 interface EnergyGraphProps {
   roomId: string;
@@ -27,10 +27,9 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
   const graphRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetchData();
-  }, [roomId, dateOffset]);
+    fetchData(isFullScreen);
+  }, [roomId, dateOffset, isFullScreen]);
 
-  // ล็อกหน้าจอไม่ให้เลื่อนเมื่อเปิดกราฟขยาย
   useEffect(() => {
     if (isFullScreen) {
       document.body.style.overflow = 'hidden';
@@ -42,7 +41,6 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
     };
   }, [isFullScreen]);
 
-  // ตรวจจับหน้าจอว่าเป็นแนวตั้งหรือไม่
   useEffect(() => {
     const checkOrientation = () => {
       setIsPortrait(window.innerHeight > window.innerWidth);
@@ -52,14 +50,20 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
     return () => window.removeEventListener('resize', checkOrientation);
   }, []);
 
-  const fetchData = async () => {
+  const fetchData = async (isExpanded: boolean) => {
     try {
       setLoading(true);
 
       const targetDate = new Date();
       targetDate.setDate(targetDate.getDate() + dateOffset);
 
-      const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0);
+      // วันเริ่มต้น
+      let startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0);
+      
+      if (isExpanded) {
+        // ขยายกราฟดึงย้อนหลัง 3 วัน (รวมวันนี้เป็น 4 วัน)
+        startOfRange.setDate(startOfRange.getDate() - 3);
+      }
       
       const nextDate = new Date(targetDate);
       nextDate.setDate(nextDate.getDate() + 1);
@@ -76,7 +80,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
         .from("energy_logs")
         .select("wattage, recorded_at")
         .eq("room_id", roomId)
-        .gte("recorded_at", startOfDay.toISOString())
+        .gte("recorded_at", startOfRange.toISOString())
         .lte("recorded_at", endOfDay.toISOString())
         .order("recorded_at", { ascending: true });
 
@@ -85,18 +89,40 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
         return;
       }
 
-      const formattedData = (logData || []).map((log) => {
+      let formattedData = (logData || []).map((log) => {
         const d = new Date(log.recorded_at);
         const wattVal = Number(log.wattage);
         return {
           time: d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
-          fullTime: d.getTime(), // เก็บเวลาเต็มไว้คำนวณ
+          fullTime: d.getTime(), 
           watt: (log.wattage !== null && wattVal > 0) ? wattVal : null,
         };
       });
 
-      // ถ้ามีข้อมูลน้อยกว่า 2 จุด Recharts อาจจะตีเส้นลำบาก
-      // เราสามารถสร้างจุดเริ่มต้นหลอกๆ (0 watt) ได้ถ้าต้องการ แต่ในที่นี้จะปล่อยไปก่อน
+      formattedData = formattedData.map((point, i, arr) => {
+        if (point.watt === null) return point;
+        let hasNeighbor = false;
+        for (let j = i - 1; j >= 0; j--) {
+          if (point.fullTime - arr[j].fullTime > 360000) break;
+          if (arr[j].watt !== null && arr[j].watt > 0) {
+            hasNeighbor = true;
+            break;
+          }
+        }
+        if (!hasNeighbor) {
+          for (let j = i + 1; j < arr.length; j++) {
+            if (arr[j].fullTime - point.fullTime > 360000) break;
+            if (arr[j].watt !== null && arr[j].watt > 0) {
+              hasNeighbor = true;
+              break;
+            }
+          }
+        }
+        if (!hasNeighbor) {
+          return { ...point, watt: null };
+        }
+        return point;
+      });
       
       setData(formattedData);
     } catch (err) {
@@ -113,9 +139,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
     if (nextState) {
       try {
         if (window.innerWidth < 768 && document.documentElement.requestFullscreen) {
-          // Wrap the element that needs fullscreen, or just use documentElement
           await document.documentElement.requestFullscreen();
-          // Type casting for older browser support or specific TS settings
           const screenOrientation = (screen as any).orientation || (screen as any).mozOrientation || (screen as any).msOrientation;
           if (screenOrientation && screenOrientation.lock) {
             await screenOrientation.lock('landscape');
@@ -156,39 +180,48 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
       );
     }
 
-    let startIndex = 0; // Show all data by default
-
     const targetDate = new Date();
     targetDate.setDate(targetDate.getDate() + dateOffset);
+    
+    // สำหรับกราฟเล็ก เอาแค่วันนี้
     const startOfDayMs = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0).getTime();
     
-    // Ticks สำหรับกราฟเล็ก (เลขคี่ เริ่ม 7, 9, 11, ... ขอบคือ 06:45 และ 06:44 โชว์เป็น 7)
-    // 06:45 (7), 09:00 (9), 11:00 (11), 13:00 (13), 15:00 (15), 17:00 (17), 19:00 (19), 21:00 (21), 23:00 (23), 01:00 (1), 03:00 (3), 05:00 (5), 06:44 (7)
+    // สำหรับกราฟใหญ่ เอา 3 วันย้อนหลังรวมวันนี้เป็น 4 วัน
+    let graphStartMs = startOfDayMs;
+    if (showControls) {
+      const d = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0);
+      d.setDate(d.getDate() - 3);
+      graphStartMs = d.getTime();
+    }
+    
+    const graphEndMs = startOfDayMs + 24 * 3600 * 1000 - 60000;
+
     const smallTicks = [startOfDayMs];
     for (let h = 1; h <= 23; h++) {
       smallTicks.push(startOfDayMs + (h * 3600 + 15 * 60) * 1000);
     }
     smallTicks.push(startOfDayMs + 24 * 3600 * 1000 - 60000);
     
-    // Ticks สำหรับกราฟขยาย (ทุก 10 นาที)
-    const fullTicks = Array.from({ length: 145 }, (_, i) => startOfDayMs + i * 10 * 60 * 1000);
-    // ปรับ tick สุดท้ายให้เป็น 06:44 พอดีแทน 06:45
-    fullTicks[fullTicks.length - 1] = startOfDayMs + 24 * 3600 * 1000 - 60000;
+    const fullTicks = [];
+    if (showControls) {
+      // สร้าง ticks ทุกๆ 6 ชั่วโมงสำหรับกราฟขยายที่มี 4 วัน
+      for (let t = graphStartMs; t <= graphEndMs; t += 6 * 3600 * 1000) {
+        fullTicks.push(t);
+      }
+    }
     
     const ticksToUse = showControls ? fullTicks : smallTicks;
 
-    // คำนวณช่วงเวลาที่อุปกรณ์ออฟไลน์ (ข้อมูลขาดหายเกิน 15 นาที)
     const offlinePeriods: {start: number, end: number}[] = [];
     if (data && data.length > 0) {
       for (let i = 1; i < data.length; i++) {
         const prev = data[i - 1];
         const curr = data[i];
-        if (curr.fullTime - prev.fullTime > 10 * 60 * 1000) { // เกิน 10 นาทีถือว่าออฟไลน์
+        if (curr.fullTime - prev.fullTime > 10 * 60 * 1000) { 
           offlinePeriods.push({ start: prev.fullTime, end: curr.fullTime });
         }
       }
       
-      // ถ้าเป็นกราฟของวันนี้ และข้อมูลล่าสุดหยุดส่งเกิน 10 นาที
       if (dateOffset === 0) {
         const lastData = data[data.length - 1];
         const now = Date.now();
@@ -202,48 +235,42 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
       const date = new Date(payload.value);
       const isStartOrEnd = payload.value === startOfDayMs || payload.value === (startOfDayMs + 24 * 3600 * 1000 - 60000);
       const isHour = date.getMinutes() === 0;
-      const isOddHour = date.getHours() % 2 !== 0; // 9, 11, 13, 15, 17...
+      const isOddHour = date.getHours() % 2 !== 0; 
       
-      if (isStartOrEnd) {
+      if (isStartOrEnd && !showControls) {
         return (
           <g>
             <line x1={x} y1={y} x2={x} y2={y + 6} stroke="#94a3b8" strokeWidth={1.5} />
-            <text x={x} y={y + 20} textAnchor="middle" fill="#94a3b8" fontSize={11} fontWeight="bold">
+            <text x={x} y={y + 15} textAnchor="middle" fill="#94a3b8" fontSize={11} fontWeight="bold">
               7
             </text>
           </g>
         );
-      } else if (isHour) {
+      } else if (isHour && !showControls) {
         if (isOddHour) {
           const hour = date.getHours();
           const fSize = hour >= 10 ? 9.5 : 11;
           return (
             <g>
-              <line x1={x} y1={y} x2={x} y2={y + 6} stroke="#94a3b8" strokeWidth={1.5} />
-              <text x={x} y={y + 20} textAnchor="middle" fill="#94a3b8" fontSize={fSize} fontWeight="bold">
+              <line x1={x} y1={y} x2={x} y2={y + 4} stroke="#cbd5e1" strokeWidth={1} />
+              <text x={x} y={y + 15} textAnchor="middle" fill="#cbd5e1" fontSize={fSize}>
                 {hour}
               </text>
             </g>
           );
-        } else {
-          // ชั่วโมงคู่ (even hour) โชว์แค่ขีดสั้นๆ ไม่โชว์ตัวเลขกันทับกัน
-          return (
-            <line x1={x} y1={y} x2={x} y2={y + 6} stroke="#94a3b8" strokeWidth={1.5} />
-          );
         }
-      } else {
-        // ขีดเล็กสำหรับทุก 10 นาที
-        return (
-          <line x1={x} y1={y} x2={x} y2={y + 4} stroke="#cbd5e1" strokeWidth={1} />
-        );
       }
+      return null;
     };
 
     const CustomTooltip = ({ active, payload, label }: any) => {
       if (active && payload && payload.length) {
-        const timeStr = new Date(label).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+        const d = new Date(label);
+        const dateStr = d.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+        const timeStr = d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
         return (
           <div className="bg-slate-900 text-white p-2 rounded-lg shadow-xl text-xs font-bold border border-slate-700">
+            <p className="text-slate-400">{dateStr}</p>
             <p>{timeStr}</p>
             <p className="text-emerald-400 text-[14px] mt-1">{payload[0].value} W</p>
           </div>
@@ -252,72 +279,100 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
       return null;
     };
 
-    const maxWatt = Math.max(...data.map(d => d.watt), 100);
+    const maxWatt = Math.max(...data.map(d => d.watt || 0), 100);
     const yAxisMax = Math.ceil(maxWatt / 200) * 200 + 200;
+
+    // คำนวณช่วงของแต่ละวันเพื่อใส่ Background Date
+    const dayBackgrounds = [];
+    if (showControls) {
+      for (let i = 0; i <= 3; i++) {
+        const d = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() - 3 + i, 6, 45, 0);
+        const start = d.getTime();
+        const end = start + 24 * 3600 * 1000;
+        const middle = start + 12 * 3600 * 1000;
+        const isToday = i === 3 && dateOffset === 0;
+        const label = d.toLocaleDateString("th-TH", { day: "numeric", month: "short" }) + (isToday ? " (วันนี้)" : "");
+        dayBackgrounds.push({ start, end, middle, label });
+      }
+    }
 
     return (
       <div className="w-full" style={{ height: typeof height === 'number' ? `${height}px` : height }}>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 10, right: 10, left: -5, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+          <LineChart data={data} margin={{ top: 10, right: 10, left: -5, bottom: 15 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={showControls ? "#334155" : "#f1f5f9"} />
+            
             <XAxis 
               dataKey="fullTime"
               type="number"
-              domain={[startOfDayMs, startOfDayMs + 24 * 3600 * 1000 - 60000]}
+              domain={[graphStartMs, graphEndMs]}
               ticks={showControls ? undefined : ticksToUse}
               tick={showControls ? undefined : <CustomTick />}
               tickFormatter={showControls ? (val) => {
                 const date = new Date(val);
-                return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+                return `${date.getDate()} ${date.toLocaleString('th-TH', {month:'short'})} ${date.getHours().toString().padStart(2, '0')}:00`;
               } : undefined}
               tickLine={showControls}
               axisLine={false}
               interval={showControls ? 'preserveStartEnd' : 0}
               minTickGap={40}
-              tickMargin={8}
-              style={showControls ? { fontSize: '12px', fill: '#64748b', fontWeight: 'bold' } : undefined}
+              tickMargin={12}
+              style={showControls ? { fontSize: '10px', fill: '#94a3b8', fontWeight: 'normal' } : undefined}
             />
             <YAxis 
               type="number"
               domain={[0, yAxisMax]}
-              tick={{ fontSize: 10, fill: '#94a3b8' }}
+              tick={{ fontSize: 10, fill: showControls ? '#64748b' : '#94a3b8' }}
               tickLine={false}
               axisLine={false}
               tickFormatter={(value) => `${value}w`}
               orientation="left"
-              width={65}
+              width={55}
             />
             
             {offlinePeriods.map((period, idx) => (
-              <ReferenceArea key={idx} x1={period.start} x2={period.end} fill="#cbd5e1" fillOpacity={0.6} />
+              <ReferenceArea key={idx} x1={period.start} x2={period.end} fill={showControls ? "#1e293b" : "#cbd5e1"} fillOpacity={0.6} />
             ))}
-            
+
+            {showControls && dayBackgrounds.map((day, idx) => (
+              <ReferenceArea 
+                key={`bg-${idx}`}
+                x1={day.start}
+                x2={day.end}
+                fill={idx % 2 === 0 ? "#0f172a" : "#1e293b"}
+                fillOpacity={0.4}
+              />
+            ))}
+
+            {showControls && dayBackgrounds.map((day, idx) => (
+              <text 
+                key={`text-${idx}`}
+                x="50%" 
+                y="50%" 
+                dx={(idx - 1.5) * 500} // วางระยะคร่าวๆ
+                dy={0} 
+                textAnchor="middle" 
+                fill="#334155" 
+                fontSize={32} 
+                fontWeight="bold" 
+                opacity={0.3}
+              >
+                {day.label}
+              </text>
+            ))}
+
             <Tooltip content={<CustomTooltip />} />
             
             <Line 
               type="monotone" 
               dataKey="watt" 
-              stroke="#6366f1" 
-              strokeWidth={3}
+              stroke={showControls ? "#818cf8" : "#6366f1"} 
+              strokeWidth={showControls ? 2 : 3}
               dot={false}
               activeDot={{ r: 5, fill: '#4f46e5', stroke: '#c7d2fe', strokeWidth: 3 }}
-              animationDuration={1500}
+              animationDuration={1000}
               connectNulls={false}
             />
-            
-            {showControls && data.length > 10 && (
-              <Brush 
-                dataKey="fullTime" 
-                height={30} 
-                stroke="#cbd5e1" 
-                fill="#f8fafc"
-                startIndex={startIndex}
-                tickFormatter={(val) => {
-                  const d = new Date(val);
-                  return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-                }} 
-              />
-            )}
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -328,7 +383,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
     <>
       <div 
         ref={graphRef} 
-        className="mt-4 relative group cursor-pointer"
+        className="mt-2 relative group cursor-pointer"
         onClick={toggleFullScreen}
       >
         <div className="absolute inset-0 z-10 bg-black/0 group-hover:bg-indigo-500/5 transition-colors rounded-xl flex items-center justify-center">
@@ -336,7 +391,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
             🔍 ขยายกราฟเต็มจอ
           </div>
         </div>
-        {renderGraph(140, false)}
+        {renderGraph(160, false)}
       </div>
 
       {isFullScreen && (
@@ -362,7 +417,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
           <div className="flex justify-between items-start md:items-center p-4 md:p-6 border-b border-white/10 bg-slate-900 shrink-0">
             <div className="pr-4">
               <h2 className="text-xl md:text-2xl font-black text-white leading-tight">กราฟการใช้ไฟ - ห้อง {roomId.substring(0,4)}...</h2>
-              <p className="text-slate-400 text-xs md:text-sm mt-1">สามารถเลื่อนและซูมกราฟได้จากแถบด้านล่าง</p>
+              <p className="text-slate-400 text-xs md:text-sm mt-1">ใช้สองนิ้วซูมเข้า-ออก หรือปัดซ้าย-ขวาเพื่อดูย้อนหลัง 3 วัน</p>
             </div>
             <button 
               onClick={toggleFullScreen}
@@ -373,12 +428,37 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
             </button>
           </div>
           
-          <div className="flex-1 p-2 md:p-10 min-h-[400px] bg-slate-900 flex flex-col">
-            <div className="w-full flex-1 bg-slate-800/50 p-2 md:p-6 rounded-2xl border border-white/5 relative min-h-[300px]">
-              <div className="absolute inset-0 p-2 md:p-6 pb-12">
-                {renderGraph('100%', true)}
-              </div>
-            </div>
+          <div className="flex-1 p-2 md:p-6 min-h-[400px] bg-slate-900 flex flex-col relative overflow-hidden">
+             <div className="w-full flex-1 bg-slate-800/50 rounded-2xl border border-white/5 relative z-10 overflow-hidden">
+                <TransformWrapper 
+                   initialScale={1}
+                   minScale={1}
+                   maxScale={8}
+                   centerOnInit={false}
+                   wheel={{ step: 0.2 }}
+                   panning={{ lockAxisX: false, lockAxisY: true }}
+                >
+                   <TransformComponent wrapperStyle={{ width: "100%", height: "100%" }} contentStyle={{ width: "100%", height: "100%" }}>
+                      <div className="w-full h-full p-2 pb-6 md:p-6 md:pb-10 min-w-[2000px] md:min-w-full relative">
+                        {/* Background Text behind the graph */}
+                        <div className="absolute inset-0 flex">
+                           {[...Array(4)].map((_, i) => {
+                             const d = new Date();
+                             d.setDate(d.getDate() - (3 - i));
+                             const isToday = i === 3;
+                             const label = d.toLocaleDateString("th-TH", { day: "numeric", month: "long" }) + (isToday ? " (วันนี้)" : "");
+                             return (
+                               <div key={i} className="flex-1 flex items-center justify-center opacity-10 pointer-events-none">
+                                  <span className="text-4xl md:text-6xl font-black text-white">{label}</span>
+                               </div>
+                             );
+                           })}
+                        </div>
+                        {renderGraph('100%', true)}
+                      </div>
+                   </TransformComponent>
+                </TransformWrapper>
+             </div>
           </div>
         </div>
       )}

@@ -87,20 +87,32 @@ export default function EnergyPage() {
       await Promise.all(fetchedRooms.map(async (room) => {
         const { data } = await supabase
           .from("energy_logs")
-          .select("wattage")
+          .select("wattage, recorded_at")
           .eq("room_id", room.id)
           .gte("recorded_at", startOfDay.toISOString())
           .lte("recorded_at", endOfDay.toISOString())
-          .gt("wattage", 0);
+          .gt("wattage", 0)
+          .order("recorded_at", { ascending: true });
         
         if (data && data.length > 0) {
-          usedIds.add(room.id);
-          
-          const totalWattIntervals = data.reduce((acc, log) => acc + (log.wattage || 0), 0);
-          const kwh = totalWattIntervals / 12000;
-          const cost = kwh * unitCost;
-          
-          usageMap[room.id] = { kwh, cost };
+          // กรองข้อมูลที่ใช้งานไม่ต่อเนื่อง (ตีว่า 1 ping โดดๆ = ขยะ/เปิดไม่ถึง 5 นาที)
+          const validLogs = data.filter((log, i, arr) => {
+            const t = new Date(log.recorded_at).getTime();
+            const prevT = i > 0 ? new Date(arr[i-1].recorded_at).getTime() : -Infinity;
+            const nextT = i < arr.length - 1 ? new Date(arr[i+1].recorded_at).getTime() : Infinity;
+            // ต้องมี ping ที่ >0W ติดกันภายใน 6 นาที (360,000 ms) ถึงจะถือว่าเป็นการใช้งานต่อเนื่อง
+            return (t - prevT <= 360000) || (nextT - t <= 360000);
+          });
+
+          if (validLogs.length > 0) {
+            usedIds.add(room.id);
+            
+            const totalWattIntervals = validLogs.reduce((acc, log) => acc + (log.wattage || 0), 0);
+            const kwh = totalWattIntervals / 12000;
+            const cost = kwh * unitCost;
+            
+            usageMap[room.id] = { kwh, cost };
+          }
         }
       }));
       setUsedRoomIds(usedIds);
@@ -211,45 +223,44 @@ export default function EnergyPage() {
 
               return (
                 <div key={room.id} className="bg-white rounded-2xl shadow-sm border-slate-200 overflow-hidden flex flex-col h-[400px] border">
-                  <div className="p-4 flex-1 flex flex-col">
+                  <div className="p-3 flex-1 flex flex-col">
+                    {/* Header: Room Name & Status */}
                     <div className="flex justify-between items-start mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="text-xl font-black text-slate-800 leading-none">{room.room_no}</div>
+                        {room.location && <div className="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{room.location}</div>}
+                      </div>
+                      <div className={`px-1.5 py-0.5 rounded-full flex items-center gap-1 text-[9px] uppercase tracking-wider ${statusClasses.dot.includes('emerald') ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
+                        <div className={`w-1.5 h-1.5 rounded-full ${statusClasses.dot}`}></div>
+                        <span>{statusClasses.label}</span>
+                      </div>
+                    </div>
+
+                    {/* Stats Grid: Very compact */}
+                    <div className="grid grid-cols-2 gap-2 mb-2 bg-slate-50/50 p-2 rounded-lg border border-slate-100/80 text-xs">
+                      {/* Left: Current Usage */}
                       <div>
-                        <div className="text-2xl font-black text-slate-800 leading-none">{room.room_no}</div>
-                        {room.location && <div className="text-xs font-bold text-slate-500 mt-1">{room.location}</div>}
+                        <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">ปัจจุบัน / แอร์</div>
+                        <div className="flex items-baseline gap-1 mt-0.5">
+                          <span className="font-bold text-slate-700">{(dateOffset === 0 && online ? wattage : 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}W</span>
+                          <span className={`text-[10px] font-bold ${isAcOn ? 'text-orange-500' : 'text-slate-400'}`}>
+                            • {isAcOn ? 'ทำงาน' : 'สแตนด์บาย'}
+                          </span>
+                        </div>
                       </div>
-                      <div className={`px-2 py-1 rounded-full flex items-center gap-1.5 text-[10px] uppercase tracking-wider ${statusClasses.dot.includes('emerald') ? 'bg-emerald-50 border border-emerald-100' : 'bg-slate-100 border border-slate-200'}`}>
-                        <div className={`w-2 h-2 rounded-full ${statusClasses.dot}`}></div>
-                        <span className={statusClasses.text}>{statusClasses.label}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex justify-between items-end mt-4 mb-3">
-                      <div className="text-sm font-medium text-slate-500">การใช้พลังงาน</div>
-                      <div className="text-right">
-                        <div className="text-2xl font-black text-blue-600">{(dateOffset === 0 && online ? wattage : 0).toLocaleString(undefined, { maximumFractionDigits: 1 })} <span className="text-xs font-bold text-slate-400">W</span></div>
-                      </div>
-                    </div>
-
-                    <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-100">
-                      <div className="text-sm font-medium text-slate-500">สถานะแอร์ (คาดเดา)</div>
-                      <div className={`text-sm font-bold flex items-center gap-1.5 ${isAcOn ? 'text-orange-500' : 'text-slate-400'}`}>
-                        {isAcOn ? 'ทำงานอยู่' : 'สแตนด์บาย'} {isAcOn ? '❄️' : ''}
+                      {/* Right: Daily Totals */}
+                      <div className="text-right border-l border-slate-200/50 pl-2">
+                        <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">วันนี้ / ค่าไฟ</div>
+                        <div className="flex items-baseline justify-end gap-1 mt-0.5">
+                          <span className="font-bold text-slate-700">{usage.kwh.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span className="text-[10px] font-bold text-blue-600">
+                            • ฿{usage.cost.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Total KWH and Cost Row */}
-                    <div className="flex justify-between items-center mb-4 bg-blue-50/50 p-2 rounded-lg border border-blue-100/50">
-                      <div className="flex flex-col">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase">หน่วยไฟฟ้าวันนี้</span>
-                        <span className="text-sm font-black text-slate-700">{usage.kwh.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs font-bold text-slate-400">kWh</span></span>
-                      </div>
-                      <div className="flex flex-col text-right">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase">คิดเป็นเงิน</span>
-                        <span className="text-sm font-black text-blue-600">฿{usage.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex-1 mt-auto relative min-h-[140px]">
+                    <div className="flex-1 mt-auto relative min-h-[260px] -mx-1">
                       <EnergyGraph roomId={room.id} dateOffset={dateOffset} />
                     </div>
                   </div>
