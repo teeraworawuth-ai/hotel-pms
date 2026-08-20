@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
@@ -702,11 +702,11 @@ export default function CheckinPage() {
                             const isWindow = room.room_type?.includes('หน้าต่าง');
 
                             return (
-                              <div className={`absolute top-0 text-lg sm:text-xl font-black ${roomNoColor} transition-all leading-none flex items-center justify-center gap-0.5`}>
+                              <div className={`absolute top-0 text-lg sm:text-xl font-black ${roomNoColor} transition-all leading-none flex items-center justify-center gap-0`}>
                                 <span>{room.room_no}</span>
-                                <div className="flex items-center text-[13px] leading-none">
+                                <div className="flex items-center text-[13px] leading-none -space-x-1 -ml-0.5 opacity-90">
                                   {isDouble ? (
-                                    <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-[15px] h-[15px] sm:w-[17px] sm:h-[17px] mr-0.5 opacity-90 drop-shadow-sm">
+                                    <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-[15px] h-[15px] sm:w-[17px] sm:h-[17px] opacity-90 drop-shadow-sm">
                                       <rect x="2" y="3" width="5" height="11" rx="1" fill="#cbd5e1"/>
                                       <rect x="2.5" y="4" width="4" height="2" rx="0.5" fill="#ffffff"/>
                                       <rect x="2" y="7" width="5" height="7" rx="1" fill="#64748b"/>
@@ -715,11 +715,11 @@ export default function CheckinPage() {
                                       <rect x="9" y="7" width="5" height="7" rx="1" fill="#64748b"/>
                                     </svg>
                                   ) : isHouse ? (
-                                    <span className="mr-0.5 text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🏠</span>
+                                    <span className="text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🏠</span>
                                   ) : null}
-                                  {isSeaBalcony && <span className="mr-0.5 text-slate-700 grayscale text-[13px] sm:text-[14px] drop-shadow-sm opacity-60">⛱️</span>}
-                                  {isBalcony && <img src="/balcony.png" className="w-[20px] h-[20px] sm:w-[22px] sm:h-[22px] mr-0.5 object-contain mix-blend-multiply opacity-80 translate-y-[1.5px]" alt="ระเบียง" />}
-                                  {isWindow && <span className="mr-0.5 text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🪟</span>}
+                                  {isSeaBalcony && <span className="text-slate-700 grayscale text-[13px] sm:text-[14px] drop-shadow-sm opacity-60">⛱️</span>}
+                                  {isBalcony && <img src="/balcony.png" className="w-[20px] h-[20px] sm:w-[22px] sm:h-[22px] object-contain mix-blend-multiply opacity-80 translate-y-[1.5px]" alt="ระเบียง" />}
+                                  {isWindow && <span className="text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🪟</span>}
                                 </div>
 
                                 {isOverdue && (
@@ -859,3 +859,5 @@ export default function CheckinPage() {
     </div>
   );
 }
+
+
