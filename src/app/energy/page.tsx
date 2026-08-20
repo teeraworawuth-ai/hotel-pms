@@ -229,12 +229,8 @@ export default function EnergyPage() {
                       {/* Left: Room & Status */}
                       <div className="flex flex-col min-w-0">
                         <div className="flex items-baseline gap-1.5 truncate">
-                          <span className="text-2xl font-black text-slate-800 leading-none tracking-tight">{room.room_no}</span>
+                          <span className={`text-2xl font-black leading-none tracking-tight ${online ? 'text-emerald-500' : 'text-red-500'}`}>{room.room_no}</span>
                           {room.location && <span className="text-[10px] font-bold text-slate-400 truncate">{room.location}</span>}
-                        </div>
-                        <div className={`mt-1.5 flex items-center gap-1 text-[9px] font-bold tracking-wider whitespace-nowrap ${statusClasses.dot.includes('emerald') ? 'text-emerald-500' : 'text-slate-400'}`}>
-                          <div className={`w-1.5 h-1.5 rounded-full ${statusClasses.dot}`}></div>
-                          <span>{statusClasses.label}</span>
                         </div>
                       </div>
 

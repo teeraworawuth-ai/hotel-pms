@@ -264,7 +264,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
     return (
       <div className="w-full" style={{ height: typeof height === 'number' ? `${height}px` : height }}>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 10, right: 10, left: -5, bottom: 10 }}>
+          <LineChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
             
             <XAxis 
@@ -277,7 +277,6 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
               axisLine={false}
               interval={0}
               minTickGap={10}
-              tickMargin={12}
             />
             <YAxis 
               type="number"
@@ -287,7 +286,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
               axisLine={false}
               tickFormatter={(value) => `${value}w`}
               orientation="left"
-              width={40}
+              width={45}
             />
             
             {offlinePeriods.map((period, idx) => (
