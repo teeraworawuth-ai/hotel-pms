@@ -95,9 +95,9 @@ export default function EnergyPage() {
           .gte("recorded_at", startOfDay.toISOString())
           .lte("recorded_at", endOfDay.toISOString())
           .gt("wattage", 0)
-          .limit(1);
+          .limit(2);
         
-        if (data && data.length > 0) {
+        if (data && data.length >= 2) {
           usedIds.add(room.id);
         }
       }));

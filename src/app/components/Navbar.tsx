@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -7,6 +7,7 @@ import ShiftManager from "./ShiftManager";
 
 const navLinks = [
   { href: "/", label: "Dashboard" },
+  { href: "/manager", label: "Manager" },
   { href: "/audit", label: "Audit" },
   { href: "/energy", label: "Energy" },
   { href: "/bookings", label: "Booking" },
@@ -120,3 +121,4 @@ export default function Navbar() {
     </header>
   );
 }
+
