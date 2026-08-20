@@ -23,6 +23,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [isPortrait, setIsPortrait] = useState(false);
   const [expandedOffset, setExpandedOffset] = useState(0); // 0 = today, -1 = yesterday, max -3
   const graphRef = useRef<HTMLDivElement>(null);
 
@@ -40,6 +41,15 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
       document.body.style.overflow = 'unset';
     };
   }, [isFullScreen]);
+
+  useEffect(() => {
+    const checkOrientation = () => {
+      setIsPortrait(window.innerHeight > window.innerWidth);
+    };
+    checkOrientation();
+    window.addEventListener('resize', checkOrientation);
+    return () => window.removeEventListener('resize', checkOrientation);
+  }, []);
 
   const fetchData = async (currentExpandedOffset: number) => {
     try {
@@ -342,7 +352,25 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
       </div>
 
       {isFullScreen && (
-        <div className="fixed inset-0 z-[100] bg-white/95 backdrop-blur-sm flex flex-col animate-in fade-in zoom-in-95 duration-200 overflow-hidden h-[100dvh] w-full">
+        <div 
+          className="fixed z-[100] bg-white/95 backdrop-blur-sm flex flex-col animate-in fade-in overflow-hidden shadow-2xl"
+          style={
+            isPortrait
+              ? {
+                  top: '50%',
+                  left: '50%',
+                  width: '100dvh',
+                  height: '100dvw',
+                  transform: 'translate(-50%, -50%) rotate(90deg)',
+                  transformOrigin: 'center center',
+                }
+              : {
+                  inset: 0,
+                  width: '100dvw',
+                  height: '100dvh',
+                }
+          }
+        >
           <div className="flex justify-between items-start md:items-center p-4 md:p-6 border-b border-slate-200 bg-white shrink-0 shadow-sm">
             <div className="pr-4">
               <h2 className="text-xl md:text-2xl font-black text-slate-800 leading-tight">กราฟการใช้ไฟ - ห้อง {roomId.substring(0,4)}...</h2>
