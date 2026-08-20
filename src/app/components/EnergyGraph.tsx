@@ -264,7 +264,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
     return (
       <div className="w-full" style={{ height: typeof height === 'number' ? `${height}px` : height }}>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 25 }}>
+          <LineChart data={data} margin={{ top: 10, right: 10, left: -5, bottom: 25 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
             
             <XAxis 
