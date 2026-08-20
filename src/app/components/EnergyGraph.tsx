@@ -23,7 +23,6 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFullScreen, setIsFullScreen] = useState(false);
-  const [isPortrait, setIsPortrait] = useState(false);
   const [expandedOffset, setExpandedOffset] = useState(0); // 0 = today, -1 = yesterday, max -3
   const graphRef = useRef<HTMLDivElement>(null);
 
@@ -41,15 +40,6 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
       document.body.style.overflow = 'unset';
     };
   }, [isFullScreen]);
-
-  useEffect(() => {
-    const checkOrientation = () => {
-      setIsPortrait(window.innerHeight > window.innerWidth);
-    };
-    checkOrientation();
-    window.addEventListener('resize', checkOrientation);
-    return () => window.removeEventListener('resize', checkOrientation);
-  }, []);
 
   const fetchData = async (currentExpandedOffset: number) => {
     try {
@@ -222,8 +212,8 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
       if (isStartOrEnd) {
         return (
           <g>
-            <line x1={x} y1={y} x2={x} y2={y + 6} stroke="#94a3b8" strokeWidth={1.5} />
-            <text x={x} y={y + 15} textAnchor="middle" fill="#94a3b8" fontSize={11} fontWeight="bold">
+            <line x1={x} y1={y} x2={x} y2={y + 3} stroke="#94a3b8" strokeWidth={1.5} />
+            <text x={x} y={y + 11} textAnchor="middle" fill="#94a3b8" fontSize={11} fontWeight="bold">
               7
             </text>
           </g>
@@ -234,8 +224,8 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
           const fSize = hour >= 10 ? 9.5 : 11;
           return (
             <g>
-              <line x1={x} y1={y} x2={x} y2={y + 4} stroke="#cbd5e1" strokeWidth={1} />
-              <text x={x} y={y + 15} textAnchor="middle" fill="#cbd5e1" fontSize={showControls ? 11 : fSize}>
+              <line x1={x} y1={y} x2={x} y2={y + 2} stroke="#cbd5e1" strokeWidth={1} />
+              <text x={x} y={y + 11} textAnchor="middle" fill="#cbd5e1" fontSize={showControls ? 11 : fSize}>
                 {hour}
               </text>
             </g>
@@ -274,7 +264,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
     return (
       <div className="w-full" style={{ height: typeof height === 'number' ? `${height}px` : height }}>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 10, right: 10, left: -5, bottom: 25 }}>
+          <LineChart data={data} margin={{ top: 10, right: 10, left: -5, bottom: 10 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
             
             <XAxis 
@@ -338,6 +328,43 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
 
   return (
     <>
+      {isFullScreen && (
+        <style dangerouslySetInnerHTML={{__html: `
+          .graph-modal-locked {
+            position: fixed;
+            z-index: 100;
+            background-color: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(4px);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+          }
+          
+          /* ถ้ามือถือถือในแนวตั้ง บังคับหมุน 90 องศาให้เต็มจอ */
+          @media (orientation: portrait) {
+            .graph-modal-locked {
+              top: 50%;
+              left: 50%;
+              width: 100vh;
+              height: 100vw;
+              transform: translate(-50%, -50%) rotate(90deg);
+              transform-origin: center center;
+            }
+          }
+
+          /* ถ้ามือถือถือในแนวนอนอยู่แล้ว ให้แสดงเต็มจอปกติ */
+          @media (orientation: landscape) {
+            .graph-modal-locked {
+              inset: 0;
+              width: 100vw;
+              height: 100vh;
+              transform: none;
+            }
+          }
+        `}} />
+      )}
+
       <div 
         ref={graphRef} 
         className="mt-2 relative group cursor-pointer"
@@ -352,25 +379,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
       </div>
 
       {isFullScreen && (
-        <div 
-          className="fixed z-[100] bg-white/95 backdrop-blur-sm flex flex-col animate-in fade-in overflow-hidden shadow-2xl"
-          style={
-            isPortrait
-              ? {
-                  top: '50%',
-                  left: '50%',
-                  width: '100dvh',
-                  height: '100dvw',
-                  transform: 'translate(-50%, -50%) rotate(90deg)',
-                  transformOrigin: 'center center',
-                }
-              : {
-                  inset: 0,
-                  width: '100dvw',
-                  height: '100dvh',
-                }
-          }
-        >
+        <div className="graph-modal-locked">
           <div className="flex justify-between items-start md:items-center p-4 md:p-6 border-b border-slate-200 bg-white shrink-0 shadow-sm">
             <div className="pr-4">
               <h2 className="text-xl md:text-2xl font-black text-slate-800 leading-tight">กราฟการใช้ไฟ - ห้อง {roomId.substring(0,4)}...</h2>
