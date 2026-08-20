@@ -23,7 +23,6 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFullScreen, setIsFullScreen] = useState(false);
-  const [isPortrait, setIsPortrait] = useState(false);
   const [expandedOffset, setExpandedOffset] = useState(0); // 0 = today, -1 = yesterday, max -3
   const graphRef = useRef<HTMLDivElement>(null);
 
@@ -41,15 +40,6 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
       document.body.style.overflow = 'unset';
     };
   }, [isFullScreen]);
-
-  useEffect(() => {
-    const checkOrientation = () => {
-      setIsPortrait(window.innerHeight > window.innerWidth);
-    };
-    checkOrientation();
-    window.addEventListener('resize', checkOrientation);
-    return () => window.removeEventListener('resize', checkOrientation);
-  }, []);
 
   const fetchData = async (currentExpandedOffset: number) => {
     try {
@@ -142,7 +132,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
           await document.documentElement.requestFullscreen();
           const screenOrientation = (screen as any).orientation || (screen as any).mozOrientation || (screen as any).msOrientation;
           if (screenOrientation && screenOrientation.lock) {
-            await screenOrientation.lock('landscape');
+            await screenOrientation.lock('landscape').catch(() => {});
           }
         }
       } catch (err) {
@@ -155,7 +145,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
           screenOrientation.unlock();
         }
         if (document.fullscreenElement && document.exitFullscreen) {
-          await document.exitFullscreen();
+          await document.exitFullscreen().catch(() => {});
         }
       } catch (err) {
         console.warn('Exit fullscreen failed:', err);
@@ -193,16 +183,6 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
       smallTicks.push(startOfDayMs + (h * 3600 + 15 * 60) * 1000);
     }
     smallTicks.push(startOfDayMs + 24 * 3600 * 1000 - 60000);
-    
-    const fullTicks = [];
-    if (showControls) {
-      // สร้าง ticks ทุกๆ 1 ชั่วโมงสำหรับกราฟขยาย
-      for (let t = graphStartMs; t <= graphEndMs; t += 3600 * 1000) {
-        fullTicks.push(t);
-      }
-    }
-    
-    const ticksToUse = showControls ? fullTicks : smallTicks;
 
     const offlinePeriods: {start: number, end: number}[] = [];
     if (data && data.length > 0) {
@@ -229,7 +209,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
       const isHour = date.getMinutes() === 0;
       const isOddHour = date.getHours() % 2 !== 0; 
       
-      if (isStartOrEnd && !showControls) {
+      if (isStartOrEnd) {
         return (
           <g>
             <line x1={x} y1={y} x2={x} y2={y + 6} stroke="#94a3b8" strokeWidth={1.5} />
@@ -238,14 +218,14 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
             </text>
           </g>
         );
-      } else if (isHour && !showControls) {
-        if (isOddHour) {
+      } else if (isHour) {
+        if (isOddHour || showControls) {
           const hour = date.getHours();
           const fSize = hour >= 10 ? 9.5 : 11;
           return (
             <g>
               <line x1={x} y1={y} x2={x} y2={y + 4} stroke="#cbd5e1" strokeWidth={1} />
-              <text x={x} y={y + 15} textAnchor="middle" fill="#cbd5e1" fontSize={fSize}>
+              <text x={x} y={y + 15} textAnchor="middle" fill="#cbd5e1" fontSize={showControls ? 11 : fSize}>
                 {hour}
               </text>
             </g>
@@ -284,39 +264,34 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
     return (
       <div className="w-full" style={{ height: typeof height === 'number' ? `${height}px` : height }}>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 10, right: 10, left: -5, bottom: 15 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={showControls ? "#334155" : "#f1f5f9"} />
+          <LineChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 25 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
             
             <XAxis 
               dataKey="fullTime"
               type="number"
               domain={[graphStartMs, graphEndMs]}
-              ticks={showControls ? undefined : ticksToUse}
-              tick={showControls ? undefined : <CustomTick />}
-              tickFormatter={showControls ? (val) => {
-                const date = new Date(val);
-                return `${date.getHours().toString().padStart(2, '0')}:00`;
-              } : undefined}
-              tickLine={showControls}
+              ticks={smallTicks}
+              tick={<CustomTick />}
+              tickLine={false}
               axisLine={false}
-              interval={showControls ? 'preserveStartEnd' : 0}
-              minTickGap={40}
+              interval={0}
+              minTickGap={10}
               tickMargin={12}
-              style={showControls ? { fontSize: '11px', fill: '#94a3b8', fontWeight: 'normal' } : undefined}
             />
             <YAxis 
               type="number"
               domain={[0, yAxisMax]}
-              tick={{ fontSize: 10, fill: showControls ? '#64748b' : '#94a3b8' }}
+              tick={{ fontSize: 10, fill: '#94a3b8' }}
               tickLine={false}
               axisLine={false}
               tickFormatter={(value) => `${value}w`}
               orientation="left"
-              width={55}
+              width={40}
             />
             
             {offlinePeriods.map((period, idx) => (
-              <ReferenceArea key={idx} x1={period.start} x2={period.end} fill={showControls ? "#1e293b" : "#cbd5e1"} fillOpacity={0.6} />
+              <ReferenceArea key={idx} x1={period.start} x2={period.end} fill="#e2e8f0" fillOpacity={0.7} />
             ))}
 
             {showControls && (
@@ -324,10 +299,10 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
                 x="50%" 
                 y="50%" 
                 textAnchor="middle" 
-                fill="#334155" 
+                fill="#cbd5e1" 
                 fontSize={48} 
                 fontWeight="bold" 
-                opacity={0.3}
+                opacity={0.5}
               >
                 {backgroundLabel}
               </text>
@@ -338,7 +313,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
             <Line 
               type="monotone" 
               dataKey="watt" 
-              stroke={showControls ? "#818cf8" : "#6366f1"} 
+              stroke="#6366f1" 
               strokeWidth={showControls ? 2 : 3}
               dot={false}
               activeDot={{ r: 5, fill: '#4f46e5', stroke: '#c7d2fe', strokeWidth: 3 }}
@@ -363,54 +338,36 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
             🔍 ขยายกราฟเต็มจอ
           </div>
         </div>
-        {renderGraph(160, false)}
+        {renderGraph(140, false)}
       </div>
 
       {isFullScreen && (
-        <div 
-          className={`fixed z-[100] bg-slate-900/95 backdrop-blur-sm flex flex-col animate-in fade-in zoom-in-95 duration-200 overflow-hidden`}
-          style={
-            isPortrait
-              ? {
-                  top: '50%',
-                  left: '50%',
-                  width: '100vh',
-                  height: '100vw',
-                  transform: 'translate(-50%, -50%) rotate(90deg)',
-                  transformOrigin: 'center center',
-                }
-              : {
-                  inset: 0,
-                  width: '100%',
-                  height: '100%',
-                }
-          }
-        >
-          <div className="flex justify-between items-start md:items-center p-4 md:p-6 border-b border-white/10 bg-slate-900 shrink-0">
+        <div className="fixed inset-0 z-[100] bg-white/95 backdrop-blur-sm flex flex-col animate-in fade-in zoom-in-95 duration-200 overflow-hidden h-[100dvh] w-full">
+          <div className="flex justify-between items-start md:items-center p-4 md:p-6 border-b border-slate-200 bg-white shrink-0 shadow-sm">
             <div className="pr-4">
-              <h2 className="text-xl md:text-2xl font-black text-white leading-tight">กราฟการใช้ไฟ - ห้อง {roomId.substring(0,4)}...</h2>
-              <p className="text-slate-400 text-xs md:text-sm mt-1">ใช้สองนิ้วซูมเข้า-ออก เพื่อดูความละเอียดระดับนาที</p>
+              <h2 className="text-xl md:text-2xl font-black text-slate-800 leading-tight">กราฟการใช้ไฟ - ห้อง {roomId.substring(0,4)}...</h2>
+              <p className="text-slate-500 text-xs md:text-sm mt-1">ใช้สองนิ้วซูมเข้า-ออก เพื่อดูความละเอียดระดับนาที</p>
             </div>
             <button 
               onClick={toggleFullScreen}
-              className="p-2 md:p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-colors flex items-center gap-2 shrink-0"
+              className="p-2 md:p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-full transition-colors flex items-center gap-2 shrink-0"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
               <span className="font-bold text-sm hidden md:inline">ปิด (Close)</span>
             </button>
           </div>
           
-          <div className="flex-1 p-2 md:p-6 min-h-[400px] bg-slate-900 flex flex-col relative overflow-hidden">
+          <div className="flex-1 p-2 pb-6 md:p-6 md:pb-8 min-h-[300px] bg-slate-50 flex flex-col relative overflow-hidden">
              {/* Navigation controls */}
-             <div className="flex justify-between items-center mb-2 md:mb-4 px-2">
+             <div className="flex justify-between items-center mb-3 md:mb-4 px-2 shrink-0">
                 <button 
                   onClick={() => setExpandedOffset(Math.max(-3, expandedOffset - 1))}
                   disabled={expandedOffset === -3}
-                  className="px-4 py-2 bg-indigo-600 disabled:bg-slate-800 text-white font-bold rounded-lg text-sm transition-colors"
+                  className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-50 disabled:bg-slate-50 text-slate-700 font-bold rounded-lg text-sm transition-colors shadow-sm"
                 >
                   &laquo; ย้อนกลับ 1 วัน
                 </button>
-                <div className="text-white font-bold bg-slate-800 px-4 py-2 rounded-lg text-sm">
+                <div className="text-slate-700 font-bold bg-white border border-slate-200 px-4 py-2 rounded-lg text-sm shadow-sm">
                   {(() => {
                     const d = new Date();
                     d.setDate(d.getDate() + dateOffset + expandedOffset);
@@ -421,13 +378,13 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
                 <button 
                   onClick={() => setExpandedOffset(Math.min(0, expandedOffset + 1))}
                   disabled={expandedOffset === 0}
-                  className="px-4 py-2 bg-indigo-600 disabled:bg-slate-800 text-white font-bold rounded-lg text-sm transition-colors"
+                  className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-50 disabled:bg-slate-50 text-slate-700 font-bold rounded-lg text-sm transition-colors shadow-sm"
                 >
                   ถัดไป 1 วัน &raquo;
                 </button>
              </div>
 
-             <div className="w-full flex-1 bg-slate-800/50 rounded-2xl border border-white/5 relative z-10 overflow-hidden">
+             <div className="w-full flex-1 bg-white rounded-2xl border border-slate-200 relative z-10 overflow-hidden shadow-sm">
                 <TransformWrapper 
                    initialScale={1}
                    minScale={1}
@@ -437,7 +394,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
                    panning={{ lockAxisX: false, lockAxisY: true }}
                 >
                    <TransformComponent wrapperStyle={{ width: "100%", height: "100%" }} contentStyle={{ width: "100%", height: "100%" }}>
-                      <div className="w-full h-full p-2 pb-6 md:p-6 md:pb-10 min-w-full relative">
+                      <div className="w-full h-full p-2 pb-8 md:p-6 md:pb-12 min-w-full relative">
                         {renderGraph('100%', true)}
                       </div>
                    </TransformComponent>

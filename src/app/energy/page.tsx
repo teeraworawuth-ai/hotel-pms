@@ -225,22 +225,22 @@ export default function EnergyPage() {
                 <div key={room.id} className="bg-white rounded-2xl shadow-sm border-slate-200 overflow-hidden flex flex-col h-[220px] border">
                   <div className="p-3 flex-1 flex flex-col">
                     {/* Header: All info in one tight row */}
-                    <div className="flex justify-between items-start mb-2">
+                    <div className="flex justify-between items-start mb-2 gap-2">
                       {/* Left: Room & Status */}
-                      <div className="flex flex-col">
-                        <div className="flex items-baseline gap-1.5">
+                      <div className="flex flex-col min-w-0">
+                        <div className="flex items-baseline gap-1.5 truncate">
                           <span className="text-2xl font-black text-slate-800 leading-none tracking-tight">{room.room_no}</span>
-                          {room.location && <span className="text-[10px] font-bold text-slate-400">{room.location}</span>}
+                          {room.location && <span className="text-[10px] font-bold text-slate-400 truncate">{room.location}</span>}
                         </div>
-                        <div className={`mt-1.5 flex items-center gap-1 text-[9px] font-bold tracking-wider ${statusClasses.dot.includes('emerald') ? 'text-emerald-500' : 'text-slate-400'}`}>
+                        <div className={`mt-1.5 flex items-center gap-1 text-[9px] font-bold tracking-wider whitespace-nowrap ${statusClasses.dot.includes('emerald') ? 'text-emerald-500' : 'text-slate-400'}`}>
                           <div className={`w-1.5 h-1.5 rounded-full ${statusClasses.dot}`}></div>
                           <span>{statusClasses.label}</span>
                         </div>
                       </div>
 
                       {/* Right: Stats Grid */}
-                      <div className="flex gap-3 text-right">
-                        <div className="flex flex-col items-end">
+                      <div className="flex gap-2 text-right shrink-0 whitespace-nowrap">
+                        <div className="flex flex-col items-end min-w-[70px]">
                           <span className="text-[9px] text-slate-400 font-bold tracking-wider">ปัจจุบัน / แอร์</span>
                           <span className="text-[11px] font-black text-slate-700 mt-0.5">
                             {(dateOffset === 0 && online ? wattage : 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}W
@@ -249,7 +249,7 @@ export default function EnergyPage() {
                             </span>
                           </span>
                         </div>
-                        <div className="flex flex-col items-end border-l border-slate-100 pl-3">
+                        <div className="flex flex-col items-end border-l border-slate-100 pl-2 min-w-[85px]">
                           <span className="text-[9px] text-slate-400 font-bold tracking-wider">รวมวันนี้ / ค่าไฟ</span>
                           <span className="text-[11px] font-black text-slate-700 mt-0.5">
                             {usage.kwh.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-[9px] font-bold text-slate-400 uppercase">kWh</span>
