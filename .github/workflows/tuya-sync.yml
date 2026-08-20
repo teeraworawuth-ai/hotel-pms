@@ -1,0 +1,15 @@
+﻿name: Tuya Auto Sync Cron
+
+on:
+  schedule:
+    # รันทุกๆ 5 นาที
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # อนุญาตให้กดรันเองได้จาก GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Tuya Sync API
+        run: |
+          curl -X GET "https://hotel-pms-run.vercel.app/api/cron/tuya-sync" -H "Accept: application/json"
