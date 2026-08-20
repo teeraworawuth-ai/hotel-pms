@@ -103,16 +103,18 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
         if (point.watt === null) return point;
         let hasNeighbor = false;
         for (let j = i - 1; j >= 0; j--) {
-          if (point.fullTime - arr[j].fullTime > 360000) break;
-          if (arr[j].watt !== null && arr[j].watt > 0) {
+          const neighbor = arr[j];
+          if (point.fullTime - neighbor.fullTime > 360000) break;
+          if (neighbor.watt !== null && neighbor.watt > 0) {
             hasNeighbor = true;
             break;
           }
         }
         if (!hasNeighbor) {
           for (let j = i + 1; j < arr.length; j++) {
-            if (arr[j].fullTime - point.fullTime > 360000) break;
-            if (arr[j].watt !== null && arr[j].watt > 0) {
+            const neighbor = arr[j];
+            if (neighbor.fullTime - point.fullTime > 360000) break;
+            if (neighbor.watt !== null && neighbor.watt > 0) {
               hasNeighbor = true;
               break;
             }
