@@ -24,11 +24,12 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
   const [loading, setLoading] = useState(true);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isPortrait, setIsPortrait] = useState(false);
+  const [expandedOffset, setExpandedOffset] = useState(0); // 0 = today, -1 = yesterday, max -3
   const graphRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetchData(isFullScreen);
-  }, [roomId, dateOffset, isFullScreen]);
+    fetchData(expandedOffset);
+  }, [roomId, dateOffset, expandedOffset, isFullScreen]);
 
   useEffect(() => {
     if (isFullScreen) {
@@ -50,26 +51,23 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
     return () => window.removeEventListener('resize', checkOrientation);
   }, []);
 
-  const fetchData = async (isExpanded: boolean) => {
+  const fetchData = async (currentExpandedOffset: number) => {
     try {
       setLoading(true);
 
       const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() + dateOffset);
+      // Combine the main page offset with the modal's offset
+      const totalOffset = isFullScreen ? dateOffset + currentExpandedOffset : dateOffset;
+      targetDate.setDate(targetDate.getDate() + totalOffset);
 
       // วันเริ่มต้น
-      let startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0);
-      
-      if (isExpanded) {
-        // ขยายกราฟดึงย้อนหลัง 3 วัน (รวมวันนี้เป็น 4 วัน)
-        startOfRange.setDate(startOfRange.getDate() - 3);
-      }
+      const startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0);
       
       const nextDate = new Date(targetDate);
       nextDate.setDate(nextDate.getDate() + 1);
       let endOfDay = new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate(), 6, 44, 59);
 
-      if (dateOffset === 0) {
+      if (totalOffset === 0) {
         const now = new Date();
         if (now < endOfDay) {
           endOfDay = now;
@@ -183,19 +181,11 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
     }
 
     const targetDate = new Date();
-    targetDate.setDate(targetDate.getDate() + dateOffset);
+    const totalOffset = showControls ? dateOffset + expandedOffset : dateOffset;
+    targetDate.setDate(targetDate.getDate() + totalOffset);
     
-    // สำหรับกราฟเล็ก เอาแค่วันนี้
     const startOfDayMs = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0).getTime();
-    
-    // สำหรับกราฟใหญ่ เอา 3 วันย้อนหลังรวมวันนี้เป็น 4 วัน
-    let graphStartMs = startOfDayMs;
-    if (showControls) {
-      const d = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0);
-      d.setDate(d.getDate() - 3);
-      graphStartMs = d.getTime();
-    }
-    
+    const graphStartMs = startOfDayMs;
     const graphEndMs = startOfDayMs + 24 * 3600 * 1000 - 60000;
 
     const smallTicks = [startOfDayMs];
@@ -206,8 +196,8 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
     
     const fullTicks = [];
     if (showControls) {
-      // สร้าง ticks ทุกๆ 6 ชั่วโมงสำหรับกราฟขยายที่มี 4 วัน
-      for (let t = graphStartMs; t <= graphEndMs; t += 6 * 3600 * 1000) {
+      // สร้าง ticks ทุกๆ 1 ชั่วโมงสำหรับกราฟขยาย
+      for (let t = graphStartMs; t <= graphEndMs; t += 3600 * 1000) {
         fullTicks.push(t);
       }
     }
@@ -224,7 +214,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
         }
       }
       
-      if (dateOffset === 0) {
+      if (totalOffset === 0) {
         const lastData = data[data.length - 1];
         const now = Date.now();
         if (now - lastData.fullTime > 10 * 60 * 1000) {
@@ -284,18 +274,11 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
     const maxWatt = Math.max(...data.map(d => d.watt || 0), 100);
     const yAxisMax = Math.ceil(maxWatt / 200) * 200 + 200;
 
-    // คำนวณช่วงของแต่ละวันเพื่อใส่ Background Date
-    const dayBackgrounds = [];
+    // คำนวณช่วงของวันนี้เพื่อใส่ Background Date
+    let backgroundLabel = "";
     if (showControls) {
-      for (let i = 0; i <= 3; i++) {
-        const d = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() - 3 + i, 6, 45, 0);
-        const start = d.getTime();
-        const end = start + 24 * 3600 * 1000;
-        const middle = start + 12 * 3600 * 1000;
-        const isToday = i === 3 && dateOffset === 0;
-        const label = d.toLocaleDateString("th-TH", { day: "numeric", month: "short" }) + (isToday ? " (วันนี้)" : "");
-        dayBackgrounds.push({ start, end, middle, label });
-      }
+      const isToday = totalOffset === 0;
+      backgroundLabel = targetDate.toLocaleDateString("th-TH", { day: "numeric", month: "long" }) + (isToday ? " (วันนี้)" : "");
     }
 
     return (
@@ -312,14 +295,14 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
               tick={showControls ? undefined : <CustomTick />}
               tickFormatter={showControls ? (val) => {
                 const date = new Date(val);
-                return `${date.getDate()} ${date.toLocaleString('th-TH', {month:'short'})} ${date.getHours().toString().padStart(2, '0')}:00`;
+                return `${date.getHours().toString().padStart(2, '0')}:00`;
               } : undefined}
               tickLine={showControls}
               axisLine={false}
               interval={showControls ? 'preserveStartEnd' : 0}
               minTickGap={40}
               tickMargin={12}
-              style={showControls ? { fontSize: '10px', fill: '#94a3b8', fontWeight: 'normal' } : undefined}
+              style={showControls ? { fontSize: '11px', fill: '#94a3b8', fontWeight: 'normal' } : undefined}
             />
             <YAxis 
               type="number"
@@ -336,32 +319,19 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
               <ReferenceArea key={idx} x1={period.start} x2={period.end} fill={showControls ? "#1e293b" : "#cbd5e1"} fillOpacity={0.6} />
             ))}
 
-            {showControls && dayBackgrounds.map((day, idx) => (
-              <ReferenceArea 
-                key={`bg-${idx}`}
-                x1={day.start}
-                x2={day.end}
-                fill={idx % 2 === 0 ? "#0f172a" : "#1e293b"}
-                fillOpacity={0.4}
-              />
-            ))}
-
-            {showControls && dayBackgrounds.map((day, idx) => (
+            {showControls && (
               <text 
-                key={`text-${idx}`}
                 x="50%" 
                 y="50%" 
-                dx={(idx - 1.5) * 500} // วางระยะคร่าวๆ
-                dy={0} 
                 textAnchor="middle" 
                 fill="#334155" 
-                fontSize={32} 
+                fontSize={48} 
                 fontWeight="bold" 
                 opacity={0.3}
               >
-                {day.label}
+                {backgroundLabel}
               </text>
-            ))}
+            )}
 
             <Tooltip content={<CustomTooltip />} />
             
@@ -419,7 +389,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
           <div className="flex justify-between items-start md:items-center p-4 md:p-6 border-b border-white/10 bg-slate-900 shrink-0">
             <div className="pr-4">
               <h2 className="text-xl md:text-2xl font-black text-white leading-tight">กราฟการใช้ไฟ - ห้อง {roomId.substring(0,4)}...</h2>
-              <p className="text-slate-400 text-xs md:text-sm mt-1">ใช้สองนิ้วซูมเข้า-ออก หรือปัดซ้าย-ขวาเพื่อดูย้อนหลัง 3 วัน</p>
+              <p className="text-slate-400 text-xs md:text-sm mt-1">ใช้สองนิ้วซูมเข้า-ออก เพื่อดูความละเอียดระดับนาที</p>
             </div>
             <button 
               onClick={toggleFullScreen}
@@ -431,31 +401,43 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
           </div>
           
           <div className="flex-1 p-2 md:p-6 min-h-[400px] bg-slate-900 flex flex-col relative overflow-hidden">
+             {/* Navigation controls */}
+             <div className="flex justify-between items-center mb-2 md:mb-4 px-2">
+                <button 
+                  onClick={() => setExpandedOffset(Math.max(-3, expandedOffset - 1))}
+                  disabled={expandedOffset === -3}
+                  className="px-4 py-2 bg-indigo-600 disabled:bg-slate-800 text-white font-bold rounded-lg text-sm transition-colors"
+                >
+                  &laquo; ย้อนกลับ 1 วัน
+                </button>
+                <div className="text-white font-bold bg-slate-800 px-4 py-2 rounded-lg text-sm">
+                  {(() => {
+                    const d = new Date();
+                    d.setDate(d.getDate() + dateOffset + expandedOffset);
+                    const isToday = (dateOffset + expandedOffset) === 0;
+                    return d.toLocaleDateString("th-TH", { day: "numeric", month: "long" }) + (isToday ? " (วันนี้)" : "");
+                  })()}
+                </div>
+                <button 
+                  onClick={() => setExpandedOffset(Math.min(0, expandedOffset + 1))}
+                  disabled={expandedOffset === 0}
+                  className="px-4 py-2 bg-indigo-600 disabled:bg-slate-800 text-white font-bold rounded-lg text-sm transition-colors"
+                >
+                  ถัดไป 1 วัน &raquo;
+                </button>
+             </div>
+
              <div className="w-full flex-1 bg-slate-800/50 rounded-2xl border border-white/5 relative z-10 overflow-hidden">
                 <TransformWrapper 
                    initialScale={1}
                    minScale={1}
-                   maxScale={8}
+                   maxScale={15}
                    centerOnInit={false}
                    wheel={{ step: 0.2 }}
                    panning={{ lockAxisX: false, lockAxisY: true }}
                 >
                    <TransformComponent wrapperStyle={{ width: "100%", height: "100%" }} contentStyle={{ width: "100%", height: "100%" }}>
-                      <div className="w-full h-full p-2 pb-6 md:p-6 md:pb-10 min-w-[2000px] md:min-w-full relative">
-                        {/* Background Text behind the graph */}
-                        <div className="absolute inset-0 flex">
-                           {[...Array(4)].map((_, i) => {
-                             const d = new Date();
-                             d.setDate(d.getDate() - (3 - i));
-                             const isToday = i === 3;
-                             const label = d.toLocaleDateString("th-TH", { day: "numeric", month: "long" }) + (isToday ? " (วันนี้)" : "");
-                             return (
-                               <div key={i} className="flex-1 flex items-center justify-center opacity-10 pointer-events-none">
-                                  <span className="text-4xl md:text-6xl font-black text-white">{label}</span>
-                               </div>
-                             );
-                           })}
-                        </div>
+                      <div className="w-full h-full p-2 pb-6 md:p-6 md:pb-10 min-w-full relative">
                         {renderGraph('100%', true)}
                       </div>
                    </TransformComponent>

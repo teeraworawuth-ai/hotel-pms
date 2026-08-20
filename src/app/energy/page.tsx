@@ -222,45 +222,47 @@ export default function EnergyPage() {
               const statusClasses = getStatusClasses(online, wattage);
 
               return (
-                <div key={room.id} className="bg-white rounded-2xl shadow-sm border-slate-200 overflow-hidden flex flex-col h-[400px] border">
+                <div key={room.id} className="bg-white rounded-2xl shadow-sm border-slate-200 overflow-hidden flex flex-col h-[220px] border">
                   <div className="p-3 flex-1 flex flex-col">
-                    {/* Header: Room Name & Status */}
+                    {/* Header: All info in one tight row */}
                     <div className="flex justify-between items-start mb-2">
-                      <div className="flex items-center gap-2">
-                        <div className="text-xl font-black text-slate-800 leading-none">{room.room_no}</div>
-                        {room.location && <div className="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{room.location}</div>}
+                      {/* Left: Room & Status */}
+                      <div className="flex flex-col">
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-2xl font-black text-slate-800 leading-none tracking-tight">{room.room_no}</span>
+                          {room.location && <span className="text-[10px] font-bold text-slate-400">{room.location}</span>}
+                        </div>
+                        <div className={`mt-1.5 flex items-center gap-1 text-[9px] font-bold tracking-wider ${statusClasses.dot.includes('emerald') ? 'text-emerald-500' : 'text-slate-400'}`}>
+                          <div className={`w-1.5 h-1.5 rounded-full ${statusClasses.dot}`}></div>
+                          <span>{statusClasses.label}</span>
+                        </div>
                       </div>
-                      <div className={`px-1.5 py-0.5 rounded-full flex items-center gap-1 text-[9px] uppercase tracking-wider ${statusClasses.dot.includes('emerald') ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
-                        <div className={`w-1.5 h-1.5 rounded-full ${statusClasses.dot}`}></div>
-                        <span>{statusClasses.label}</span>
-                      </div>
-                    </div>
 
-                    {/* Stats Grid: Very compact */}
-                    <div className="grid grid-cols-2 gap-2 mb-2 bg-slate-50/50 p-2 rounded-lg border border-slate-100/80 text-xs">
-                      {/* Left: Current Usage */}
-                      <div>
-                        <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">ปัจจุบัน / แอร์</div>
-                        <div className="flex items-baseline gap-1 mt-0.5">
-                          <span className="font-bold text-slate-700">{(dateOffset === 0 && online ? wattage : 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}W</span>
-                          <span className={`text-[10px] font-bold ${isAcOn ? 'text-orange-500' : 'text-slate-400'}`}>
-                            • {isAcOn ? 'ทำงาน' : 'สแตนด์บาย'}
+                      {/* Right: Stats Grid */}
+                      <div className="flex gap-3 text-right">
+                        <div className="flex flex-col items-end">
+                          <span className="text-[9px] text-slate-400 font-bold tracking-wider">ปัจจุบัน / แอร์</span>
+                          <span className="text-[11px] font-black text-slate-700 mt-0.5">
+                            {(dateOffset === 0 && online ? wattage : 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}W
+                            <span className={`ml-1 font-bold ${isAcOn ? 'text-orange-500' : 'text-slate-400'}`}>
+                              • {isAcOn ? 'ทำงาน' : 'สแตนด์บาย'}
+                            </span>
+                          </span>
+                        </div>
+                        <div className="flex flex-col items-end border-l border-slate-100 pl-3">
+                          <span className="text-[9px] text-slate-400 font-bold tracking-wider">รวมวันนี้ / ค่าไฟ</span>
+                          <span className="text-[11px] font-black text-slate-700 mt-0.5">
+                            {usage.kwh.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-[9px] font-bold text-slate-400 uppercase">kWh</span>
+                            <span className="text-blue-600 ml-1">
+                              • ฿{usage.cost.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })}
+                            </span>
                           </span>
                         </div>
                       </div>
-                      {/* Right: Daily Totals */}
-                      <div className="text-right border-l border-slate-200/50 pl-2">
-                        <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">วันนี้ / ค่าไฟ</div>
-                        <div className="flex items-baseline justify-end gap-1 mt-0.5">
-                          <span className="font-bold text-slate-700">{usage.kwh.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          <span className="text-[10px] font-bold text-blue-600">
-                            • ฿{usage.cost.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })}
-                          </span>
-                        </div>
-                      </div>
                     </div>
 
-                    <div className="flex-1 mt-auto relative min-h-[260px] -mx-1">
+                    {/* Graph Area */}
+                    <div className="flex-1 mt-auto relative min-h-[140px] -mx-1">
                       <EnergyGraph roomId={room.id} dateOffset={dateOffset} />
                     </div>
                   </div>
