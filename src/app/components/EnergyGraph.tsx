@@ -589,7 +589,7 @@ const touchState = useRef({ startDist: 0 });
                   {hoverInfo && isFullScreen && (
                     <div 
                       className="absolute top-0 bottom-0 pointer-events-none border-l-2 border-indigo-500 border-dashed z-[100] flex flex-col items-center justify-start pt-1 md:pt-4"
-                      style={{ left: hoverInfo.x + (scrollContainerRef.current?.scrollLeft || 0) }}
+                      style={{ left: hoverInfo.x }}
                     >
                       <div className="bg-indigo-600/90 text-white text-[10px] md:text-sm font-bold px-2 py-1 md:px-3 md:py-1.5 rounded shadow-lg transform -translate-x-1/2 whitespace-nowrap">
                         {new Date(hoverInfo.time).toLocaleTimeString("th-TH", { hour: '2-digit', minute: '2-digit', second: '2-digit' })} น.
