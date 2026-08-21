@@ -135,21 +135,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
     setIsFullScreen(!isFullScreen);
   };
 
-  const CustomTick = (props: any) => {
-    const { x, y, payload } = props;
-    if (!payload || !payload.value) return null;
-    const date = new Date(payload.value);
-    const timeStr = date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
-    return (
-      <g transform={`translate(${x},${y})`}>
-        <text x={0} y={15} dy={0} textAnchor="middle" fill="#94a3b8" fontSize={10} className="font-medium">
-          {timeStr}
-        </text>
-      </g>
-    );
-  };
-
-  const CustomTooltip = ({ active, payload, label }: any) => {
+    const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const date = new Date(label);
       return (
@@ -248,6 +234,55 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
 
     const showControls = !loading && data.length > 0 && !isExpanded;
 
+    const renderTick = (props: any) => {
+      const { x, y, payload } = props;
+      if (!payload || !payload.value) return null;
+      const date = new Date(payload.value);
+
+      if (isExpanded) {
+        const timeStr = date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+        return (
+          <g transform={`translate(${x},${y})`}>
+            <text x={0} y={15} dy={0} textAnchor="middle" fill="#94a3b8" fontSize={10} className="font-medium">
+              {timeStr}
+            </text>
+          </g>
+        );
+      } else {
+        const isStartOrEnd = payload.value === startOfDayMs || payload.value === (startOfDayMs + 24 * 3600 * 1000 - 60000);
+        const isHour = date.getMinutes() === 0 || date.getMinutes() === 45 || date.getMinutes() === 44; // To handle the 07:00 vs 06:45
+        // Wait, the old logic checked date.getMinutes() === 0, but graphStart is 06:45. Let's just use the exact old logic.
+        const isOddHour = date.getHours() % 2 !== 0; 
+        
+        if (isStartOrEnd) {
+          return (
+            <g>
+              <line x1={x} y1={y} x2={x} y2={y + 3} stroke="#94a3b8" strokeWidth={1.5} />
+              <text x={x} y={y + 11} textAnchor="middle" fill="#94a3b8" fontSize={11} fontWeight="bold">
+                7
+              </text>
+            </g>
+          );
+        } else if (date.getMinutes() === 0) {
+          if (isOddHour || showControls) {
+            const hour = date.getHours();
+            const fSize = hour >= 10 ? 9.5 : 11;
+            return (
+              <g>
+                <line x1={x} y1={y} x2={x} y2={y + 2} stroke="#cbd5e1" strokeWidth={1} />
+                <text x={x} y={y + 11} textAnchor="middle" fill="#cbd5e1" fontSize={showControls ? 11 : fSize}>
+                  {hour}
+                </text>
+              </g>
+            );
+          }
+        }
+        return null;
+      }
+    };
+
+
+
     return (
       <div style={{ width: chartWidth, height: typeof baseHeight === 'number' ? `${baseHeight}px` : baseHeight, minWidth: '100%' }}>
         <ResponsiveContainer width="100%" height="100%">
@@ -259,11 +294,11 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
               type="number"
               domain={[graphStartMs, graphEndMs]}
               ticks={smallTicks}
-              tick={<CustomTick />}
+              tick={renderTick}
               tickLine={false}
               axisLine={false}
-              interval="preserveStartEnd"
-              minTickGap={20}
+              interval={isExpanded ? "preserveStartEnd" : 0}
+              minTickGap={isExpanded ? 20 : 10}
             />
             <YAxis 
               type="number"
