@@ -240,7 +240,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
       const lastPoint = data[data.length - 1];
       if (isToday) {
         if (now - lastPoint.fullTime > 15 * 60 * 1000) backgroundLabel = "ออฟไลน์";
-        else backgroundLabel = lastPoint.watt > 0 ? "กำลังใช้งาน" : "สแตนด์บาย";
+        else backgroundLabel = "";
       } else {
         backgroundLabel = "ออฟไลน์"; 
       }

@@ -246,12 +246,9 @@ export default function EnergyPage() {
                       {/* Right: Stats Grid */}
                       <div className="flex gap-2 text-right shrink-0 whitespace-nowrap">
                         <div className="flex flex-col items-end min-w-[70px]">
-                          <span className="text-[9px] text-slate-400 font-bold tracking-wider">ปัจจุบัน / แอร์</span>
+                          <span className="text-[9px] text-slate-400 font-bold tracking-wider">ปัจจุบัน</span>
                           <span className="text-[11px] font-black text-slate-700 mt-0.5">
                             {(dateOffset === 0 && online ? wattage : 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}W
-                            <span className={`ml-1 font-bold ${isAcOn ? 'text-orange-500' : 'text-slate-400'}`}>
-                              • {isAcOn ? 'ทำงาน' : 'สแตนด์บาย'}
-                            </span>
                           </span>
                         </div>
                         <div className="flex flex-col items-end border-l border-slate-100 pl-2 min-w-[85px]">
