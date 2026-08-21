@@ -350,7 +350,30 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
   };
 
   // Touch handlers for pinch to zoom
-  const touchState = useRef({ startDist: 0 });
+  
+    const [hoverInfo, setHoverInfo] = useState<{x: number, time: number} | null>(null);
+const targetScrollObj = useRef<{ percentage: number, mouseX: number } | null>(null);
+
+  const handleZoom = (newLevel: number, mouseX: number) => {
+    if (newLevel === zoomLevel) return;
+    if (scrollContainerRef.current) {
+      const scrollWidth = scrollContainerRef.current.scrollWidth;
+      const scrollLeft = scrollContainerRef.current.scrollLeft;
+      const percentage = (scrollLeft + mouseX) / scrollWidth;
+      targetScrollObj.current = { percentage, mouseX };
+    }
+    setZoomLevel(newLevel);
+  };
+
+  useEffect(() => {
+    if (targetScrollObj.current && scrollContainerRef.current) {
+      const scrollWidth = scrollContainerRef.current.scrollWidth;
+      scrollContainerRef.current.scrollLeft = (targetScrollObj.current.percentage * scrollWidth) - targetScrollObj.current.mouseX;
+      targetScrollObj.current = null;
+    }
+  }, [zoomLevel, isFullScreen]);
+
+const touchState = useRef({ startDist: 0 });
   
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
@@ -365,10 +388,12 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
       const diff = dist - touchState.current.startDist;
       
       if (diff > 50) { // Pinch out -> Zoom IN
-        setZoomLevel(prev => Math.min(4, prev + 1));
-        touchState.current.startDist = dist; // reset for next step
+        const centerX = ((e.touches[0].clientX + e.touches[1].clientX) / 2) - (scrollContainerRef.current?.getBoundingClientRect().left || 0);
+        handleZoom(Math.min(4, zoomLevel + 1), centerX);
+        touchState.current.startDist = dist;
       } else if (diff < -50) { // Pinch in -> Zoom OUT
-        setZoomLevel(prev => Math.max(0, prev - 1));
+        const centerX = ((e.touches[0].clientX + e.touches[1].clientX) / 2) - (scrollContainerRef.current?.getBoundingClientRect().left || 0);
+        handleZoom(Math.max(0, zoomLevel - 1), centerX);
         touchState.current.startDist = dist;
       }
     }
@@ -392,31 +417,53 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
   };
   
   const onMouseMove = (e: React.MouseEvent) => {
+    if (scrollContainerRef.current && isFullScreen) {
+      const rect = scrollContainerRef.current.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      
+      const scrollL = scrollContainerRef.current.scrollLeft;
+      const scrollW = scrollContainerRef.current.scrollWidth;
+      const percentage = (scrollL + mouseX) / scrollW;
+      
+      const tDate = new Date();
+      tDate.setDate(tDate.getDate() + dateOffset + expandedOffset);
+      const sDayMs = new Date(tDate.getFullYear(), tDate.getMonth(), tDate.getDate(), 6, 45, 0).getTime();
+      const timeMs = sDayMs + percentage * (24 * 3600 * 1000 - 60000);
+      
+      setHoverInfo({ x: mouseX, time: timeMs });
+    }
+
     if (!isDragging.current) return;
     e.preventDefault();
     const x = e.pageX - (scrollContainerRef.current?.offsetLeft || 0);
-    const walk = (x - startX.current) * 2; // scroll speed multiplier
+    const walk = (x - startX.current) * 2; 
     if (scrollContainerRef.current) scrollContainerRef.current.scrollLeft = scrollLeft.current - walk;
   };
   
   const onMouseUp = (e: React.MouseEvent) => {
-    if (isDragging.current) {
-      const x = e.pageX - (scrollContainerRef.current?.offsetLeft || 0);
-      const walk = Math.abs(x - startX.current);
-      if (walk < 5 && e.button === 0) { // If didn't drag much, it's a click!
-        setZoomLevel(prev => Math.min(4, prev + 1));
-      }
-    }
     isDragging.current = false;
+  };
+
+  const onDoubleClick = (e: React.MouseEvent) => {
+    if (scrollContainerRef.current) {
+      const rect = scrollContainerRef.current.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      handleZoom(Math.min(4, zoomLevel + 1), mouseX);
+    }
   };
 
   const onMouseLeave = () => {
     isDragging.current = false;
+    setHoverInfo(null);
   };
 
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    setZoomLevel(prev => Math.max(0, prev - 1));
+    if (scrollContainerRef.current) {
+      const rect = scrollContainerRef.current.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      handleZoom(Math.max(0, zoomLevel - 1), mouseX);
+    }
   };
 
   return (
@@ -532,12 +579,24 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
                   onMouseMove={onMouseMove}
                   onMouseUp={onMouseUp}
                   onMouseLeave={onMouseLeave}
+                  onDoubleClick={onDoubleClick}
                   onContextMenu={onContextMenu}
                   onTouchStart={handleTouchStart}
                   onTouchMove={handleTouchMove}
                   onTouchEnd={handleTouchEnd}
                 >
-                  <div className="h-full p-0 pb-4 md:p-6 md:pb-12 relative min-w-full inline-block">
+                  
+                  {hoverInfo && isFullScreen && (
+                    <div 
+                      className="absolute top-0 bottom-0 pointer-events-none border-l-2 border-indigo-500 border-dashed z-[100] flex flex-col items-center justify-start pt-1 md:pt-4"
+                      style={{ left: hoverInfo.x + (scrollContainerRef.current?.scrollLeft || 0) }}
+                    >
+                      <div className="bg-indigo-600/90 text-white text-[10px] md:text-sm font-bold px-2 py-1 md:px-3 md:py-1.5 rounded shadow-lg transform -translate-x-1/2 whitespace-nowrap">
+                        {new Date(hoverInfo.time).toLocaleTimeString("th-TH", { hour: '2-digit', minute: '2-digit', second: '2-digit' })} น.
+                      </div>
+                    </div>
+                  )}
+<div className="h-full p-0 pb-4 md:p-6 md:pb-12 relative min-w-full inline-block">
                     {renderGraph('100%', true)}
                   </div>
                 </div>
