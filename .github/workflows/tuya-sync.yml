@@ -1,4 +1,4 @@
-﻿name: Tuya Auto Sync Cron
+name: Tuya Auto Sync Cron
 
 on:
   schedule:
