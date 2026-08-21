@@ -18,6 +18,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const { getNow } = useSimulatedTime();
   const { activeShift } = useShift();
   const [showBilling, setShowBilling] = useState(false);
+  const [newBookingId, setNewBookingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [guestCount, setGuestCount] = useState<number | ''>(room.guest_count || 2);
   const [guestName, setGuestName] = useState<string>(room.guest_name || "");
@@ -319,7 +320,12 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     }
 
     setLoading(false);
-    onUpdate();
+    if (!bookingError && insertedBooking) {
+      setNewBookingId(insertedBooking.id);
+      setShowBilling(true);
+    } else {
+      onUpdate();
+    }
   };
 
   const handleCheckInReserved = async () => {
@@ -353,7 +359,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     }
     
     setLoading(false);
-    onUpdate();
+    setShowBilling(true);
   };
 
   const handleCheckOut = async () => {
@@ -1168,11 +1174,11 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         </div>
       </div>
       
-      {showBilling && room.booking_id && (
+      {showBilling && (newBookingId || room.booking_id) && (
         <BillingModal 
           roomId={room.id}
           roomNo={room.room_no}
-          bookingId={room.booking_id}
+          bookingId={(newBookingId || room.booking_id) as string}
           onClose={() => { setShowBilling(false); onUpdate(); }}
           onSuccess={() => { setShowBilling(false); onUpdate(); }}
         />

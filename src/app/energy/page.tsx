@@ -201,7 +201,7 @@ export default function EnergyPage() {
           onClick={() => setActiveTab("summary")}
           className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${activeTab === "summary" ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-50"}`}
         >
-          📊 เช็คสถานะรวม
+          📊 เช็คสถานะ
         </button>
       </div>
 
@@ -265,7 +265,7 @@ export default function EnergyPage() {
 
                     {/* Graph Area */}
                     <div className="flex-1 mt-auto relative min-h-[140px] -mx-1">
-                      <EnergyGraph roomId={room.id} dateOffset={dateOffset} />
+                      <EnergyGraph roomId={room.id} roomNo={room.room_no} location={room.location} dateOffset={dateOffset} />
                     </div>
                   </div>
                 </div>

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
@@ -687,12 +687,18 @@ export default function CheckinPage() {
                             }
                             
                             let roomNoColor = 'text-slate-700';
-                            if (room.status === 'occupied') {
-                              if (room.unpaid_balance && room.unpaid_balance > 0) roomNoColor = 'text-rose-600';
-                              else roomNoColor = 'text-emerald-500';
-                            } else if (room.status === 'reserved') {
-                              if (room.unpaid_balance && room.unpaid_balance > 0) roomNoColor = 'text-rose-600';
-                              else roomNoColor = 'text-emerald-500';
+                            if (room.status === 'occupied' || room.status === 'reserved') {
+                              const unpaid = room.unpaid_balance || 0;
+                              const total = room.actual_price || 0;
+                              if (unpaid > 0) {
+                                if (total > 0 && unpaid < total) {
+                                  roomNoColor = 'text-orange-500';
+                                } else {
+                                  roomNoColor = 'text-rose-600';
+                                }
+                              } else {
+                                roomNoColor = 'text-emerald-500';
+                              }
                             }
 
                             const isDouble = room.room_type?.includes('คู่');

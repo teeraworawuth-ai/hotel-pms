@@ -38,7 +38,21 @@ export default function DeviceSummary({ rooms, dateOffset }: { rooms: Room[], da
     return acc;
   }, {} as Record<string, { total: number, online: number, offline: number, inUse: number, standby: number }>);
 
-  const sortedLocations = Object.keys(stats).sort((a, b) => {
+  
+  const totalStats = Object.values(stats).reduce((acc, curr) => {
+    acc.total += curr.total;
+    acc.online += curr.online;
+    acc.offline += curr.offline;
+    acc.inUse += curr.inUse;
+    acc.standby += curr.standby;
+    return acc;
+  }, { total: 0, online: 0, offline: 0, inUse: 0, standby: 0 });
+
+  stats["รวม"] = totalStats;
+
+const sortedLocations = Object.keys(stats).sort((a, b) => {
+    if (a === "รวม") return -1;
+    if (b === "รวม") return 1;
     if (a === "ไม่ได้ระบุสถานที่") return 1;
     if (b === "ไม่ได้ระบุสถานที่") return -1;
     return a.localeCompare(b, 'th');
