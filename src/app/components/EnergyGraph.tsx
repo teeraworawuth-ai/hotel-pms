@@ -12,7 +12,6 @@ import {
   Tooltip,
   ReferenceArea
 } from "recharts";
-import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
 interface EnergyGraphProps {
   roomId: string;
@@ -24,6 +23,12 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
   const [loading, setLoading] = useState(true);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [expandedOffset, setExpandedOffset] = useState(0); // 0 = today, -1 = yesterday, max -3
+  
+  // Zoom State
+  const [zoomLevel, setZoomLevel] = useState(0); // 0 to 4
+  const zoomWidths = ['100%', '200%', '400%', '1200%', '4800%'];
+  const zoomIntervalMins = [60, 30, 15, 5, 1]; // 0=60m, 1=30m, 2=15m, 3=5m, 4=1m
+
   const graphRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -35,6 +40,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = 'unset';
+      setZoomLevel(0); // Reset zoom on close
     }
     return () => {
       document.body.style.overflow = 'unset';
@@ -43,226 +49,168 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
 
   const fetchData = async (currentExpandedOffset: number) => {
     try {
-      setLoading(true);
-
       const targetDate = new Date();
-      // Combine the main page offset with the modal's offset
-      const totalOffset = isFullScreen ? dateOffset + currentExpandedOffset : dateOffset;
-      targetDate.setDate(targetDate.getDate() + totalOffset);
-
-      // วันเริ่มต้น
-      const startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0);
+      targetDate.setDate(targetDate.getDate() + dateOffset + currentExpandedOffset);
       
-      const nextDate = new Date(targetDate);
-      nextDate.setDate(nextDate.getDate() + 1);
-      let endOfDay = new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate(), 6, 44, 59);
-
-      if (totalOffset === 0) {
-        const now = new Date();
-        if (now < endOfDay) {
-          endOfDay = now;
-        }
+      const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0);
+      let endOfDay = new Date(startOfDay);
+      endOfDay.setDate(endOfDay.getDate() + 1);
+      
+      let query = supabase
+        .from('electricity_tracking')
+        .select('created_at, watt')
+        .eq('room_id', roomId)
+        .gte('created_at', startOfDay.toISOString())
+        .lt('created_at', endOfDay.toISOString())
+        .order('created_at', { ascending: true });
+        
+      if (!isFullScreen) {
+         query = query.limit(500);
       }
 
-      const { data: logData, error } = await supabase
-        .from("energy_logs")
-        .select("wattage, recorded_at")
-        .eq("room_id", roomId)
-        .gte("recorded_at", startOfRange.toISOString())
-        .lte("recorded_at", endOfDay.toISOString())
-        .order("recorded_at", { ascending: true });
+      const { data: rawData, error } = await query;
+      if (error) throw error;
 
-      if (error) {
-        console.error("Error fetching energy logs:", error);
-        return;
+      let processedData: any[] = [];
+      if (rawData && rawData.length > 0) {
+         processedData = rawData.map(d => ({
+           fullTime: new Date(d.created_at).getTime(),
+           watt: d.watt,
+           rawTime: new Date(d.created_at)
+         }));
       }
 
-      let formattedData = (logData || []).map((log) => {
-        const d = new Date(log.recorded_at);
-        const wattVal = Number(log.wattage);
-        return {
-          time: d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
-          fullTime: d.getTime(), 
-          watt: (log.wattage !== null && wattVal > 0) ? wattVal : null,
-        };
-      });
-
-      formattedData = formattedData.map((point, i, arr) => {
-        if (point.watt === null) return point;
-        let hasNeighbor = false;
-        for (let j = i - 1; j >= 0; j--) {
-          const neighbor = arr[j];
-          if (point.fullTime - neighbor.fullTime > 360000) break;
-          if (neighbor.watt !== null && neighbor.watt > 0) {
-            hasNeighbor = true;
-            break;
-          }
-        }
-        if (!hasNeighbor) {
-          for (let j = i + 1; j < arr.length; j++) {
-            const neighbor = arr[j];
-            if (neighbor.fullTime - point.fullTime > 360000) break;
-            if (neighbor.watt !== null && neighbor.watt > 0) {
-              hasNeighbor = true;
-              break;
-            }
-          }
-        }
-        if (!hasNeighbor) {
-          return { ...point, watt: null };
-        }
-        return point;
-      });
-      
-      setData(formattedData);
-    } catch (err) {
-      console.error(err);
+      setData(processedData);
+    } catch (e) {
+      console.error(e);
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleFullScreen = async () => {
-    const nextState = !isFullScreen;
-    setIsFullScreen(nextState);
-
-    if (nextState) {
-      try {
-        if (window.innerWidth < 768 && document.documentElement.requestFullscreen) {
-          await document.documentElement.requestFullscreen();
-          const screenOrientation = (screen as any).orientation || (screen as any).mozOrientation || (screen as any).msOrientation;
-          if (screenOrientation && screenOrientation.lock) {
-            await screenOrientation.lock('landscape').catch(() => {});
-          }
-        }
-      } catch (err) {
-        console.warn('Fullscreen/Landscape lock failed:', err);
-      }
-    } else {
-      try {
-        const screenOrientation = (screen as any).orientation || (screen as any).mozOrientation || (screen as any).msOrientation;
-        if (screenOrientation && screenOrientation.unlock) {
-          screenOrientation.unlock();
-        }
-        if (document.fullscreenElement && document.exitFullscreen) {
-          await document.exitFullscreen().catch(() => {});
-        }
-      } catch (err) {
-        console.warn('Exit fullscreen failed:', err);
-      }
+  const toggleFullScreen = () => {
+    if (!isFullScreen) {
+      setExpandedOffset(0);
+      setZoomLevel(0);
     }
+    setIsFullScreen(!isFullScreen);
   };
 
-  const renderGraph = (height: number | string, showControls: boolean) => {
+  const CustomTick = (props: any) => {
+    const { x, y, payload } = props;
+    if (!payload || !payload.value) return null;
+    const date = new Date(payload.value);
+    const timeStr = date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <text x={0} y={15} dy={0} textAnchor="middle" fill="#94a3b8" fontSize={10} className="font-medium">
+          {timeStr}
+        </text>
+      </g>
+    );
+  };
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      const date = new Date(label);
+      return (
+        <div className="bg-slate-800 text-white p-3 rounded-xl shadow-xl border border-slate-700 text-sm">
+          <p className="font-bold mb-1 text-slate-300">
+            {date.toLocaleTimeString("th-TH", { hour: '2-digit', minute: '2-digit' })} น.
+          </p>
+          <p className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-indigo-400"></span>
+            <span className="font-black text-lg">{payload[0].value}</span> 
+            <span className="text-slate-400">วัตต์</span>
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const renderGraph = (baseHeight: number | string, isExpanded: boolean) => {
     if (loading) {
       return (
-        <div className="flex items-center justify-center text-slate-400 text-xs" style={{ height: typeof height === 'number' ? `${height}px` : height }}>
-          กำลังโหลดกราฟ...
+        <div className="w-full bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100" style={{ height: typeof baseHeight === 'number' ? `${baseHeight}px` : baseHeight }}>
+          <div className="flex flex-col items-center">
+            <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-3"></div>
+            <p className="text-slate-400 font-medium text-sm">กำลังโหลดกราฟ...</p>
+          </div>
         </div>
       );
     }
 
-    if (!data || data.length === 0) {
+    if (data.length === 0) {
       return (
-        <div className="w-full flex items-center justify-center text-slate-400 text-sm" style={{ height: typeof height === 'number' ? `${height}px` : height }}>
-          ไม่มีข้อมูลการใช้ไฟ
+        <div className="w-full bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100" style={{ height: typeof baseHeight === 'number' ? `${baseHeight}px` : baseHeight }}>
+          <p className="text-slate-400 font-medium text-sm flex flex-col items-center gap-2">
+            <svg className="w-8 h-8 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 12H4"></path></svg>
+            ไม่มีข้อมูลการใช้ไฟ
+          </p>
         </div>
       );
     }
 
+    const maxWatt = Math.max(...data.map(d => d.watt), 0);
+    const yAxisMax = Math.max(1000, Math.ceil(maxWatt / 500) * 500);
     const targetDate = new Date();
-    const totalOffset = showControls ? dateOffset + expandedOffset : dateOffset;
-    targetDate.setDate(targetDate.getDate() + totalOffset);
+    targetDate.setDate(targetDate.getDate() + dateOffset + expandedOffset);
     
     const startOfDayMs = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0).getTime();
     const graphStartMs = startOfDayMs;
     const graphEndMs = startOfDayMs + 24 * 3600 * 1000 - 60000;
 
-    const smallTicks = [startOfDayMs];
-    for (let h = 1; h <= 23; h++) {
-      smallTicks.push(startOfDayMs + (h * 3600 + 15 * 60) * 1000);
+    const currentZoom = isExpanded ? zoomLevel : 0;
+    const tickIntervalMin = zoomIntervalMins[currentZoom];
+    const chartWidth = isExpanded ? zoomWidths[currentZoom] : '100%';
+    
+    const smallTicks = [];
+    const firstTickMs = startOfDayMs + 15 * 60 * 1000; // start at 07:00
+    for (let m = 0; m <= 24 * 60; m += tickIntervalMin) {
+      const t = firstTickMs + m * 60 * 1000;
+      if (t <= graphEndMs) {
+        smallTicks.push(t);
+      }
     }
-    smallTicks.push(startOfDayMs + 24 * 3600 * 1000 - 60000);
+    smallTicks.push(graphEndMs);
 
     const offlinePeriods: {start: number, end: number}[] = [];
     if (data && data.length > 0) {
       for (let i = 1; i < data.length; i++) {
         const prev = data[i - 1];
         const curr = data[i];
-        if (curr.fullTime - prev.fullTime > 10 * 60 * 1000) { 
+        const diff = curr.fullTime - prev.fullTime;
+        if (diff > 15 * 60 * 1000) {
           offlinePeriods.push({ start: prev.fullTime, end: curr.fullTime });
         }
       }
-      
-      if (totalOffset === 0) {
-        const lastData = data[data.length - 1];
-        const now = Date.now();
-        if (now - lastData.fullTime > 10 * 60 * 1000) {
-          offlinePeriods.push({ start: lastData.fullTime, end: Math.min(now, startOfDayMs + 24 * 3600 * 1000) });
-        }
+      const now = new Date().getTime();
+      const lastPoint = data[data.length - 1];
+      const isViewingToday = (dateOffset + expandedOffset) === 0;
+      if (isViewingToday && now > lastPoint.fullTime && (now - lastPoint.fullTime > 15 * 60 * 1000)) {
+        offlinePeriods.push({ start: lastPoint.fullTime, end: now });
       }
     }
 
-    const CustomTick = ({ x, y, payload }: any) => {
-      const date = new Date(payload.value);
-      const isStartOrEnd = payload.value === startOfDayMs || payload.value === (startOfDayMs + 24 * 3600 * 1000 - 60000);
-      const isHour = date.getMinutes() === 0;
-      const isOddHour = date.getHours() % 2 !== 0; 
-      
-      if (isStartOrEnd) {
-        return (
-          <g>
-            <line x1={x} y1={y} x2={x} y2={y + 3} stroke="#94a3b8" strokeWidth={1.5} />
-            <text x={x} y={y + 11} textAnchor="middle" fill="#94a3b8" fontSize={11} fontWeight="bold">
-              7
-            </text>
-          </g>
-        );
-      } else if (isHour) {
-        if (isOddHour || showControls) {
-          const hour = date.getHours();
-          const fSize = hour >= 10 ? 9.5 : 11;
-          return (
-            <g>
-              <line x1={x} y1={y} x2={x} y2={y + 2} stroke="#cbd5e1" strokeWidth={1} />
-              <text x={x} y={y + 11} textAnchor="middle" fill="#cbd5e1" fontSize={showControls ? 11 : fSize}>
-                {hour}
-              </text>
-            </g>
-          );
-        }
+    let backgroundLabel = "ไม่มีข้อมูล";
+    const now = new Date().getTime();
+    const isToday = (dateOffset + expandedOffset) === 0;
+    
+    if (data.length > 0) {
+      const lastPoint = data[data.length - 1];
+      if (isToday) {
+        if (now - lastPoint.fullTime > 15 * 60 * 1000) backgroundLabel = "ออฟไลน์";
+        else backgroundLabel = lastPoint.watt > 0 ? "กำลังใช้งาน" : "สแตนด์บาย";
+      } else {
+        backgroundLabel = "ออฟไลน์"; 
       }
-      return null;
-    };
-
-    const CustomTooltip = ({ active, payload, label }: any) => {
-      if (active && payload && payload.length) {
-        const d = new Date(label);
-        const dateStr = d.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
-        const timeStr = d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
-        return (
-          <div className="bg-slate-900 text-white p-2 rounded-lg shadow-xl text-xs font-bold border border-slate-700">
-            <p className="text-slate-400">{dateStr}</p>
-            <p>{timeStr}</p>
-            <p className="text-emerald-400 text-[14px] mt-1">{payload[0].value} W</p>
-          </div>
-        );
-      }
-      return null;
-    };
-
-    const maxWatt = Math.max(...data.map(d => d.watt || 0), 100);
-    const yAxisMax = Math.ceil(maxWatt / 200) * 200 + 200;
-
-    // คำนวณช่วงของวันนี้เพื่อใส่ Background Date
-    let backgroundLabel = "";
-    if (showControls) {
-      const isToday = totalOffset === 0;
-      backgroundLabel = targetDate.toLocaleDateString("th-TH", { day: "numeric", month: "long" }) + (isToday ? " (วันนี้)" : "");
     }
+
+    const showControls = !loading && data.length > 0 && !isExpanded;
 
     return (
-      <div className="w-full" style={{ height: typeof height === 'number' ? `${height}px` : height }}>
+      <div style={{ width: chartWidth, height: typeof baseHeight === 'number' ? `${baseHeight}px` : baseHeight, minWidth: '100%' }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -275,8 +223,8 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
               tick={<CustomTick />}
               tickLine={false}
               axisLine={false}
-              interval={0}
-              minTickGap={10}
+              interval="preserveStartEnd"
+              minTickGap={20}
             />
             <YAxis 
               type="number"
@@ -325,6 +273,76 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
     );
   };
 
+  // Touch handlers for pinch to zoom
+  const touchState = useRef({ startDist: 0 });
+  
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      touchState.current.startDist = dist;
+    }
+  };
+  
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && touchState.current.startDist > 0) {
+      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      const diff = dist - touchState.current.startDist;
+      
+      if (diff > 50) { // Pinch out -> Zoom IN
+        setZoomLevel(prev => Math.min(4, prev + 1));
+        touchState.current.startDist = dist; // reset for next step
+      } else if (diff < -50) { // Pinch in -> Zoom OUT
+        setZoomLevel(prev => Math.max(0, prev - 1));
+        touchState.current.startDist = dist;
+      }
+    }
+  };
+  
+  const handleTouchEnd = () => {
+    touchState.current.startDist = 0;
+  };
+
+  // Mouse pan handlers for desktop
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+  const startX = useRef(0);
+  const scrollLeft = useRef(0);
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    isDragging.current = true;
+    startX.current = e.pageX - (scrollContainerRef.current?.offsetLeft || 0);
+    scrollLeft.current = scrollContainerRef.current?.scrollLeft || 0;
+  };
+  
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging.current) return;
+    e.preventDefault();
+    const x = e.pageX - (scrollContainerRef.current?.offsetLeft || 0);
+    const walk = (x - startX.current) * 2; // scroll speed multiplier
+    if (scrollContainerRef.current) scrollContainerRef.current.scrollLeft = scrollLeft.current - walk;
+  };
+  
+  const onMouseUp = (e: React.MouseEvent) => {
+    if (isDragging.current) {
+      const x = e.pageX - (scrollContainerRef.current?.offsetLeft || 0);
+      const walk = Math.abs(x - startX.current);
+      if (walk < 5 && e.button === 0) { // If didn't drag much, it's a click!
+        setZoomLevel(prev => Math.min(4, prev + 1));
+      }
+    }
+    isDragging.current = false;
+  };
+
+  const onMouseLeave = () => {
+    isDragging.current = false;
+  };
+
+  const onContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setZoomLevel(prev => Math.max(0, prev - 1));
+  };
+
   return (
     <>
       {isFullScreen && (
@@ -361,6 +379,14 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
               transform: none;
             }
           }
+          
+          .no-scrollbar::-webkit-scrollbar {
+             display: none;
+          }
+          .no-scrollbar {
+             -ms-overflow-style: none;
+             scrollbar-width: none;
+          }
         `}} />
       )}
 
@@ -382,11 +408,11 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
           <div className="flex justify-between items-start md:items-center p-4 md:p-6 border-b border-slate-200 bg-white shrink-0 shadow-sm">
             <div className="pr-4">
               <h2 className="text-xl md:text-2xl font-black text-slate-800 leading-tight">กราฟการใช้ไฟ - ห้อง {roomId.substring(0,4)}...</h2>
-              <p className="text-slate-500 text-xs md:text-sm mt-1">ใช้สองนิ้วซูมเข้า-ออก เพื่อดูความละเอียดระดับนาที</p>
+              <p className="text-slate-500 text-xs md:text-sm mt-1">คลิกซ้าย/ถ่างนิ้ว เพื่อซูมเข้า (ระดับ {zoomLevel}/4) • คลิกขวา/หุบนิ้ว เพื่อซูมออก</p>
             </div>
             <button 
               onClick={toggleFullScreen}
-              className="p-2 md:p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-full transition-colors flex items-center gap-2 shrink-0"
+              className="p-2 md:p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-full transition-colors flex items-center gap-2 shrink-0 z-50"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
               <span className="font-bold text-sm hidden md:inline">ปิด (Close)</span>
@@ -397,7 +423,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
              {/* Navigation controls */}
              <div className="flex justify-between items-center mb-3 md:mb-4 px-2 shrink-0">
                 <button 
-                  onClick={() => setExpandedOffset(Math.max(-3, expandedOffset - 1))}
+                  onClick={() => { setExpandedOffset(Math.max(-3, expandedOffset - 1)); setZoomLevel(0); }}
                   disabled={expandedOffset === -3}
                   className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-50 disabled:bg-slate-50 text-slate-700 font-bold rounded-lg text-sm transition-colors shadow-sm"
                 >
@@ -412,7 +438,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
                   })()}
                 </div>
                 <button 
-                  onClick={() => setExpandedOffset(Math.min(0, expandedOffset + 1))}
+                  onClick={() => { setExpandedOffset(Math.min(0, expandedOffset + 1)); setZoomLevel(0); }}
                   disabled={expandedOffset === 0}
                   className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-50 disabled:bg-slate-50 text-slate-700 font-bold rounded-lg text-sm transition-colors shadow-sm"
                 >
@@ -421,20 +447,22 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
              </div>
 
              <div className="w-full flex-1 bg-white rounded-2xl border border-slate-200 relative z-10 overflow-hidden shadow-sm">
-                <TransformWrapper 
-                   initialScale={1}
-                   minScale={1}
-                   maxScale={15}
-                   centerOnInit={false}
-                   wheel={{ step: 0.2 }}
-                   panning={{ lockAxisX: false, lockAxisY: true }}
+                <div 
+                  ref={scrollContainerRef}
+                  className="w-full h-full overflow-x-auto overflow-y-hidden cursor-grab active:cursor-grabbing no-scrollbar"
+                  onMouseDown={onMouseDown}
+                  onMouseMove={onMouseMove}
+                  onMouseUp={onMouseUp}
+                  onMouseLeave={onMouseLeave}
+                  onContextMenu={onContextMenu}
+                  onTouchStart={handleTouchStart}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
                 >
-                   <TransformComponent wrapperStyle={{ width: "100%", height: "100%" }} contentStyle={{ width: "100%", height: "100%" }}>
-                      <div className="w-full h-full p-2 pb-8 md:p-6 md:pb-12 min-w-full relative">
-                        {renderGraph('100%', true)}
-                      </div>
-                   </TransformComponent>
-                </TransformWrapper>
+                  <div className="h-full p-2 pb-8 md:p-6 md:pb-12 relative min-w-full inline-block">
+                    {renderGraph('100%', true)}
+                  </div>
+                </div>
              </div>
           </div>
         </div>
