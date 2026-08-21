@@ -264,7 +264,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
             </g>
           );
         } else if (date.getMinutes() === 0) {
-          if (isOddHour || showControls) {
+          if (isOddHour) {
             const hour = date.getHours();
             const fSize = hour >= 10 ? 9.5 : 11;
             return (
