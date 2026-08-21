@@ -247,7 +247,7 @@ export default function EnergyPage() {
                       <div className="flex gap-2 text-right shrink-0 whitespace-nowrap">
                         <div className="flex flex-col items-end min-w-[70px]">
                           <span className="text-[9px] text-slate-400 font-bold tracking-wider">ปัจจุบัน</span>
-                          <span className="text-[11px] font-black text-slate-700 mt-0.5">
+                          <span className="text-[11px] font-black text-blue-600 mt-0.5">
                             {(dateOffset === 0 && online ? wattage : 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}W
                           </span>
                         </div>
@@ -255,7 +255,7 @@ export default function EnergyPage() {
                           <span className="text-[9px] text-slate-400 font-bold tracking-wider">รวมวันนี้ / ค่าไฟ</span>
                           <span className="text-[11px] font-black text-slate-700 mt-0.5">
                             {usage.kwh.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-[9px] font-bold text-slate-400 uppercase">kWh</span>
-                            <span className="text-blue-600 ml-1">
+                            <span className="ml-1">
                               • ฿{usage.cost.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })}
                             </span>
                           </span>
