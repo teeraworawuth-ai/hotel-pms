@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import EnergyGraph from "@/app/components/EnergyGraph";
 import OfflineSensors from "../audit/OfflineSensors";
+import DeviceSummary from "./DeviceSummary";
 
 type Room = {
   id: string;
@@ -17,7 +18,7 @@ type Room = {
 };
 
 export default function EnergyPage() {
-  const [activeTab, setActiveTab] = useState<"active" | "offline">("active");
+  const [activeTab, setActiveTab] = useState<"active" | "offline" | "summary">("active");
   const [rooms, setRooms] = useState<Room[]>([]);
   const [usedRoomIds, setUsedRoomIds] = useState<Set<string>>(new Set());
   const [roomUsage, setRoomUsage] = useState<Record<string, { kwh: number, cost: number }>>({});
@@ -183,7 +184,7 @@ export default function EnergyPage() {
       </header>
 
       {/* Tabs */}
-      <div className="flex bg-white rounded-xl shadow-sm border border-slate-200 p-1 overflow-x-auto">
+      <div className="flex bg-white rounded-xl shadow-sm border border-slate-200 p-1 overflow-x-auto gap-1">
         <button
           onClick={() => setActiveTab("active")}
           className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${activeTab === "active" ? "bg-emerald-50 text-emerald-700" : "text-slate-600 hover:bg-slate-50"}`}
@@ -196,9 +197,17 @@ export default function EnergyPage() {
         >
           🔌 อุปกรณ์ออฟไลน์
         </button>
+        <button
+          onClick={() => setActiveTab("summary")}
+          className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${activeTab === "summary" ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-50"}`}
+        >
+          📊 เช็คสถานะรวม
+        </button>
       </div>
 
-      {activeTab === "offline" ? (
+      {activeTab === "summary" ? (
+        <DeviceSummary rooms={rooms} dateOffset={dateOffset} />
+      ) : activeTab === "offline" ? (
         <OfflineSensors dateOffset={dateOffset} />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
