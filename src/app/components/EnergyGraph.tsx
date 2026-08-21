@@ -47,46 +47,7 @@ export default function EnergyGraph({ roomId, dateOffset = 0 }: EnergyGraphProps
     };
   }, [isFullScreen]);
 
-  const fetchData = async (currentExpandedOffset: number) => {
-    try {
-      const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() + dateOffset + currentExpandedOffset);
-      
-      const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0);
-      let endOfDay = new Date(startOfDay);
-      endOfDay.setDate(endOfDay.getDate() + 1);
-      
-      let query = supabase
-        .from('electricity_tracking')
-        .select('created_at, watt')
-        .eq('room_id', roomId)
-        .gte('created_at', startOfDay.toISOString())
-        .lt('created_at', endOfDay.toISOString())
-        .order('created_at', { ascending: true });
-        
-      if (!isFullScreen) {
-         query = query.limit(500);
-      }
-
-      const { data: rawData, error } = await query;
-      if (error) throw error;
-
-      let processedData: any[] = [];
-      if (rawData && rawData.length > 0) {
-         processedData = rawData.map(d => ({
-           fullTime: new Date(d.created_at).getTime(),
-           watt: d.watt,
-           rawTime: new Date(d.created_at)
-         }));
-      }
-
-      setData(processedData);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
+  
 
   const toggleFullScreen = () => {
     if (!isFullScreen) {
