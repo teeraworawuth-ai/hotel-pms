@@ -43,17 +43,17 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
       const targetDate = new Date();
       targetDate.setDate(targetDate.getDate() + dateOffset);
 
-      let startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0);
+      let startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 7, 0, 0);
       let nextDate = new Date(targetDate);
       nextDate.setDate(nextDate.getDate() + 1);
-      let endOfDay = new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate(), 6, 44, 59);
+      let endOfDay = new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate(), 13, 0, 0);
 
       if (isFullScreen) {
         // -3 days to +3 days from targetDate
-        startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() - 3, 6, 45, 0);
+        startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() - 3, 7, 0, 0);
         nextDate = new Date(targetDate);
         nextDate.setDate(nextDate.getDate() + 4);
-        endOfDay = new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate(), 6, 44, 59);
+        endOfDay = new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate(), 13, 0, 0);
       } else {
         if (dateOffset === 0) {
           const now = new Date();
@@ -233,8 +233,8 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
       
       const targetDate = new Date();
       targetDate.setDate(targetDate.getDate() + dateOffset);
-      const startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() - 3, 6, 45, 0).getTime();
-      const endOfRange = startOfRange + 7 * 24 * 3600 * 1000 - 60000;
+      const startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() - 3, 7, 0, 0).getTime();
+      const endOfRange = startOfRange + 7 * 24 * 3600 * 1000 + 6 * 3600 * 1000;
       
       const timeMs = startOfRange + percentage * (endOfRange - startOfRange);
       
@@ -336,13 +336,13 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
     const targetDate = new Date();
     targetDate.setDate(targetDate.getDate() + dateOffset);
     
-    let graphStartMs = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0).getTime();
-    let graphEndMs = graphStartMs + 24 * 3600 * 1000 - 60000;
+    let graphStartMs = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 7, 0, 0).getTime();
+    let graphEndMs = graphStartMs + 30 * 3600 * 1000;
 
     if (isExpanded) {
-        const fullScreenStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() - 3, 6, 45, 0);
+        const fullScreenStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() - 3, 7, 0, 0);
         graphStartMs = fullScreenStart.getTime();
-        graphEndMs = graphStartMs + 7 * 24 * 3600 * 1000 - 60000;
+        graphEndMs = graphStartMs + 7 * 24 * 3600 * 1000 + 6 * 3600 * 1000;
     }
 
     const currentZoom = isExpanded ? zoomLevel : 0;
