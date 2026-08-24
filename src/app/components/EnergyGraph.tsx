@@ -69,7 +69,8 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
         .eq("room_id", roomId)
         .gte("recorded_at", startOfRange.toISOString())
         .lte("recorded_at", endOfDay.toISOString())
-        .order("recorded_at", { ascending: true });
+        .order("recorded_at", { ascending: true })
+        .limit(15000);
 
       if (error) {
         console.error("Error fetching energy logs:", error);
