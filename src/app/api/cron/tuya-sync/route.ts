@@ -1,20 +1,13 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 const { TuyaContext } = require('@tuya/tuya-connector-nodejs');
 
 export async function GET(request: Request) {
   try {
-    // 1. ตรวจสอบและเตรียม Tuya Contexts (รองรับ 1 ถึง 3 บัญชี)
     let contexts: any[] = [];
-
-    const { data: tuyaSettings } = await supabase
-      .from('system_settings')
-      .select('value')
-      .eq('key', 'tuya_api_keys')
-      .single();
+    const { data: tuyaSettings } = await supabase.from('system_settings').select('value').eq('key', 'tuya_api_keys').single();
 
     if (tuyaSettings?.value?.keys && Array.isArray(tuyaSettings.value.keys)) {
-      // ดึงคีย์ทั้งหมดที่กรอกมาแล้วมีค่า
       const validKeys = tuyaSettings.value.keys.filter((k: any) => k.accessId && k.accessSecret);
       if (validKeys.length > 0) {
         contexts = validKeys.map((k: any) => new TuyaContext({
@@ -31,7 +24,6 @@ export async function GET(request: Request) {
       })];
     }
 
-    // กรณีไม่มีข้อมูลในระบบเลย ให้ใช้จาก Environment Variables
     if (contexts.length === 0) {
       if (process.env.TUYA_ACCESS_ID && process.env.TUYA_ACCESS_SECRET) {
         contexts = [new TuyaContext({
@@ -44,17 +36,6 @@ export async function GET(request: Request) {
       }
     }
 
-    // 2. ดึงข้อมูลจับคู่อุปกรณ์ที่เคยจำไว้ (Auto-Discovery Cache)
-    const { data: mappingsData } = await supabase
-      .from('system_settings')
-      .select('value')
-      .eq('key', 'tuya_device_mappings')
-      .single();
-    
-    let deviceMappings = mappingsData?.value || {};
-    let mappingsChanged = false;
-
-    // 3. ดึงข้อมูลห้องพักทั้งหมดที่มีรหัส Tuya Device ID
     const { data: rooms, error: dbError } = await supabase
       .from('rooms')
       .select('id, room_no, tuya_device_id')
@@ -66,78 +47,38 @@ export async function GET(request: Request) {
 
     const deviceIds = rooms.map(r => r.tuya_device_id).filter(Boolean);
 
+    const CHUNK_SIZE = 20; 
     const tuyaData = [];
     const failedDevices = [];
-    const CHUNK_SIZE = 5;
+    let apiCallsMade = 0;
     
     for (let i = 0; i < deviceIds.length; i += CHUNK_SIZE) {
       const chunk = deviceIds.slice(i, i + CHUNK_SIZE);
-      
-      const promises = chunk.map(async (deviceId) => {
-        let lastError = null;
-        
-        // ก. ลองดึงจากบัญชีที่เคยจำไว้ (ถ้ามี)
-        const cachedIndex = deviceMappings[deviceId];
-        if (cachedIndex !== undefined && cachedIndex < contexts.length) {
-          try {
-            const response = await contexts[cachedIndex].request({
-              method: 'GET',
-              path: `/v1.0/iot-03/devices/${deviceId}/status`,
-            });
-            if (response.success && response.result) {
-              return { deviceId, response };
-            }
-          } catch (err) {
-            lastError = err;
-            // ถ้าคีย์ที่เคยจำไว้ใช้ไม่ได้แล้ว ให้ลองหาใหม่
-          }
-        }
+      const deviceIdsString = chunk.join(',');
+      let chunkSuccess = false;
+      let lastError = null;
 
-        // ข. Auto-Discovery: วนลูปหาว่าคีย์ไหนใช้กับอุปกรณ์นี้ได้
-        for (let idx = 0; idx < contexts.length; idx++) {
-          // ข้ามอันที่เพิ่งลองแล้วเฟลไปเมื่อกี้
-          if (cachedIndex !== undefined && idx === cachedIndex && lastError) continue;
+      for (let idx = 0; idx < contexts.length; idx++) {
+        try {
+          apiCallsMade++;
+          const response = await contexts[idx].request({
+            method: 'GET',
+            path: '/v1.0/iot-03/devices/status?device_ids=' + deviceIdsString,
+          });
           
-          try {
-            const response = await contexts[idx].request({
-              method: 'GET',
-              path: `/v1.0/iot-03/devices/${deviceId}/status`,
-            });
-            
-            if (response.success && response.result) {
-              // เจอแล้ว! จำเอาไว้เลยรอบหน้าจะได้ไม่ต้องหาใหม่
-              deviceMappings[deviceId] = idx;
-              mappingsChanged = true;
-              return { deviceId, response };
-            }
-          } catch (err) {
-            lastError = err;
+          if (response.success && response.result) {
+            tuyaData.push(...response.result);
+            chunkSuccess = true;
+            break;
           }
-        }
-
-        // ค. ลองจนครบทุกบัญชีแล้วก็ยังไม่ได้
-        return { deviceId, error: lastError || new Error('Device not found in any account') };
-      });
-
-      const results = await Promise.all(promises);
-
-      for (const res of results) {
-        if (res.error) {
-          console.error(`Device ${res.deviceId} request error:`, res.error);
-          failedDevices.push({ id: res.deviceId, error: (res.error as any).message || 'Request failed' });
-        } else if (res.response && res.response.result) {
-          tuyaData.push({ id: res.deviceId, status: res.response.result });
+        } catch (err) {
+          lastError = err;
         }
       }
-    }
 
-    // อัปเดต Cache ถ้ามีการค้นพบคู่ใหม่
-    if (mappingsChanged) {
-      const { data: existingMap } = await supabase.from('system_settings').select('key').eq('key', 'tuya_device_mappings').single();
-      if (existingMap) {
-        await supabase.from('system_settings').update({ value: deviceMappings }).eq('key', 'tuya_device_mappings');
-      } else {
-        await supabase.from('system_settings').insert({ key: 'tuya_device_mappings', value: deviceMappings });
+      if (!chunkSuccess) {
+        console.error('Chunk failed:', lastError);
+        chunk.forEach(id => failedDevices.push({ id, error: lastError?.message || 'Bulk request failed in all accounts' }));
       }
     }
 
@@ -148,7 +89,6 @@ export async function GET(request: Request) {
       );
     }
 
-    // 5. ประมวลผลและสร้างข้อมูล Log
     const logs = [];
     for (const device of tuyaData) {
       const room = rooms.find(r => r.tuya_device_id === device.id);
@@ -163,10 +103,11 @@ export async function GET(request: Request) {
          if (anyPower && anyPower.value !== undefined) wattage = Number(anyPower.value) / 10;
       }
       
-      logs.push({ room_id: room.id, wattage: wattage });
+      if (wattage !== null) {
+        logs.push({ room_id: room.id, wattage: wattage });
+      }
     }
 
-    // 6. บันทึกลง Supabase
     if (logs.length > 0) {
       await supabase.from('energy_logs').insert(logs);
       for (const log of logs) {
@@ -180,6 +121,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ 
       success: true, 
       processed_devices: logs.length,
+      api_calls_used: apiCallsMade,
       failed_devices: failedDevices,
       data: tuyaData
     });
