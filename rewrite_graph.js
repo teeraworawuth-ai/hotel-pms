@@ -1,4 +1,6 @@
+const fs = require('fs');
 
+const content = `
 "use client";
 
 import { useEffect, useState, useRef } from "react";
@@ -320,7 +322,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
   const renderGraph = (baseHeight: number | string, isExpanded: boolean) => {
     if (loading) {
       return (
-        <div className="w-full bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100" style={{ height: typeof baseHeight === 'number' ? `${baseHeight}px` : baseHeight }}>
+        <div className="w-full bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100" style={{ height: typeof baseHeight === 'number' ? \`\${baseHeight}px\` : baseHeight }}>
           <div className="flex flex-col items-center">
             <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-3"></div>
             <p className="text-slate-400 font-medium text-sm">กำลังโหลดกราฟ...</p>
@@ -398,7 +400,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
         const timeStr = date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
         // At zoom level 0 or 1, show date at noon
         return (
-          <g transform={`translate(${x},${y})`}>
+          <g transform={\`translate(\${x},\${y})\`}>
             <text x={0} y={15} dy={0} textAnchor="middle" fill="#94a3b8" fontSize={10} className="font-medium">
               {timeStr}
             </text>
@@ -441,7 +443,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
     };
 
     return (
-      <div style={{ width: chartWidth, height: typeof baseHeight === 'number' ? `${baseHeight}px` : baseHeight, minWidth: '100%' }}>
+      <div style={{ width: chartWidth, height: typeof baseHeight === 'number' ? \`\${baseHeight}px\` : baseHeight, minWidth: '100%' }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: isExpanded ? 15 : 5 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -463,7 +465,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
               tick={{ fontSize: 10, fill: '#94a3b8' }}
               tickLine={false}
               axisLine={false}
-              tickFormatter={(value) => `${value}w`}
+              tickFormatter={(value) => \`\${value}w\`}
               orientation="left"
               width={45}
             />
@@ -473,7 +475,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
             ))}
 
             {midnights.map((m, idx) => (
-              <ReferenceLine key={`mid-${idx}`} x={m} stroke="#000000" strokeDasharray="5 5" strokeWidth={1.5} strokeOpacity={0.8} />
+              <ReferenceLine key={\`mid-\${idx}\`} x={m} stroke="#000000" strokeDasharray="5 5" strokeWidth={1.5} strokeOpacity={0.8} />
             ))}
             
             <Line 
@@ -495,7 +497,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
   return (
     <>
       {isFullScreen && (
-        <style dangerouslySetInnerHTML={{__html: `
+        <style dangerouslySetInnerHTML={{__html: \`
           .graph-modal-locked {
             position: fixed;
             z-index: 100;
@@ -531,7 +533,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
              -ms-overflow-style: none;
              scrollbar-width: none;
           }
-        `}} />
+        \`}} />
       )}
 
       <div 
@@ -552,7 +554,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
           <div className="flex justify-between items-center p-2 md:p-6 border-b border-slate-200 bg-white shrink-0 shadow-sm">
             <div className="pr-2">
               <h2 className="text-sm md:text-2xl font-black text-slate-800 leading-tight">
-                {location ? `${location} - ห้อง ${roomNo || roomId}` : `กราฟการใช้ไฟ - ห้อง ${roomNo || roomId}`}
+                {location ? \`\${location} - ห้อง \${roomNo || roomId}\` : \`กราฟการใช้ไฟ - ห้อง \${roomNo || roomId}\`}
               </h2>
               <p className="text-slate-500 text-[10px] md:text-sm mt-0.5 hidden md:block">
                 หมุนลูกกลิ้งเมาส์ เพื่อซูมเข้า/ออก (ระดับ {zoomLevel}/4) • คลิกเมาส์ค้างลากซ้าย-ขวา • คลิก/แตะกราฟเพื่อดูข้อมูล
@@ -593,7 +595,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
                       <div className="bg-indigo-600/95 text-white text-[10px] md:text-sm font-bold px-2 py-1 md:px-3 md:py-2 rounded-lg shadow-xl transform -translate-x-1/2 whitespace-nowrap text-center">
                         <div className="text-indigo-200 text-[9px] md:text-xs mb-0.5">{new Date(hoverInfo.time).toLocaleDateString("th-TH", { year: 'numeric', month: 'short', day: 'numeric' })}</div>
                         <div>{new Date(hoverInfo.time).toLocaleTimeString("th-TH", { hour: '2-digit', minute: '2-digit', second: '2-digit' })} น.</div>
-                        <div className="text-amber-300 mt-0.5">{hoverInfo.watt !== null ? `${hoverInfo.watt} วัตต์` : 'ออฟไลน์'}</div>
+                        <div className="text-amber-300 mt-0.5">{hoverInfo.watt !== null ? \`\${hoverInfo.watt} วัตต์\` : 'ออฟไลน์'}</div>
                       </div>
                       
                       {hoverInfo.isClick && hoverInfo.watt !== null && (
@@ -612,3 +614,5 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
     </>
   );
 }
+`;
+fs.writeFileSync('src/app/components/EnergyGraph.tsx', content, 'utf8');
