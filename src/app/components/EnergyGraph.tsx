@@ -272,11 +272,12 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
     const rangeMs = max - min;
     const rangeHours = rangeMs / (60 * 60 * 1000);
     
-    let intervalHours = 1;
-    if (rangeHours > 16) intervalHours = 1; // 1 hr
-    else if (rangeHours > 8) intervalHours = 0.5; // 30m
-    else if (rangeHours > 4) intervalHours = 0.25; // 15m
-    else intervalHours = 1/6; // 10m
+    let intervalHours = 2;
+    if (rangeHours > 16) intervalHours = 2; // Unzoomed: 2 hrs
+    else if (rangeHours > 8) intervalHours = 1; // 1st zoom: 1 hr
+    else if (rangeHours > 4) intervalHours = 0.5; // 2nd zoom: 30m
+    else if (rangeHours > 1.5) intervalHours = 0.25; // 3rd zoom: 15m
+    else intervalHours = 1/6; // 4th zoom: 10m
 
     const intervalMs = intervalHours * 60 * 60 * 1000;
     
@@ -398,7 +399,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
                 tickLine={false}
                 axisLine={false}
                 interval="preserveStartEnd"
-                minTickGap={-1000}
+                minTickGap={0}
               />
               <YAxis 
                 type="number"
