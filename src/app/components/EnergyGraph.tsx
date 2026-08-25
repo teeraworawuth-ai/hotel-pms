@@ -317,7 +317,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
     const rangeMs = domain[1] - domain[0];
     let timeStr = date.getHours().toString();
     
-    if (rangeMs < 6 * 60 * 60 * 1000) { // < 6 hours zoom, show minutes
+    if (rangeMs < 16 * 60 * 60 * 1000) { // < 6 hours zoom, show minutes
       timeStr = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
       fSize = 8;
     }
