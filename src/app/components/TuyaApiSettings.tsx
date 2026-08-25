@@ -87,8 +87,9 @@ export default function TuyaApiSettings() {
   };
 
   return (
-    <TuyaQuotaWidget />
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+    <>
+      <TuyaQuotaWidget />
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
       <div className="p-6 border-b border-slate-100 bg-slate-50">
         <h2 className="text-xl font-bold text-slate-800">ตั้งค่า Tuya API Keys (รองรับ 150 อุปกรณ์)</h2>
         <p className="text-sm text-slate-500 mt-1">ใส่คีย์ได้สูงสุด 3 บัญชี ระบบจะสุ่มสลับและจับคู่ให้อุปกรณ์โดยอัตโนมัติ (Auto-Discovery)</p>
@@ -144,5 +145,6 @@ export default function TuyaApiSettings() {
         )}
       </div>
     </div>
+    </>
   );
 }
