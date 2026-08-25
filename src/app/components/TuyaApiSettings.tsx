@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import TuyaQuotaWidget from './TuyaQuotaWidget';
 
 export default function TuyaApiSettings() {
   const [keys, setKeys] = useState([
@@ -86,6 +87,7 @@ export default function TuyaApiSettings() {
   };
 
   return (
+    <TuyaQuotaWidget />
     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
       <div className="p-6 border-b border-slate-100 bg-slate-50">
         <h2 className="text-xl font-bold text-slate-800">ตั้งค่า Tuya API Keys (รองรับ 150 อุปกรณ์)</h2>

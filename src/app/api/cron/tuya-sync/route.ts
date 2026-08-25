@@ -118,6 +118,26 @@ export async function GET(request: Request) {
       }
     }
 
+    if (apiCallsMade > 0) {
+      const { data: quotaSetting } = await supabase.from('system_settings').select('value').eq('key', 'tuya_api_quota').single();
+      if (quotaSetting && quotaSetting.value) {
+         let quota = quotaSetting.value;
+         
+         const lastReset = new Date(quota.last_reset_date || new Date().toISOString());
+         const now = new Date();
+         const daysSinceReset = (now.getTime() - lastReset.getTime()) / (1000 * 3600 * 24);
+         
+         if (daysSinceReset >= 30) {
+            quota.calls_used_this_month = apiCallsMade;
+            quota.last_reset_date = now.toISOString();
+         } else {
+            quota.calls_used_this_month = (Number(quota.calls_used_this_month) || 0) + apiCallsMade;
+         }
+         
+         await supabase.from('system_settings').update({ value: quota }).eq('key', 'tuya_api_quota');
+      }
+    }
+
     return NextResponse.json({ 
       success: true, 
       processed_devices: logs.length,
