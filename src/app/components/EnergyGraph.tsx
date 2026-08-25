@@ -591,7 +591,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
         className="mt-2 relative group cursor-pointer"
         onClick={toggleFullScreen}
       >
-        <div className="absolute inset-0 z-10 bg-black/0 group-hover:bg-indigo-500/5 transition-colors rounded-xl flex items-center justify-center">
+        <div className="absolute inset-0 z-10 pointer-events-none bg-black/0 group-hover:bg-indigo-500/5 transition-colors rounded-xl flex items-center justify-center">
           <div className="opacity-0 group-hover:opacity-100 bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-lg transform translate-y-2 group-hover:translate-y-0 transition-all">
             🔍 ขยายกราฟเต็มจอ
           </div>
