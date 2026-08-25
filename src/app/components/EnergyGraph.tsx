@@ -426,7 +426,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
                 stroke="#6366f1" 
                 strokeWidth={3}
                 dot={false}
-                activeDot={{ r: 4, fill: '#6366f1', stroke: '#fff', strokeWidth: 2 }}
+                activeDot={{ r: 6, fill: '#ffffff', stroke: '#6366f1', strokeWidth: 3 }}
                 animationDuration={0}
                 connectNulls={false}
               />
