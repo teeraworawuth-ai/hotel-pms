@@ -400,6 +400,8 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
                 tick={renderTick}
                 tickLine={false}
                 axisLine={false}
+                interval={0}
+                minTickGap={5}
               />
               <YAxis 
                 type="number"
