@@ -233,8 +233,8 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
       
       const targetDate = new Date();
       targetDate.setDate(targetDate.getDate() + dateOffset);
-      const startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 7, 0, 0).getTime();
-      const endOfRange = startOfRange + 30 * 3600 * 1000;
+      const startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0).getTime();
+      const endOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1, 13, 0, 0).getTime();
       
       const timeMs = startOfRange + percentage * (endOfRange - startOfRange);
       
@@ -336,28 +336,49 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
     const targetDate = new Date();
     targetDate.setDate(targetDate.getDate() + dateOffset);
     
-    let graphStartMs = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 7, 0, 0).getTime();
-    let graphEndMs = graphStartMs + 30 * 3600 * 1000;
+    let graphStartMs = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0).getTime();
+    let graphEndMs = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1, 13, 0, 0).getTime();
 
     if (isExpanded) {
-        const fullScreenStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 7, 0, 0);
+        const fullScreenStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0);
         graphStartMs = fullScreenStart.getTime();
-        graphEndMs = graphStartMs + 30 * 3600 * 1000;
+        graphEndMs = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1, 13, 0, 0).getTime();
     }
 
     const currentZoom = isExpanded ? zoomLevel : 0;
     const tickIntervalMin = zoomIntervalMins[currentZoom];
     const chartWidth = isExpanded ? zoomWidths[currentZoom] : '100%';
     
-    const smallTicks = [];
-    const firstTickMs = graphStartMs; 
-    for (let m = 0; m <= 30 * 60; m += tickIntervalMin) {
-      const timeMs = firstTickMs + m * 60 * 1000;
-      if (timeMs <= graphEndMs) {
-        smallTicks.push(timeMs);
+        const smallTicks = [];
+    if (isExpanded) {
+      const firstTickMs = graphStartMs; 
+      for (let m = 0; m <= 30 * 60 + 15; m += tickIntervalMin) {
+        const timeMs = firstTickMs + m * 60 * 1000;
+        if (timeMs <= graphEndMs) {
+          smallTicks.push(timeMs);
+        }
+      }
+      smallTicks.push(graphEndMs);
+    } else {
+      // Custom ticks for collapsed graph
+      smallTicks.push(graphStartMs); // 06:45 (labeled 7 bold)
+      
+      // 9, 11, 13, 15, 17, 19, 21, 23, 1, 3, 5
+      for (let h = 9; h <= 23; h += 2) {
+        smallTicks.push(new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), h, 0, 0).getTime());
+      }
+      for (let h = 1; h <= 5; h += 2) {
+        smallTicks.push(new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1, h, 0, 0).getTime());
+      }
+      
+      const secondSeven = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1, 6, 44, 59).getTime();
+      smallTicks.push(secondSeven); // 06:44:59 next day (labeled 7 bold)
+      
+      // 9, 11, 13 next day
+      for (let h = 9; h <= 13; h += 2) {
+        smallTicks.push(new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1, h, 0, 0).getTime());
       }
     }
-    smallTicks.push(graphEndMs);
 
     // Calculate midnights for ReferenceLines
     const midnights = [];
@@ -421,33 +442,34 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
           </g>
         );
       } else {
-        const isStartOrEnd = payload.value === graphStartMs || payload.value === graphEndMs;
-        const isOddHour = date.getHours() % 2 !== 0; 
+        const isFirstSeven = payload.value === graphStartMs;
+        // The second 7 is at 06:44:59 of next day
+        const isSecondSeven = Math.abs(payload.value - new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1, 6, 44, 59).getTime()) < 5000;
         
-        if (isStartOrEnd) {
+        if (isFirstSeven || isSecondSeven) {
           return (
             <g>
               <line x1={x} y1={y} x2={x} y2={y + 3} stroke="#94a3b8" strokeWidth={1.5} />
               <text x={x} y={y + 11} textAnchor="middle" fill="#94a3b8" fontSize={11} fontWeight="bold">
-                {date.getHours()}
+                7
               </text>
             </g>
           );
-        } else if (date.getMinutes() === 0) {
-          if (isOddHour) {
-            const hour = date.getHours();
-            const fSize = hour >= 10 ? 9.5 : 11;
-            return (
-              <g>
-                <line x1={x} y1={y} x2={x} y2={y + 2} stroke="#cbd5e1" strokeWidth={1} />
-                <text x={x} y={y + 11} textAnchor="middle" fill="#cbd5e1" fontSize={fSize}>
-                  {hour}
-                </text>
-              </g>
-            );
-          }
+        } else {
+          // Normal odd hours (9, 11, 13...)
+          let hour = date.getHours();
+          if (payload.value === graphEndMs) hour = 13; // Just in case it's 13:00
+          
+          const fSize = hour >= 10 ? 9.5 : 11;
+          return (
+            <g>
+              <line x1={x} y1={y} x2={x} y2={y + 2} stroke="#cbd5e1" strokeWidth={1} />
+              <text x={x} y={y + 11} textAnchor="middle" fill="#cbd5e1" fontSize={fSize} fontWeight="normal">
+                {hour}
+              </text>
+            </g>
+          );
         }
-        return null;
       }
     };
 
