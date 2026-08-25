@@ -272,17 +272,14 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
     const rangeMs = max - min;
     const rangeHours = rangeMs / (60 * 60 * 1000);
     
-    let intervalHours = 2;
-    if (rangeHours > 24) intervalHours = 6;
-    else if (rangeHours > 12) intervalHours = 2;
-    else if (rangeHours > 6) intervalHours = 1;
-    else if (rangeHours > 3) intervalHours = 0.5;
-    else if (rangeHours > 1) intervalHours = 0.25; // 15m
-    else intervalHours = 1/12; // 5m
+    let intervalHours = 1;
+    if (rangeHours > 16) intervalHours = 1; // 1 hr
+    else if (rangeHours > 8) intervalHours = 0.5; // 30m
+    else if (rangeHours > 4) intervalHours = 0.25; // 15m
+    else intervalHours = 1/6; // 10m
 
     const intervalMs = intervalHours * 60 * 60 * 1000;
     
-    // start from nearest interval
     let tickMs = Math.ceil(min / intervalMs) * intervalMs;
     while (tickMs <= max) {
       ticks.push(tickMs);
@@ -401,7 +398,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
                 tickLine={false}
                 axisLine={false}
                 interval="preserveStartEnd"
-                minTickGap={0}
+                minTickGap={-1000}
               />
               <YAxis 
                 type="number"
