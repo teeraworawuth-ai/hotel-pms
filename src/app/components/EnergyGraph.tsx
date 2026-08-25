@@ -77,7 +77,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
         return;
       }
 
-      let formattedData = (logData || []).map((log) => {
+      let rawData = (logData || []).map((log) => {
         const d = new Date(log.recorded_at);
         const wattVal = Number(log.wattage);
         return {
@@ -87,30 +87,28 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
         };
       });
 
-      formattedData = formattedData.map((point, i, arr) => {
-        if (point.watt === null) return point;
-        let hasNeighbor = false;
-        for (let j = i - 1; j >= 0; j--) {
-          const neighbor = arr[j];
-          if (point.fullTime - neighbor.fullTime > 360000) break;
-          if (neighbor.watt !== null && neighbor.watt > 0) {
-            hasNeighbor = true;
-            break;
+      // Inject null points to break the line when gap > 15 minutes
+      let formattedData = [];
+      for (let i = 0; i < rawData.length; i++) {
+        formattedData.push(rawData[i]);
+        if (i < rawData.length - 1) {
+          const curr = rawData[i];
+          const next = rawData[i + 1];
+          // If gap is more than 15 minutes, insert a null point in the middle to break the chart line
+          if (next.fullTime - curr.fullTime > 15 * 60 * 1000) {
+            formattedData.push({
+              time: "",
+              fullTime: curr.fullTime + 1000, // 1 second after current
+              watt: null
+            });
+            formattedData.push({
+              time: "",
+              fullTime: next.fullTime - 1000, // 1 second before next
+              watt: null
+            });
           }
         }
-        if (!hasNeighbor) {
-          for (let j = i + 1; j < arr.length; j++) {
-            const neighbor = arr[j];
-            if (neighbor.fullTime - point.fullTime > 360000) break;
-            if (neighbor.watt !== null && neighbor.watt > 0) {
-              hasNeighbor = true;
-              break;
-            }
-          }
-        }
-        if (!hasNeighbor) return { ...point, watt: null };
-        return point;
-      });
+      }
 
       setData(formattedData);
     } catch (err) {
@@ -497,7 +495,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
       <div style={{ width: chartWidth, height: typeof baseHeight === 'number' ? `${baseHeight}px` : baseHeight, minWidth: '100%' }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: isExpanded ? 15 : 5 }}>
-            <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 3' }} />
+            {!isExpanded && <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 3' }} />}
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
             
             <XAxis 
