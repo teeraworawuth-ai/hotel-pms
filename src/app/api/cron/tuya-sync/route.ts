@@ -3,7 +3,6 @@ import { supabase } from '@/lib/supabase';
 const { TuyaContext } = require('@tuya/tuya-connector-nodejs');
 
 export async function GET(request: Request) {
-  try {
     // 1. Rate Limiting Check (Prevent calls more frequent than 4.5 minutes)
     const { data: lastSyncData } = await supabase.from('system_settings').select('value').eq('key', 'last_tuya_sync_time').single();
     if (lastSyncData && lastSyncData.value) {
