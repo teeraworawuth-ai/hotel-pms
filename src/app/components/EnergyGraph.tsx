@@ -30,8 +30,8 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
   // Zoom State
   const [zoomLevel, setZoomLevel] = useState(0); // 0 to 4
   // 1 day = 100%, 7 days = 700%
-  const zoomWidths = ['700%', '1400%', '2800%', '8400%', '33600%'];
-  const zoomIntervalMins = [60, 30, 15, 5, 1]; // 0=60m, 1=30m, 2=15m, 3=5m, 4=1m
+  const zoomWidths = ['100%', '200%', '400%', '600%', '1200%'];
+  const zoomIntervalMins = [60, 30, 15, 10, 5]; // 0=60m, 1=30m, 2=15m, 3=10m, 4=5m
 
   const graphRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -50,9 +50,9 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
 
       if (isFullScreen) {
         // -3 days to +3 days from targetDate
-        startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() - 3, 7, 0, 0);
+        startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 7, 0, 0);
         nextDate = new Date(targetDate);
-        nextDate.setDate(nextDate.getDate() + 4);
+        nextDate.setDate(nextDate.getDate() + 1);
         endOfDay = new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate(), 13, 0, 0);
       } else {
         if (dateOffset === 0) {
@@ -233,8 +233,8 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
       
       const targetDate = new Date();
       targetDate.setDate(targetDate.getDate() + dateOffset);
-      const startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() - 3, 7, 0, 0).getTime();
-      const endOfRange = startOfRange + 7 * 24 * 3600 * 1000 + 6 * 3600 * 1000;
+      const startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 7, 0, 0).getTime();
+      const endOfRange = startOfRange + 30 * 3600 * 1000;
       
       const timeMs = startOfRange + percentage * (endOfRange - startOfRange);
       
@@ -340,9 +340,9 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
     let graphEndMs = graphStartMs + 30 * 3600 * 1000;
 
     if (isExpanded) {
-        const fullScreenStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() - 3, 7, 0, 0);
+        const fullScreenStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 7, 0, 0);
         graphStartMs = fullScreenStart.getTime();
-        graphEndMs = graphStartMs + 7 * 24 * 3600 * 1000 + 6 * 3600 * 1000;
+        graphEndMs = graphStartMs + 30 * 3600 * 1000;
     }
 
     const currentZoom = isExpanded ? zoomLevel : 0;
@@ -350,8 +350,8 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
     const chartWidth = isExpanded ? zoomWidths[currentZoom] : '100%';
     
     const smallTicks = [];
-    const firstTickMs = graphStartMs + 15 * 60 * 1000; 
-    for (let m = 0; m <= (isExpanded ? 7 * 24 * 60 : 24 * 60); m += tickIntervalMin) {
+    const firstTickMs = graphStartMs; 
+    for (let m = 0; m <= 30 * 60; m += tickIntervalMin) {
       const timeMs = firstTickMs + m * 60 * 1000;
       if (timeMs <= graphEndMs) {
         smallTicks.push(timeMs);
@@ -362,7 +362,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
     // Calculate midnights for ReferenceLines
     const midnights = [];
     if (isExpanded) {
-       for (let i = -3; i <= 4; i++) {
+       for (let i = 0; i <= 1; i++) {
           const m = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + i, 0, 0, 0).getTime();
           if (m > graphStartMs && m < graphEndMs) {
              midnights.push(m);
@@ -393,16 +393,26 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
       const date = new Date(payload.value);
 
       if (isExpanded) {
-        // Hide ticks on edges to prevent overflow if they get squished
         if (payload.value === graphStartMs || payload.value === graphEndMs) return null;
         
-        const timeStr = date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
-        // At zoom level 0 or 1, show date at noon
+        if (zoomLevel === 0 && date.getMinutes() !== 0) return null; 
+        
+        const timeStr = zoomLevel === 0 
+           ? date.getHours().toString() 
+           : date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+
         return (
           <g transform={`translate(${x},${y})`}>
-            <text x={0} y={15} dy={0} textAnchor="middle" fill="#94a3b8" fontSize={10} className="font-medium">
-              {timeStr}
-            </text>
+            {zoomLevel === 0 ? (
+               <text x={0} y={15} dy={0} textAnchor="middle" fill="#64748b" fontSize={11} fontWeight="bold">
+                 {timeStr}
+               </text>
+            ) : (
+               <text x={0} y={15} dy={0} textAnchor="middle" fill="#94a3b8" fontSize={10} className="font-medium">
+                 {timeStr}
+               </text>
+            )}
+            
             {zoomLevel <= 1 && date.getHours() === 12 && date.getMinutes() === 0 && (
                <text x={0} y={28} dy={0} textAnchor="middle" fill="#64748b" fontSize={9} fontWeight="bold">
                  {date.toLocaleDateString("th-TH", { day: "numeric", month: "short" })}
@@ -419,7 +429,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
             <g>
               <line x1={x} y1={y} x2={x} y2={y + 3} stroke="#94a3b8" strokeWidth={1.5} />
               <text x={x} y={y + 11} textAnchor="middle" fill="#94a3b8" fontSize={11} fontWeight="bold">
-                7
+                {date.getHours()}
               </text>
             </g>
           );
