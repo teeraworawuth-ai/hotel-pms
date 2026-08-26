@@ -12,7 +12,8 @@ import {
   ResponsiveContainer,
   Tooltip,
   ReferenceArea,
-  ReferenceLine
+  ReferenceLine,
+  Label
 } from "recharts";
 
 interface EnergyGraphProps {
@@ -37,10 +38,10 @@ const CustomTooltip = ({ active, payload }: any) => {
     const formattedWatt = Math.round(data.watt).toLocaleString();
 
     return (
-      <div className="text-slate-800 font-bold text-[11px] drop-shadow-sm bg-white/90 backdrop-blur-sm border border-slate-200 px-2 py-1 rounded pointer-events-none flex items-center gap-1">
-        <span className="text-indigo-600">{dateStr} {hrs}:{mins}</span>
-        <span className="text-slate-300 font-normal">|</span>
-        <span>{formattedWatt} <span className="text-[9px] font-normal text-slate-500">W</span></span>
+      <div className="font-bold text-[12px] pointer-events-none flex items-center gap-1" style={{ textShadow: '1px 1px 2px white, -1px -1px 2px white, 1px -1px 2px white, -1px 1px 2px white' }}>
+        <span className="text-indigo-700">{dateStr} {hrs}:{mins}</span>
+        <span className="text-slate-400 font-normal">|</span>
+        <span className="text-slate-800">{formattedWatt} <span className="text-[10px] font-normal text-slate-600">W</span></span>
       </div>
     );
   }
@@ -424,9 +425,17 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
           <ReferenceArea key={idx} x1={period.start} x2={period.end} fill="#e2e8f0" fillOpacity={0.7} />
         ))}
 
-        {midnights.map((m, idx) => (
-          <ReferenceLine key={'mid-' + idx} x={m} stroke="#000000" strokeDasharray="5 5" strokeWidth={1.5} strokeOpacity={0.8} />
-        ))}
+        {midnights.map((m, idx) => {
+          const date = new Date(m);
+          const now = new Date();
+          const isToday = date.getDate() === now.getDate() && date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+          const dateStr = isToday ? 'วันนี้' : (date.getDate().toString().padStart(2, '0') + '/' + (date.getMonth() + 1).toString().padStart(2, '0'));
+          return (
+            <ReferenceLine key={'mid-' + idx} x={m} stroke="#000000" strokeDasharray="5 5" strokeWidth={1.5} strokeOpacity={0.8}>
+              <Label value={dateStr} position="insideTopLeft" fill="#334155" fontSize={11} fontWeight="bold" offset={5} />
+            </ReferenceLine>
+          );
+        })}
         
         <Area 
             type="linear" 
@@ -443,6 +452,12 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
       </AreaChart>
   );
 
+  
+  const centerMs = (domain[0] + domain[1]) / 2;
+  const centerDate = new Date(centerMs);
+  const now = new Date();
+  const isCenterToday = centerDate.getDate() === now.getDate() && centerDate.getMonth() === now.getMonth() && centerDate.getFullYear() === now.getFullYear();
+  const watermarkText = isCenterToday ? 'วันนี้' : (centerDate.getDate().toString().padStart(2, '0') + '/' + (centerDate.getMonth() + 1).toString().padStart(2, '0'));
   return (
     <>
       <div className="relative w-full group select-none">
@@ -476,10 +491,14 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
               </div>
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
+            <>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 overflow-hidden">
+              <span className="text-slate-200 font-black text-5xl sm:text-7xl select-none opacity-40">{watermarkText}</span>
+            </div>
+            <ResponsiveContainer width="100%" height="100%" className="relative z-10">
               {renderChartContent()}
             </ResponsiveContainer>
-          )}
+            </>)}
         </div>
       </div>
 
@@ -508,11 +527,14 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
           >
-            {loading ? null : (
-              <ResponsiveContainer width="100%" height="100%">
+            {loading ? null : (<>
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 overflow-hidden">
+              <span className="text-slate-200 font-black text-5xl sm:text-7xl select-none opacity-40">{watermarkText}</span>
+            </div>
+            <ResponsiveContainer width="100%" height="100%" className="relative z-10">
                 {renderChartContent()}
-              </ResponsiveContainer>
-            )}
+            </ResponsiveContainer>
+            </>)}
           </div>
         </div>
       )}
