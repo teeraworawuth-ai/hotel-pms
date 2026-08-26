@@ -22,17 +22,25 @@ interface EnergyGraphProps {
   dateOffset?: number;
 }
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
-    const date = new Date(label);
-    const timeStr = date.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const watt = payload[0].value;
+    const data = payload[0].payload;
+    if (data.watt === null) return null;
     
+    const date = new Date(data.fullTime);
+    const hrs = date.getHours().toString().padStart(2, '0');
+    const mins = date.getMinutes().toString().padStart(2, '0');
+    
+    const now = new Date();
+    const isToday = date.getDate() === now.getDate() && date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+    const dateStr = isToday ? 'วันนี้' : (date.getDate().toString().padStart(2, '0') + '/' + (date.getMonth() + 1).toString().padStart(2, '0'));
+    const formattedWatt = Math.round(data.watt).toLocaleString();
+
     return (
-      <div className="bg-white/80 backdrop-blur-[2px] text-slate-800 px-2 py-1 rounded border border-slate-200 text-[10px] font-bold shadow-sm pointer-events-none">
-        <span className="text-indigo-600">{timeStr}</span>
-        <span className="text-slate-300 font-normal mx-1">|</span>
-        <span>{watt} <span className="text-[9px] font-normal text-slate-500">W</span></span>
+      <div className="text-slate-800 font-bold text-[11px] drop-shadow-sm bg-white/90 backdrop-blur-sm border border-slate-200 px-2 py-1 rounded pointer-events-none flex items-center gap-1">
+        <span className="text-indigo-600">{dateStr} {hrs}:{mins}</span>
+        <span className="text-slate-300 font-normal">|</span>
+        <span>{formattedWatt} <span className="text-[9px] font-normal text-slate-500">W</span></span>
       </div>
     );
   }
@@ -312,11 +320,18 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
       tickMs += intervalMs;
     }
     
-    if (defaultStartMs >= min && defaultStartMs <= max && !ticks.includes(defaultStartMs)) ticks.push(defaultStartMs);
     const secondSeven = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1, 6, 44, 59).getTime();
-    if (secondSeven >= min && secondSeven <= max && !ticks.includes(secondSeven)) ticks.push(secondSeven);
+    
+    // Filter out dynamic ticks that are too close to our bold 7s (within 30 mins)
+    const filteredTicks = ticks.filter(t => 
+      Math.abs(t - defaultStartMs) > 30 * 60 * 1000 && 
+      Math.abs(t - secondSeven) > 30 * 60 * 1000
+    );
+    
+    if (defaultStartMs >= min && defaultStartMs <= max) filteredTicks.push(defaultStartMs);
+    if (secondSeven >= min && secondSeven <= max) filteredTicks.push(secondSeven);
 
-    return Array.from(new Set(ticks)).sort((a, b) => a - b);
+    return Array.from(new Set(filteredTicks)).sort((a, b) => a - b);
   };
 
   const renderTick = (props: any) => {
@@ -328,8 +343,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
     if (payload.value === defaultStartMs || payload.value === new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1, 6, 44, 59).getTime()) {
       return (
         <g>
-          <line x1={x} y1={y} x2={x} y2={y + 3} stroke="#94a3b8" strokeWidth={1.5} />
-          <text x={x} y={y + 11} textAnchor="middle" fill="#94a3b8" fontSize={11} fontWeight="bold">7</text>
+          <text x={x} y={y + 11} textAnchor="middle" fill="#0f172a" fontSize={12} fontWeight="bold">7</text>
         </g>
       );
     }
@@ -347,7 +361,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
     return (
       <g>
         <line x1={x} y1={y} x2={x} y2={y + 2} stroke="#cbd5e1" strokeWidth={1} />
-        <text x={x} y={y + 11} textAnchor="middle" fill="#cbd5e1" fontSize={fSize} fontWeight="normal">{timeStr}</text>
+        <text x={x} y={y + 11} textAnchor="middle" fill="#64748b" fontSize={fSize} fontWeight="normal">{timeStr}</text>
       </g>
     );
   };
