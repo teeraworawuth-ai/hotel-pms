@@ -387,7 +387,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ top: 25, right: 10, left: 0, bottom: 20 }}>
+            <AreaChart data={data} margin={{ top: 25, right: 10, left: 0, bottom: 25 }}>
               <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 3' }} />
               <CartesianGrid strokeDasharray="3 3" vertical={true} horizontal={true} stroke="#e2e8f0" />
               
@@ -402,7 +402,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
                 interval={0}
                 minTickGap={-1000}
                 allowDataOverflow={true}
-                label={{ value: 'เวลา', position: 'insideBottom', offset: -18, style: { fill: '#64748b', fontSize: 11, fontWeight: 'bold' } }}
+                label={{ value: 'เวลา', position: 'insideBottom', offset: -22, style: { fill: '#64748b', fontSize: 11, fontWeight: 'bold' } }}
               />
               <YAxis 
                   type="number"
