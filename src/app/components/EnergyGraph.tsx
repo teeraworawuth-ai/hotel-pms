@@ -400,9 +400,9 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
             tick={{ fontSize: 10, fill: '#64748b' }}
             tickLine={true}
             axisLine={true}
-            tickFormatter={(value) => value.toLocaleString()}
+            tickFormatter={(value) => Math.round(value).toLocaleString()}
             orientation="left"
-            width={40}
+            width={45}
             allowDataOverflow={true}
         />
         
