@@ -401,6 +401,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
                 axisLine={false}
                 interval={0}
                 minTickGap={-1000}
+                allowDataOverflow={true}
                 label={{ value: 'เวลา', position: 'insideBottom', offset: -18, style: { fill: '#64748b', fontSize: 11, fontWeight: 'bold' } }}
               />
               <YAxis 
@@ -412,6 +413,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
                   tickFormatter={(value) => value.toLocaleString()}
                   orientation="left"
                   width={55}
+                  allowDataOverflow={true}
                   label={{ value: 'กำลังไฟฟ้า (Watts)', angle: -90, position: 'insideLeft', offset: 0, style: { textAnchor: 'middle', fill: '#64748b', fontSize: 11, fontWeight: 'bold' } }}
                 />
               
