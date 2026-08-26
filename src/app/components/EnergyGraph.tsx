@@ -3,8 +3,9 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import {
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
+  
   XAxis,
   YAxis,
   CartesianGrid,
@@ -277,7 +278,8 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
     else if (rangeHours > 8) intervalHours = 1; // 1st zoom: 1 hr
     else if (rangeHours > 4) intervalHours = 0.5; // 2nd zoom: 30m
     else if (rangeHours > 1.5) intervalHours = 0.25; // 3rd zoom: 15m
-    else intervalHours = 1/6; // 4th zoom: 10m
+    else if (rangeHours > 0.5) intervalHours = 1/6; // 4th zoom: 10m
+    else intervalHours = 1/12; // 5th zoom: 5m
 
     const intervalMs = intervalHours * 60 * 60 * 1000;
     
@@ -287,7 +289,6 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
       tickMs += intervalMs;
     }
     
-    // Always include start 06:45 and end 06:45 if in view
     if (defaultStartMs >= min && defaultStartMs <= max && !ticks.includes(defaultStartMs)) ticks.push(defaultStartMs);
     const secondSeven = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1, 6, 44, 59).getTime();
     if (secondSeven >= min && secondSeven <= max && !ticks.includes(secondSeven)) ticks.push(secondSeven);
@@ -386,9 +387,9 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+            <AreaChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
               <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 3' }} />
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <CartesianGrid strokeDasharray="3 3" vertical={true} horizontal={true} stroke="#e2e8f0" />
               
               <XAxis 
                 dataKey="fullTime"
@@ -402,15 +403,16 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
                 minTickGap={0}
               />
               <YAxis 
-                type="number"
-                domain={[0, yAxisMax]}
-                tick={{ fontSize: 10, fill: '#94a3b8' }}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(value) => `${value}w`}
-                orientation="left"
-                width={45}
-              />
+                  type="number"
+                  domain={[0, yAxisMax]}
+                  tick={{ fontSize: 10, fill: '#64748b' }}
+                  tickLine={true}
+                  axisLine={true}
+                  tickFormatter={(value) => value.toLocaleString()}
+                  orientation="left"
+                  width={55}
+                  label={{ value: 'กำลังไฟฟ้า (Watts)', angle: -90, position: 'insideLeft', offset: 0, style: { textAnchor: 'middle', fill: '#64748b', fontSize: 11, fontWeight: 'bold' } }}
+                />
               
               {offlinePeriods.map((period, idx) => (
                 <ReferenceArea key={idx} x1={period.start} x2={period.end} fill="#e2e8f0" fillOpacity={0.7} />
@@ -420,17 +422,19 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
                 <ReferenceLine key={`mid-${idx}`} x={m} stroke="#000000" strokeDasharray="5 5" strokeWidth={1.5} strokeOpacity={0.8} />
               ))}
               
-              <Line 
-                type="monotone" 
-                dataKey="watt" 
-                stroke="#6366f1" 
-                strokeWidth={3}
-                dot={false}
-                activeDot={{ r: 6, fill: '#ffffff', stroke: '#6366f1', strokeWidth: 3 }}
-                animationDuration={0}
-                connectNulls={false}
-              />
-            </LineChart>
+              <Area 
+                  type="linear" 
+                  dataKey="watt" 
+                  stroke="#3b82f6" 
+                  strokeWidth={2}
+                  fill="#eff6ff"
+                  fillOpacity={0.8}
+                  dot={false}
+                  activeDot={{ r: 5, fill: '#ffffff', stroke: '#3b82f6', strokeWidth: 3 }}
+                  animationDuration={0}
+                  isAnimationActive={false}
+                />
+            </AreaChart>
           </ResponsiveContainer>
         )}
       </div>
