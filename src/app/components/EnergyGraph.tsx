@@ -275,11 +275,12 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
     
     let intervalHours = 2;
     if (rangeHours > 16) intervalHours = 2; // Unzoomed: 2 hrs
-    else if (rangeHours > 8) intervalHours = 1; // 1st zoom: 1 hr
-    else if (rangeHours > 4) intervalHours = 0.5; // 2nd zoom: 30m
-    else if (rangeHours > 1.5) intervalHours = 0.25; // 3rd zoom: 15m
-    else if (rangeHours > 0.5) intervalHours = 1/6; // 4th zoom: 10m
-    else intervalHours = 1/12; // 5th zoom: 5m
+    else if (rangeHours > 8) intervalHours = 2; // 8-16h: 2 hr (prevent overlap)
+    else if (rangeHours > 4) intervalHours = 1; // 4-8h: 1 hr
+    else if (rangeHours > 2) intervalHours = 0.5; // 2-4h: 30m
+    else if (rangeHours > 1) intervalHours = 0.25; // 1-2h: 15m
+    else if (rangeHours > 0.5) intervalHours = 1/6; // 30m-1h: 10m
+    else intervalHours = 1/12; // < 30m: 5m
 
     const intervalMs = intervalHours * 60 * 60 * 1000;
     
@@ -387,7 +388,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ top: 25, right: 10, left: 0, bottom: 25 }}>
+            <AreaChart data={data} margin={{ top: 25, right: 10, left: 0, bottom: 25 }} style={{ outline: "none" }}>
               <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 3' }} />
               <CartesianGrid strokeDasharray="3 3" vertical={true} horizontal={true} stroke="#e2e8f0" />
               

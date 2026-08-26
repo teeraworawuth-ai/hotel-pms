@@ -42,3 +42,9 @@ body {
   transform-origin: bottom center;
 }
 
+
+
+/* Remove Recharts Focus Outlines */
+.recharts-wrapper, .recharts-surface, .recharts-wrapper * {
+  outline: none !important;
+}
