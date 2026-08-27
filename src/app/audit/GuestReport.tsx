@@ -49,13 +49,26 @@ export default function GuestReport({ dateOffset }: GuestReportProps) {
       .neq("status", "cancelled");
 
     // 3. ดึงข้อมูลไฟของทุกห้องในวันนี้
-    const { data: energyData } = await supabase
-      .from("energy_logs")
-      .select("room_id, wattage, recorded_at")
-      .gte("recorded_at", startOfDay.toISOString())
-      .lte("recorded_at", endOfDay.toISOString())
-      .order("recorded_at", { ascending: true }); // เพิ่มการเรียงลำดับเวลาให้กราฟแสดงถูกต้อง
-
+    let energyData = [];
+    let from = 0;
+    const limit = 1000;
+    while (true) {
+      const { data } = await supabase
+        .from("energy_logs")
+        .select("room_id, wattage, recorded_at")
+        .gte("recorded_at", startOfDay.toISOString())
+        .lte("recorded_at", endOfDay.toISOString())
+        .order("recorded_at", { ascending: true })
+        .range(from, from + limit - 1);
+        
+      if (data) {
+        energyData = energyData.concat(data);
+        if (data.length < limit) break;
+      } else {
+        break;
+      }
+      from += limit;
+    }
     if (bookingsData && energyData) {
       const processed = bookingsData.map((b: any) => {
         const room = b.rooms;

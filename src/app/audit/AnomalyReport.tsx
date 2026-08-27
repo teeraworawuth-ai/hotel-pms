@@ -50,15 +50,26 @@ export default function AnomalyReport({ dateOffset }: AnomalyReportProps) {
       .gte("check_out_time", startOfDay.toISOString())
       .neq("status", "cancelled");
 
-    const { data: energyData } = await supabase
-      .from("energy_logs")
-      .select("room_id, wattage, recorded_at")
-      .gte("recorded_at", startOfDay.toISOString())
-      .lte("recorded_at", endOfDay.toISOString())
-      .order("recorded_at", { ascending: true });
-
-    // ดึงข้อมูลการรีวิว (ตรวจสอบความผิดปกติ) ที่ทำไปแล้วในวันนี้
-    const { data: reviewsData } = await supabase
+    let energyData = [];
+    let from = 0;
+    const limit = 1000;
+    while (true) {
+      const { data } = await supabase
+        .from("energy_logs")
+        .select("room_id, wattage, recorded_at")
+        .gte("recorded_at", startOfDay.toISOString())
+        .lte("recorded_at", endOfDay.toISOString())
+        .order("recorded_at", { ascending: true })
+        .range(from, from + limit - 1);
+        
+      if (data) {
+        energyData = energyData.concat(data);
+        if (data.length < limit) break;
+      } else {
+        break;
+      }
+      from += limit;
+    }    const { data: reviewsData } = await supabase
       .from("anomaly_reviews")
       .select("room_id, session_start_time")
       .gte("session_start_time", startOfDay.toISOString())

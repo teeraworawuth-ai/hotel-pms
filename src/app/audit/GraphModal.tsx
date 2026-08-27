@@ -27,13 +27,27 @@ export default function GraphModal({ booking, onClose }: GraphModalProps) {
 
   const fetchData = async () => {
     setLoading(true);
-    const { data: logs } = await supabase
-      .from("energy_logs")
-      .select("wattage, recorded_at")
-      .eq("room_id", booking.roomId)
-      .gte("recorded_at", booking.checkIn.toISOString())
-      .lte("recorded_at", booking.effectiveCheckOut.toISOString())
-      .order("recorded_at", { ascending: true });
+    let logs = [];
+      let from = 0;
+      const limit = 1000;
+      while (true) {
+        const { data } = await supabase
+          .from("energy_logs")
+          .select("wattage, recorded_at")
+          .eq("room_id", booking.roomId)
+          .gte("recorded_at", booking.checkIn.toISOString())
+          .lte("recorded_at", booking.effectiveCheckOut.toISOString())
+          .order("recorded_at", { ascending: true })
+          .range(from, from + limit - 1);
+          
+        if (data) {
+          logs = logs.concat(data);
+          if (data.length < limit) break;
+        } else {
+          break;
+        }
+        from += limit;
+      }
 
     if (logs) {
       const formatted = logs.map(l => {
