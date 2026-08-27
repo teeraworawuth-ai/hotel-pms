@@ -101,8 +101,8 @@ export default function EnergyPage() {
             const t = new Date(log.recorded_at).getTime();
             const prevT = i > 0 ? new Date(arr[i-1].recorded_at).getTime() : -Infinity;
             const nextT = i < arr.length - 1 ? new Date(arr[i+1].recorded_at).getTime() : Infinity;
-            // ต้องมี ping ที่ >0W ติดกันภายใน 6 นาที (360,000 ms) ถึงจะถือว่าเป็นการใช้งานต่อเนื่อง
-            return (t - prevT <= 360000) || (nextT - t <= 360000);
+            // ต้องมี ping ที่ >0W ติดกันภายใน 12 นาที (360,000 ms) ถึงจะถือว่าเป็นการใช้งานต่อเนื่อง
+            return (t - prevT <= 720000) || (nextT - t <= 720000);
           });
 
           if (validLogs.length > 0) {

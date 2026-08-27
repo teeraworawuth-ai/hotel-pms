@@ -131,7 +131,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
         if (i < rawData.length - 1) {
           const curr = rawData[i];
           const next = rawData[i + 1];
-          if (next.fullTime - curr.fullTime > 15 * 60 * 1000) {
+          if (next.fullTime - curr.fullTime > 10 * 60 * 1000) {
             formattedData.push({
               time: "",
               fullTime: curr.fullTime + 1000,
@@ -369,13 +369,13 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
     for (let i = 1; i < data.length; i++) {
       const prev = data[i - 1];
       const curr = data[i];
-      if (curr.fullTime - prev.fullTime > 15 * 60 * 1000) {
+      if (curr.fullTime - prev.fullTime > 10 * 60 * 1000) {
         offlinePeriods.push({ start: prev.fullTime, end: curr.fullTime });
       }
     }
     const now = new Date().getTime();
     const lastPoint = data[data.length - 1];
-    if (now > lastPoint.fullTime && (now - lastPoint.fullTime > 15 * 60 * 1000) && lastPoint.fullTime > domain[0] && lastPoint.fullTime < domain[1]) {
+    if (now > lastPoint.fullTime && (now - lastPoint.fullTime > 10 * 60 * 1000) && lastPoint.fullTime > domain[0] && lastPoint.fullTime < domain[1]) {
       offlinePeriods.push({ start: lastPoint.fullTime, end: Math.min(now, domain[1]) });
     }
   }

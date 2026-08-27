@@ -30,7 +30,7 @@ export default function OfflineSensors({ dateOffset = 0 }: { dateOffset?: number
         .select("room_id, recorded_at")
         .gte("recorded_at", startOfDay.toISOString())
         .lte("recorded_at", endOfDay.toISOString())
-        .order("recorded_at", { ascending: true });
+        .order("recorded_at", { ascending: true }).limit(100000);
 
       const offlineRooms = [];
       const now = new Date();
