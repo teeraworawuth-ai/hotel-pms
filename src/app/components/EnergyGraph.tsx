@@ -85,33 +85,30 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
   }, [dateOffset]);
 
   const fetchData = async () => {
-    try {
-      setLoading(true);
-
-      const startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 7, 0, 0);
-      let nextDate = new Date(targetDate);
-      nextDate.setDate(nextDate.getDate() + 1);
-      let endOfDay = new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate(), 13, 0, 0);
-
-      // limit fetching to now if future
-      const now = new Date();
-      if (now < endOfDay) {
-         if (now < startOfRange) {
-           setData([]);
-           return;
-         } else {
-           endOfDay = now;
-         }
-      }
-
-      const { data: logData, error } = await supabase
+      try {
+        setLoading(true);
+  
+        const startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() - 3, 0, 0, 0);
+        let endOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 2, 0, 0, 0);
+  
+        const now = new Date();
+        if (now < endOfDay) {
+           if (now < startOfRange) {
+             setData([]);
+             return;
+           } else {
+             endOfDay = now;
+           }
+        }
+  
+        const { data: logData, error } = await supabase
         .from("energy_logs")
         .select("wattage, recorded_at")
         .eq("room_id", roomId)
         .gte("recorded_at", startOfRange.toISOString())
         .lte("recorded_at", endOfDay.toISOString())
         .order("recorded_at", { ascending: true })
-        .limit(15000);
+        .limit(50000);
 
       if (error) {
         console.error("Error fetching energy logs:", error);
@@ -442,8 +439,8 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
             dataKey="watt" 
             stroke="#3b82f6" 
             strokeWidth={2}
-            fill="#eff6ff"
-            fillOpacity={0.8}
+            fill="#dbeafe"
+            fillOpacity={0.9}
             dot={false}
             activeDot={{ r: 5, fill: '#ffffff', stroke: '#3b82f6', strokeWidth: 3 }}
             animationDuration={0}
@@ -493,7 +490,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
           ) : (
             <>
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 overflow-hidden">
-              <span className="text-slate-200 font-black text-5xl sm:text-7xl select-none opacity-40">{watermarkText}</span>
+              <span className="text-slate-300 font-black text-4xl sm:text-5xl select-none opacity-50">{watermarkText}</span>
             </div>
             <ResponsiveContainer width="100%" height="100%" className="relative z-10">
               {renderChartContent()}
@@ -529,7 +526,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
           >
             {loading ? null : (<>
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 overflow-hidden">
-              <span className="text-slate-200 font-black text-5xl sm:text-7xl select-none opacity-40">{watermarkText}</span>
+              <span className="text-slate-300 font-black text-4xl sm:text-5xl select-none opacity-50">{watermarkText}</span>
             </div>
             <ResponsiveContainer width="100%" height="100%" className="relative z-10">
                 {renderChartContent()}
