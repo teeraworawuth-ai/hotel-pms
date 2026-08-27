@@ -55,6 +55,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
   const [localOffset, setLocalOffset] = useState(0);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const startDragRef = useRef({ x: 0, y: 0, time: 0 });
+  const lastClickRef = useRef<number>(0);
   
   const targetDate = useMemo(() => {
     const d = new Date();
@@ -222,12 +223,53 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
   };
 
   // --- Dynamic Ticks ---
-    const handleContainerClick = (e: React.MouseEvent) => {
+    
+  const openFullScreen = async () => {
+    checkDoubleClick();
+    try {
+      const el = document.documentElement;
+      if (el.requestFullscreen) await el.requestFullscreen();
+      else if ((el as any).webkitRequestFullscreen) await (el as any).webkitRequestFullscreen();
+      
+      if (window.screen && window.screen.orientation && window.screen.orientation.lock) {
+        await window.screen.orientation.lock('landscape');
+      }
+    } catch (err) {
+      console.log('Fullscreen/Orientation API not fully supported', err);
+    }
+  };
+
+  const closeFullScreen = async () => {
+    setIsFullScreen(false);
+    try {
+      if (document.fullscreenElement) {
+        if (document.exitFullscreen) await document.exitFullscreen();
+        else if ((document as any).webkitExitFullscreen) await (document as any).webkitExitFullscreen();
+      }
+      if (window.screen && window.screen.orientation && window.screen.orientation.unlock) {
+        window.screen.orientation.unlock();
+      }
+    } catch (err) {
+      console.log('Error exiting fullscreen', err);
+    }
+  };
+
+  const checkDoubleClick = () => {
+    const now = Date.now();
+    if (now - lastClickRef.current < 400) {
+      openFullScreen();
+      lastClickRef.current = 0;
+    } else {
+      lastClickRef.current = now;
+    }
+  };
+
+  const handleContainerClick = (e: React.MouseEvent) => {
     const dx = Math.abs(e.clientX - startDragRef.current.x);
     const dy = Math.abs(e.clientY - startDragRef.current.y);
     const dt = Date.now() - startDragRef.current.time;
     if (dx < 5 && dy < 5 && dt < 500) {
-      setIsFullScreen(true);
+      checkDoubleClick();
     }
   };
 
@@ -237,7 +279,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
       const dy = Math.abs(e.changedTouches[0].clientY - startDragRef.current.y);
       const dt = Date.now() - startDragRef.current.time;
       if (dx < 10 && dy < 10 && dt < 500) {
-        setIsFullScreen(true);
+        checkDoubleClick();
       }
     }
   };
@@ -450,7 +492,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
         <div className="fixed inset-0 z-[100] bg-white flex flex-col p-2 sm:p-4 portrait:h-[100dvh] landscape:h-[100dvh] select-none touch-none">
           <div className="flex justify-between items-center mb-2 px-2 shrink-0">
             <h2 className="text-sm sm:text-lg font-bold text-slate-700">สถานที่: {location || 'ไม่ระบุ'} - ห้อง {roomNo}</h2>
-            <button onClick={() => setIsFullScreen(false)} className="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded shadow-sm text-sm font-bold transition-colors cursor-pointer z-50">ปิดหน้าจอ</button>
+            <button onClick={closeFullScreen} className="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded shadow-sm text-sm font-bold transition-colors cursor-pointer z-50">ปิดหน้าจอ</button>
           </div>
           
           <style>{'\n             @media (orientation: portrait) {\n               .fs-hint { display: block; }\n             }\n             @media (orientation: landscape) {\n               .fs-hint { display: none; }\n             }\n          '}</style>
