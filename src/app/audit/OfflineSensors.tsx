@@ -25,12 +25,26 @@ export default function OfflineSensors({ dateOffset = 0 }: { dateOffset?: number
       const endOfDay = new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate(), 6, 44, 59);
 
       // ดึง log ทั้งหมดของวันนี้เพื่อหาช่องโหว่ > 10 นาที
-      const { data: logs } = await supabase
-        .from("energy_logs")
-        .select("room_id, recorded_at")
-        .gte("recorded_at", startOfDay.toISOString())
-        .lte("recorded_at", endOfDay.toISOString())
-        .order("recorded_at", { ascending: true }).limit(100000);
+      let logs = [];
+      let from = 0;
+      const limit = 1000;
+      while (true) {
+        const { data } = await supabase
+          .from("energy_logs")
+          .select("room_id, recorded_at")
+          .gte("recorded_at", startOfDay.toISOString())
+          .lte("recorded_at", endOfDay.toISOString())
+          .order("recorded_at", { ascending: true })
+          .range(from, from + limit - 1);
+          
+        if (data) {
+          logs = logs.concat(data);
+          if (data.length < limit) break;
+        } else {
+          break;
+        }
+        from += limit;
+      }
 
       const offlineRooms = [];
       const now = new Date();

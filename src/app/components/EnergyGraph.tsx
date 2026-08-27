@@ -101,21 +101,41 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
            }
         }
   
-        const { data: logData, error } = await supabase
-        .from("energy_logs")
-        .select("wattage, recorded_at")
-        .eq("room_id", roomId)
-        .gte("recorded_at", startOfRange.toISOString())
-        .lte("recorded_at", endOfDay.toISOString())
-        .order("recorded_at", { ascending: true })
-        .limit(50000);
-
-      if (error) {
-        console.error("Error fetching energy logs:", error);
-        return;
-      }
-
-      let rawData = (logData || []).map((log) => {
+        let allLogs = [];
+        let from = 0;
+        const limit = 1000;
+        let fetchError = null;
+        
+        while (true) {
+          const { data: logData, error } = await supabase
+            .from("energy_logs")
+            .select("wattage, recorded_at")
+            .eq("room_id", roomId)
+            .gte("recorded_at", startOfRange.toISOString())
+            .lte("recorded_at", endOfDay.toISOString())
+            .order("recorded_at", { ascending: true })
+            .range(from, from + limit - 1);
+            
+          if (error) {
+            fetchError = error;
+            break;
+          }
+          if (logData) {
+            allLogs = allLogs.concat(logData);
+            if (logData.length < limit) break;
+          } else {
+            break;
+          }
+          from += limit;
+        }
+  
+        if (fetchError) {
+          console.error("Error fetching energy logs:", fetchError);
+          return;
+        }
+        const logData = allLogs;
+        
+        let rawData = (logData || []).map((log) => {
         const d = new Date(log.recorded_at);
         const wattVal = Number(log.wattage);
         return {
