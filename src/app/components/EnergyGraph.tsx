@@ -72,6 +72,10 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
   }, [targetDate]);
 
   const [domain, setDomain] = useState<[number, number]>([defaultStartMs, defaultEndMs]);
+  const domainRef = useRef(domain);
+  useEffect(() => {
+    domainRef.current = domain;
+  }, [domain]);
   
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
@@ -109,6 +113,43 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
   const yAxisMax = Math.max(1500, ...data.filter(d => d.watt !== null).map(d => (d.watt as number) + 200));
 
   // --- Zoom and Pan Handlers ---
+  useEffect(() => {
+    const el = chartContainerRef.current;
+    if (!el) return;
+    
+    const onWheelNative = (e: WheelEvent) => {
+      e.preventDefault(); // This is the crucial part that stops the page from scrolling
+      
+      const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const width = rect.width;
+      
+      const marginLeft = 0;
+      const marginRight = 10;
+      const chartWidth = width - marginLeft - marginRight;
+      const chartX = Math.max(0, Math.min(chartWidth, x - marginLeft));
+      
+      const percentage = chartX / chartWidth;
+      
+      const zoomFactor = e.deltaY < 0 ? 0.7 : 1.4;
+      const [min, max] = domainRef.current;
+      
+      const timeHovered = min + percentage * (max - min);
+      let newRange = (max - min) * zoomFactor;
+      
+      if (newRange > 30 * 60 * 60 * 1000) newRange = 30 * 60 * 60 * 1000;
+      if (newRange < 30 * 60 * 1000) newRange = 30 * 60 * 1000;
+      
+      const newMin = timeHovered - (newRange * percentage);
+      const newMax = timeHovered + (newRange * (1 - percentage));
+      
+      setDomain([newMin, newMax]);
+    };
+
+    el.addEventListener('wheel', onWheelNative, { passive: false });
+    return () => el.removeEventListener('wheel', onWheelNative);
+  }, [isFullScreen, loading]);
+
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     if (!chartContainerRef.current) return;
@@ -454,12 +495,15 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
             {displayDateStr}
           </button>
           <button onClick={() => setLocalOffset(prev => prev + 1)} className="p-1 text-slate-400 hover:text-indigo-600 bg-white/80 hover:bg-white rounded shadow-sm border border-slate-100">&gt;</button>
+          <button onClick={openFullScreen} className="p-1 ml-1 text-slate-400 hover:text-indigo-600 bg-white/80 hover:bg-white rounded shadow-sm border border-slate-100 transition-colors" title="ขยายเต็มหน้าจอ">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+          </button>
         </div>
 
         <div 
           ref={!isFullScreen ? chartContainerRef : undefined}
           className="w-full h-[140px] cursor-grab active:cursor-grabbing touch-pan-y outline-none focus:outline-none" style={{ outline: "none", WebkitTapHighlightColor: "transparent" }}
-          onWheel={handleWheel}
+          
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}
           onMouseUp={onMouseUpOrLeave}
@@ -504,7 +548,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
             ref={isFullScreen ? chartContainerRef : undefined}
             className="flex-1 w-full relative outline-none cursor-grab active:cursor-grabbing touch-pan-y" 
             style={{ outline: "none", WebkitTapHighlightColor: "transparent" }}
-            onWheel={handleWheel}
+            
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUpOrLeave}
