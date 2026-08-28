@@ -12,11 +12,11 @@ export default function ShiftManager() {
   // Open Shift State
   const [name, setName] = useState("");
   const [pin, setPin] = useState("");
-  const [initialCash, setInitialCash] = useState(0);
+  const [initialCash, setInitialCash] = useState<number | ''>(0);
   const [errorMsg, setErrorMsg] = useState("");
   
   // Close Shift State
-  const [finalCash, setFinalCash] = useState(0);
+  const [finalCash, setFinalCash] = useState<number | ''>(0);
   const [closePin, setClosePin] = useState("");
   const [isCashCounted, setIsCashCounted] = useState(false);
   const [isEndOfDay, setIsEndOfDay] = useState(false);
@@ -111,6 +111,10 @@ export default function ShiftManager() {
 
   const handleOpenShift = async () => {
     setErrorMsg("");
+    if (initialCash === '') {
+      setErrorMsg("กรุณาระบุเงินทอนเริ่มต้นในลิ้นชัก (ใส่ 0 ก็ได้)");
+      return;
+    }
     const upperName = name.toUpperCase();
     
     // 1. Verify Staff
@@ -318,7 +322,7 @@ export default function ShiftManager() {
                   <input 
                     type="number" 
                     value={initialCash}
-                    onChange={(e) => setInitialCash(Number(e.target.value))}
+                    onChange={(e) => setInitialCash(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full p-3 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
                   />
                 </div>
@@ -362,7 +366,7 @@ export default function ShiftManager() {
                   <input 
                     type="number" 
                     value={finalCash || ''}
-                    onChange={(e) => setFinalCash(Number(e.target.value))}
+                    onChange={(e) => setFinalCash(e.target.value === '' ? '' : Number(e.target.value))}
                     disabled={isCashCounted}
                     className={`w-full text-2xl text-center font-bold p-3 rounded-xl border outline-none ${
                       isCashCounted 

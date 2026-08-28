@@ -28,6 +28,8 @@ export type RoomStatus = {
   booking_id?: string;
   booking_created_at?: string; // Time the booking was made
   unpaid_balance?: number;
+  total_charges?: number;
+  total_payments?: number;
   map_x?: number;
   map_y?: number;
   map_width?: number;
@@ -162,7 +164,7 @@ export default function CheckinPage() {
 
     // [NEW] Fetch ledger transactions for active bookings to calculate unpaid balances
     const activeBookingIds = allTargetBookings?.map(b => b.id) || [];
-    const unpaidBalances: Record<string, number> = {};
+    const financialSummary: Record<string, { charges: number, payments: number, balance: number }> = {};
     
     if (activeBookingIds.length > 0) {
       const { data: ledgers, error: ledgerError } = await supabase
@@ -173,7 +175,16 @@ export default function CheckinPage() {
       if (!ledgerError && ledgers) {
         ledgers.forEach(tx => {
           if (tx.booking_id) {
-            unpaidBalances[tx.booking_id] = (unpaidBalances[tx.booking_id] || 0) + Number(tx.amount);
+            if (!financialSummary[tx.booking_id]) {
+              financialSummary[tx.booking_id] = { charges: 0, payments: 0, balance: 0 };
+            }
+            const amt = Number(tx.amount);
+            financialSummary[tx.booking_id].balance += amt;
+            if (amt > 0) {
+              financialSummary[tx.booking_id].charges += amt;
+            } else {
+              financialSummary[tx.booking_id].payments += Math.abs(amt);
+            }
           }
         });
       }
@@ -248,11 +259,15 @@ export default function CheckinPage() {
                 staff_name: incomingBookingToday.staff_name,
                 booking_id: incomingBookingToday.id,
                 booking_created_at: incomingBookingToday.created_at,
-                unpaid_balance: unpaidBalances[incomingBookingToday.id] || 0
+                unpaid_balance: financialSummary[incomingBookingToday.id]?.balance || 0,
+                total_charges: financialSummary[incomingBookingToday.id]?.charges || 0,
+                total_payments: financialSummary[incomingBookingToday.id]?.payments || 0
               };
           } else if (finalRoom.status === 'reserved') {
             finalRoom.booking_created_at = incomingBookingToday.created_at;
-            finalRoom.unpaid_balance = unpaidBalances[incomingBookingToday.id] || 0;
+            finalRoom.unpaid_balance = financialSummary[incomingBookingToday.id]?.balance || 0;
+            finalRoom.total_charges = financialSummary[incomingBookingToday.id]?.charges || 0;
+            finalRoom.total_payments = financialSummary[incomingBookingToday.id]?.payments || 0;
           }
         }
         
@@ -261,7 +276,9 @@ export default function CheckinPage() {
           const activeBooking = roomBookings.find(b => b.status === 'checked_in');
           if (activeBooking) {
             finalRoom.booking_id = activeBooking.id;
-            finalRoom.unpaid_balance = unpaidBalances[activeBooking.id] || 0;
+            finalRoom.unpaid_balance = financialSummary[activeBooking.id]?.balance || 0;
+            finalRoom.total_charges = financialSummary[activeBooking.id]?.charges || 0;
+            finalRoom.total_payments = financialSummary[activeBooking.id]?.payments || 0;
           }
         }
         
@@ -724,7 +741,7 @@ export default function CheckinPage() {
                                     <span className="text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🏠</span>
                                   ) : null}
                                   {isSeaBalcony && <span className="text-slate-700 grayscale text-[13px] sm:text-[14px] drop-shadow-sm opacity-60">⛱️</span>}
-                                  {isBalcony && <img src="/balcony.png" className="w-[20px] h-[20px] sm:w-[22px] sm:h-[22px] object-contain mix-blend-multiply opacity-80 translate-y-[1.5px]" alt="ระเบียง" />}
+                                  {isBalcony && <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-600 translate-y-[1px] opacity-80"><path d="M3 12h18"/><path d="M3 16h18"/><path d="M3 20h18"/><path d="M6 12v8"/><path d="M10 12v8"/><path d="M14 12v8"/><path d="M18 12v8"/><path d="M5 4h14a1 1 0 0 1 1 1v7H4V5a1 1 0 0 1 1-1z"/></svg>}
                                   {isWindow && <span className="text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🪟</span>}
                                 </div>
 
