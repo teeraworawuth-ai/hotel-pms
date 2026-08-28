@@ -231,7 +231,7 @@ export default function EnergyPage() {
               const statusClasses = getStatusClasses(online, wattage);
 
               return (
-                <div key={room.id} className="bg-white rounded-2xl shadow-sm border-slate-200 overflow-hidden flex flex-col h-[220px] border">
+                <div key={room.id} className="bg-white rounded-2xl shadow-sm border-slate-200 overflow-hidden flex flex-col border">
                   <div className="p-3 flex-1 flex flex-col">
                     {/* Header: All info in one tight row */}
                     <div className="flex justify-between items-start mb-2 gap-2">

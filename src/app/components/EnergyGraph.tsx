@@ -266,7 +266,8 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
   // --- Dynamic Ticks ---
     
   const openFullScreen = async () => {
-    checkDoubleClick();
+    if (isFullScreen) return; // Prevent triggering if already open
+    setIsFullScreen(true);
     try {
       const el = document.documentElement;
       if (el.requestFullscreen) await el.requestFullscreen();
@@ -295,22 +296,13 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
     }
   };
 
-  const checkDoubleClick = () => {
-    const now = Date.now();
-    if (now - lastClickRef.current < 400) {
-      openFullScreen();
-      lastClickRef.current = 0;
-    } else {
-      lastClickRef.current = now;
-    }
-  };
-
+  
   const handleContainerClick = (e: React.MouseEvent) => {
     const dx = Math.abs(e.clientX - startDragRef.current.x);
     const dy = Math.abs(e.clientY - startDragRef.current.y);
     const dt = Date.now() - startDragRef.current.time;
     if (dx < 5 && dy < 5 && dt < 500) {
-      checkDoubleClick();
+      openFullScreen();
     }
   };
 
@@ -320,7 +312,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
       const dy = Math.abs(e.changedTouches[0].clientY - startDragRef.current.y);
       const dt = Date.now() - startDragRef.current.time;
       if (dx < 10 && dy < 10 && dt < 500) {
-        checkDoubleClick();
+        openFullScreen();
       }
     }
   };
