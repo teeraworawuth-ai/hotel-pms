@@ -1,6 +1,15 @@
-{
+﻿{
+  "crons": [
+    {
+      "path": "/api/cron/night-audit",
+      "schedule": "0 19 * * *"
+    }
+  ],
   "functions": {
     "src/app/api/cron/tuya-sync/route.ts": {
+      "regions": ["sin1"]
+    },
+    "src/app/api/cron/night-audit/route.ts": {
       "regions": ["sin1"]
     }
   }
