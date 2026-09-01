@@ -827,20 +827,7 @@ export default function CheckinPage() {
                             })()}
                           </div>
 
-                          {/* Financial Summary for Occupied Rooms */}
-                          {room.status === 'occupied' && (
-                            <div className="w-[calc(100%+16px)] mt-auto pt-1 pb-1 -mb-1.5 border-t border-slate-300/40 flex items-center justify-center gap-1 sm:gap-1.5 text-[11px] sm:text-[13px] font-black z-20 whitespace-nowrap bg-white/50 px-1 rounded-b-lg">
-                              <span className="text-slate-600">{room.total_charges || 0}</span>
-                              <span className="text-slate-400 font-bold">-</span>
-                              <span className="text-slate-600">{room.total_payments || 0}</span>
-                              <span className="text-slate-400 font-bold">=</span>
-                              <span className={((room.unpaid_balance || 0) < 0) ? 'text-indigo-600' : (room.unpaid_balance || 0) > 0 ? 'text-rose-600' : 'text-emerald-600'}>
-                                {room.unpaid_balance || 0}
-                              </span>
-                            </div>
-                          )}
-
-                        </div>
+</div>
 
                         {/* Right Section (7-Day Availability Indicator) */}
                         {((room.has_upcoming && room.upcoming_days && room.upcoming_days.length > 0) || (room.incoming_today && (room.status === 'occupied' || room.status === 'dirty'))) && (
@@ -867,12 +854,25 @@ export default function CheckinPage() {
                         )}
                         
 
+
+                        {/* Financial Summary for Occupied Rooms */}
+                        {room.status === 'occupied' && (
+                          <div className="absolute bottom-0 left-0 right-0 w-full pt-0.5 pb-1 flex items-center justify-center gap-1 sm:gap-1.5 text-[11px] sm:text-[13px] font-black z-30 whitespace-nowrap bg-white/80 border-t border-slate-300/40">
+                            <span className="text-slate-600">{room.total_charges || 0}</span>
+                            <span className="text-slate-400 font-bold">-</span>
+                            <span className="text-slate-600">{room.total_payments || 0}</span>
+                            <span className="text-slate-400 font-bold">=</span>
+                            <span className={((room.unpaid_balance || 0) < 0) ? 'text-indigo-600' : (room.unpaid_balance || 0) > 0 ? 'text-rose-600' : 'text-emerald-600'}>
+                              {room.unpaid_balance || 0}
+                            </span>
+                          </div>
+                        )}
                       </button>
                     );
                   })}
                 </div>
-                ) : (
-                  <div className="relative w-full max-w-5xl mx-auto bg-slate-200 rounded-xl shadow-inner border border-slate-200 overflow-hidden flex flex-col items-center justify-center" style={{ minHeight: '300px' }}>
+              ) : (
+                <div className="relative w-full max-w-5xl mx-auto bg-slate-200 rounded-xl shadow-inner border border-slate-200 overflow-hidden flex flex-col items-center justify-center" style={{ minHeight: '300px' }}>
                     <svg className="w-16 h-16 text-slate-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
                     <h3 className="text-xl font-bold text-slate-700">อยู่ระหว่างการพัฒนา</h3>
                     <p className="text-slate-500 mt-2 text-center max-w-md">ฟีเจอร์แผนผังห้องพักกำลังอยู่ในขั้นตอนการพัฒนา เพื่อประสบการณ์ใช้งานที่ดีที่สุด</p>
