@@ -826,6 +826,20 @@ export default function CheckinPage() {
                               );
                             })()}
                           </div>
+
+                          {/* Financial Summary for Occupied Rooms */}
+                          {room.status === 'occupied' && (
+                            <div className="w-[calc(100%+16px)] mt-auto pt-1 pb-1 -mb-1.5 border-t border-slate-300/40 flex items-center justify-center gap-1 sm:gap-1.5 text-[11px] sm:text-[13px] font-black z-20 whitespace-nowrap bg-white/50 px-1 rounded-b-lg">
+                              <span className="text-slate-600">{room.total_charges || 0}</span>
+                              <span className="text-slate-400 font-bold">-</span>
+                              <span className="text-slate-600">{room.total_payments || 0}</span>
+                              <span className="text-slate-400 font-bold">=</span>
+                              <span className={((room.unpaid_balance || 0) < 0) ? 'text-indigo-600' : (room.unpaid_balance || 0) > 0 ? 'text-rose-600' : 'text-emerald-600'}>
+                                {room.unpaid_balance || 0}
+                              </span>
+                            </div>
+                          )}
+
                         </div>
 
                         {/* Right Section (7-Day Availability Indicator) */}
@@ -852,18 +866,7 @@ export default function CheckinPage() {
                           </div>
                         )}
                         
-                        {/* Financial Summary for Occupied Rooms */}
-                        {room.status === 'occupied' && (
-                          <div className="w-full mt-1.5 pt-1.5 border-t border-slate-300/30 flex items-center justify-center gap-1 sm:gap-1.5 text-[13px] sm:text-[15px] font-black z-20 whitespace-nowrap bg-white/40 rounded-lg px-2 py-1 shadow-sm mx-auto overflow-hidden">
-                            <span className="text-slate-600">{room.total_charges || 0}</span>
-                            <span className="text-slate-400 font-bold">-</span>
-                            <span className="text-slate-600">{room.total_payments || 0}</span>
-                            <span className="text-slate-400 font-bold">=</span>
-                            <span className={((room.unpaid_balance || 0) < 0) ? 'text-indigo-600' : (room.unpaid_balance || 0) > 0 ? 'text-rose-600' : 'text-emerald-600'}>
-                              {room.unpaid_balance || 0}
-                            </span>
-                          </div>
-                        )}
+
                       </button>
                     );
                   })}
