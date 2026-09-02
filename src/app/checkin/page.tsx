@@ -46,7 +46,7 @@ export default function CheckinPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
   const [floorPlans, setFloorPlans] = useState<Record<string, string>>({});
 
-  // เธชเธณเธซเธฃเธฑเธเธเธฑเธเน€เธงเธฅเธฒ Double Tap เธเธญเธเนเธกเนเธเนเธฒเธเธเธเธซเธเนเธฒเธเธฃเธฐเธ”เธฒเธเธซเธฅเธฑเธ
+  // สำหรับจับเวลา Double Tap ของแม่บ้านบนหน้ากระดานหลัก
   const lastTapRef = useRef<{ [key: string]: number }>({});
   const tapTimeoutRef = useRef<{ [key: string]: NodeJS.Timeout }>({});
 
@@ -65,9 +65,9 @@ export default function CheckinPage() {
         }
         
         if (room.status === 'cleaning') {
-          // เธญเธฑเธเน€เธ”เธ• UI เธเธฑเนเธงเธเธฃเธฒเธงเนเธซเนเน€เธฃเนเธงเธเธถเนเธ
-          setRooms(prev => prev.map(r => r.id === room.id ? { ...r, status: 'available', current_status: 'เธงเนเธฒเธ' } : r));
-          await supabase.from('rooms').update({ status: 'available', current_status: 'เธงเนเธฒเธ' }).eq('id', room.id);
+          // อัปเดต UI ชั่วคราวให้เร็วขึ้น
+          setRooms(prev => prev.map(r => r.id === room.id ? { ...r, status: 'available', current_status: 'ว่าง' } : r));
+          await supabase.from('rooms').update({ status: 'available', current_status: 'ว่าง' }).eq('id', room.id);
         }
         lastTapRef.current[room.id] = 0;
       } else {
@@ -81,20 +81,20 @@ export default function CheckinPage() {
             const location = room.location;
             const concurrentCount = rooms.filter(r => r.location === location && r.status === 'cleaning').length;
             if (concurrentCount >= 3) {
-              alert(`เธเธทเนเธเธ—เธตเน ${location || 'เนเธเธเธเธตเน'} เธกเธตเนเธกเนเธเนเธฒเธเธเธณเธฅเธฑเธเธ—เธณเธเธงเธฒเธกเธชเธฐเธญเธฒเธ”เธเธฃเธ 2 เธซเนเธญเธเนเธฅเนเธง (เนเธเธฃเธ”เธเธ”เน€เธชเธฃเนเธเธชเธดเนเธเธซเนเธญเธเธ—เธตเนเธ—เธณเน€เธชเธฃเนเธเธเนเธญเธ)`);
+              alert(`พื้นที่ ${location || 'โซนนี้'} มีแม่บ้านกำลังทำความสะอาดครบ 2 ห้องแล้ว (โปรดกดเสร็จสิ้นห้องที่ทำเสร็จก่อน)`);
               return;
             }
             
-            setRooms(prev => prev.map(r => r.id === room.id ? { ...r, status: 'cleaning', current_status: 'เธเธณเธฅเธฑเธเธ—เธณเธเธงเธฒเธกเธชเธฐเธญเธฒเธ”' } : r));
-            await supabase.from('rooms').update({ status: 'cleaning', current_status: 'เธเธณเธฅเธฑเธเธ—เธณเธเธงเธฒเธกเธชเธฐเธญเธฒเธ”' }).eq('id', room.id);
+            setRooms(prev => prev.map(r => r.id === room.id ? { ...r, status: 'cleaning', current_status: 'กำลังทำความสะอาด' } : r));
+            await supabase.from('rooms').update({ status: 'cleaning', current_status: 'กำลังทำความสะอาด' }).eq('id', room.id);
           } else if (room.status === 'cleaning') {
-            setRooms(prev => prev.map(r => r.id === room.id ? { ...r, status: 'dirty', current_status: 'เธฃเธญเธ—เธณเธเธงเธฒเธกเธชเธฐเธญเธฒเธ”' } : r));
-            await supabase.from('rooms').update({ status: 'dirty', current_status: 'เธฃเธญเธ—เธณเธเธงเธฒเธกเธชเธฐเธญเธฒเธ”' }).eq('id', room.id);
+            setRooms(prev => prev.map(r => r.id === room.id ? { ...r, status: 'dirty', current_status: 'รอทำความสะอาด' } : r));
+            await supabase.from('rooms').update({ status: 'dirty', current_status: 'รอทำความสะอาด' }).eq('id', room.id);
           }
         }, 400);
       }
     } else {
-      // เธชเธณเธซเธฃเธฑเธเธซเนเธญเธเธชเธ–เธฒเธเธฐเธญเธทเนเธเน เนเธซเนเน€เธเธดเธ” Modal เธเธเธ•เธด
+      // สำหรับห้องสถานะอื่นๆ ให้เปิด Modal ปกติ
       setSelectedRoom(room);
     }
   };
@@ -104,7 +104,7 @@ export default function CheckinPage() {
 
   const fetchData = async (silentRefresh = false) => {
     if (!silentRefresh) setLoading(true);
-    // เธ”เธถเธ Location Order
+    // ดึง Location Order
     const { data: settingsData } = await supabase
       .from("system_settings")
       .select("value")
@@ -115,7 +115,7 @@ export default function CheckinPage() {
       setLocationsOrder(settingsData.value as string[]);
     }
 
-    // เธ”เธถเธเนเธเธเธเธฑเธ
+    // ดึงแผนผัง
     const { data: planData } = await supabase
       .from("system_settings")
       .select("value")
@@ -126,7 +126,7 @@ export default function CheckinPage() {
       setFloorPlans(planData.value as Record<string, string>);
     }
 
-    // เธ”เธถเธเนเธเธฃเธเธชเธฃเนเธฒเธเธซเนเธญเธเธ—เธฑเนเธเธซเธกเธ”
+    // ดึงโครงสร้างห้องทั้งหมด
     const { data: roomsData, error } = await supabase
       .from("rooms")
       .select("id, room_no, room_type, location, sort_order, status, stay_type, check_in_time, check_out_time, guest_count, price_night, price_temp, actual_price, staff_name");
@@ -139,7 +139,7 @@ export default function CheckinPage() {
 
     const allRooms = roomsData as RoomStatus[];
 
-    // Business Day Logic: เธเนเธญเธ 06:45 เธ–เธทเธญเน€เธเนเธเธเธญเธเน€เธกเธทเนเธญเธงเธฒเธ
+    // Business Day Logic: ก่อน 06:45 ถือเป็นของเมื่อวาน
     const targetDate = getBusinessDate(getNow());
     targetDate.setDate(targetDate.getDate() + dateOffset);
     
@@ -149,12 +149,12 @@ export default function CheckinPage() {
     const startOfNext7Days = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1, 0, 0, 0);
     const endOfNext7Days = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 7, 23, 59, 59);
 
-    // เธ”เธถเธ Bookings เธ—เธตเนเธเธฃเธญเธเธเธฅเธธเธกเธ•เธฑเนเธเนเธ•เนเธงเธฑเธเธเธตเน (Target Date) เธเธเธ–เธถเธ 7 เธงเธฑเธเธเนเธฒเธเธซเธเนเธฒ
+    // ดึง Bookings ที่ครอบคลุมตั้งแต่วันนี้ (Target Date) จนถึง 7 วันข้างหน้า
     const { data: allTargetBookings, error: bookingsError } = await supabase
       .from("bookings")
       .select("*")
       .neq("status", "cancelled")
-      .neq("status", "checked_out") // เธชเธณเธเธฑเธ! เธเนเธฒเธก booking เธ—เธตเนเน€เธเนเธเน€เธญเธฒเธ—เนเนเธเนเธฅเนเธง เน€เธเธทเนเธญเนเธกเนเนเธซเนเธซเนเธญเธเธเธฅเธฑเธเนเธเน€เธเนเธ reserved
+      .neq("status", "checked_out") // สำคัญ! ข้าม booking ที่เช็คเอาท์ไปแล้ว เพื่อไม่ให้ห้องกลับไปเป็น reserved
       .lte("check_in_time", endOfNext7Days.toISOString())
       .gt("check_out_time", startOfDay.toISOString());
 
@@ -193,7 +193,7 @@ export default function CheckinPage() {
     const mergedRooms = allRooms.map(room => {
       const roomBookings = allTargetBookings?.filter(b => b.room_id === room.id) || [];
       
-      // เธซเธฒเธเธดเธงเธชเธณเธซเธฃเธฑเธเธซเธเนเธฒเธเธฑเธเธเธธเธเธฑเธ (Target Date) เนเธ”เธขเนเธเนเธเธธเธ”เธ•เธฑเธ”เธ—เธตเน 14:00 เธ. (เน€เธงเธฅเธฒ Check-in เธกเธฒเธ•เธฃเธเธฒเธ)
+      // หาคิวสำหรับหน้าปัจจุบัน (Target Date) โดยใช้จุดตัดที่ 14:00 น. (เวลา Check-in มาตรฐาน)
       const targetDayBooking = roomBookings.find(b => {
         const bStart = new Date(b.check_in_time).getTime();
         const bEnd = new Date(b.check_out_time).getTime();
@@ -202,7 +202,7 @@ export default function CheckinPage() {
         return bStart <= targetReference && bEnd > targetReference;
       });
 
-      // เธเธดเธงเธเธญเธเธฅเนเธงเธเธซเธเนเธฒ 7 เธงเธฑเธ (เน€เธเนเธเน€เธเธเธฒเธฐเธงเธฑเธเธ—เธตเนเธ•เธดเธ”เธเธญเธ)
+      // คิวจองล่วงหน้า 7 วัน (เก็บเฉพาะวันที่ติดจอง)
       const upcoming_days: number[] = [];
       let has_upcoming = false;
       
@@ -228,24 +228,24 @@ export default function CheckinPage() {
         }
       }
       
-      // เธ•เธฃเธงเธเธชเธญเธเธงเนเธฒเธกเธตเธเธดเธงเธเธญเธเน€เธเนเธฒเนเธซเธกเนเธเธญเธเธงเธฑเธเธเธตเนเธฃเธญเธญเธขเธนเนเธซเธฃเธทเธญเนเธกเน (เธเธฃเธ“เธตเธซเนเธญเธเธขเธฑเธเธกเธตเธเธเธเธฑเธเธซเธฃเธทเธญเธฃเธญเธ—เธณเธเธงเธฒเธกเธชเธฐเธญเธฒเธ”)
+      // ตรวจสอบว่ามีคิวจองเข้าใหม่ของวันนี้รออยู่หรือไม่ (กรณีห้องยังมีคนพักหรือรอทำความสะอาด)
       const incomingBookingToday = roomBookings.find(b => {
         const bStart = new Date(b.check_in_time);
         return bStart.getDate() === targetDate.getDate() && 
                bStart.getMonth() === targetDate.getMonth() && 
                bStart.getFullYear() === targetDate.getFullYear() &&
-               b.status === 'reserved'; // เนเธเน status เนเธ—เธเธเธฒเธฃเน€เธ—เธตเธขเธเน€เธงเธฅเธฒ เน€เธเธฃเธฒเธฐเน€เธงเธฅเธฒเน€เธเนเธเธญเธดเธเธเธฃเธดเธเธญเธฒเธเนเธกเนเธ•เธฃเธเธเธฑเธเน€เธงเธฅเธฒเธเธญเธ
+               b.status === 'reserved'; // ใช้ status แทนการเทียบเวลา เพราะเวลาเช็คอินจริงอาจไม่ตรงกับเวลาจอง
       });
       const incoming_today = !!incomingBookingToday;
 
       let finalRoom: RoomStatus = { ...room, has_upcoming, upcoming_days, incoming_today };
 
       if (dateOffset === 0) {
-        // เธงเธฑเธเธเธตเน (Today) -> เนเธเนเธเนเธญเธกเธนเธฅ Live Status เน€เธเนเธเธซเธฅเธฑเธ
+        // วันนี้ (Today) -> ใช้ข้อมูล Live Status เป็นหลัก
         
         if (incomingBookingToday) {
           if (finalRoom.status === 'available' || !finalRoom.status) {
-            // เธ–เนเธฒเธซเนเธญเธเธงเนเธฒเธ (เธ—เธณเธเธงเธฒเธกเธชเธฐเธญเธฒเธ”เน€เธชเธฃเนเธเนเธฅเนเธง) เนเธซเนเน€เธญเธฒเธเธดเธงเธเธญเธเธงเธฑเธเธเธตเนเธกเธฒเธ—เธฑเธเน€เธเนเธเธชเธ–เธฒเธเธฐ reserved
+            // ถ้าห้องว่าง (ทำความสะอาดเสร็จแล้ว) ให้เอาคิวจองวันนี้มาทับเป็นสถานะ reserved
               finalRoom = {
                 ...finalRoom,
                 status: 'reserved',
@@ -271,7 +271,7 @@ export default function CheckinPage() {
           }
         }
         
-        // เธ–เนเธฒเธชเธ–เธฒเธเธฐเน€เธเนเธ occupied เนเธซเนเธ”เธถเธ booking_id เธเธฒเธเธเธฒเธฃเธเธญเธเธเธญเธเธงเธฑเธเธเธตเนเธ—เธตเนเน€เธเนเธ checked_in
+        // ถ้าสถานะเป็น occupied ให้ดึง booking_id จากการจองของวันนี้ที่เป็น checked_in
         if (finalRoom.status === 'occupied') {
           const activeBooking = roomBookings.find(b => b.status === 'checked_in');
           if (activeBooking) {
@@ -284,7 +284,7 @@ export default function CheckinPage() {
         
         return finalRoom;
       } else {
-        // เธญเธ”เธตเธ•/เธญเธเธฒเธเธ• -> เนเธเนเธเนเธญเธกเธนเธฅเธเธฒเธ Target Day Booking
+        // อดีต/อนาคต -> ใช้ข้อมูลจาก Target Day Booking
         if (targetDayBooking) {
           finalRoom = {
             ...finalRoom,
@@ -322,7 +322,7 @@ export default function CheckinPage() {
   useEffect(() => {
     fetchData();
     
-    // เธ•เธฑเนเธเธเนเธฒ Supabase Realtime เนเธซเนเธ”เธถเธเธเนเธญเธกเธนเธฅเธ—เธฑเธเธ—เธตเน€เธกเธทเนเธญเธกเธตเธเธฒเธฃเธญเธฑเธเน€เธ”เธ•เธ•เธฒเธฃเธฒเธ rooms
+    // ตั้งค่า Supabase Realtime ให้ดึงข้อมูลทันทีเมื่อมีการอัปเดตตาราง rooms
     const roomSubscription = supabase
       .channel('rooms-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, (payload) => {
@@ -330,7 +330,7 @@ export default function CheckinPage() {
       })
       .subscribe();
 
-    // เธ•เธฑเนเธเธเนเธฒ Supabase Realtime เธชเธณเธซเธฃเธฑเธเธ•เธฒเธฃเธฒเธ bookings
+    // ตั้งค่า Supabase Realtime สำหรับตาราง bookings
     const bookingSubscription = supabase
       .channel('bookings-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, (payload) => {
@@ -348,7 +348,7 @@ export default function CheckinPage() {
     const dirtyRooms = rooms.filter(r => r.status === 'dirty');
     if (dirtyRooms.length === 0) return;
     
-    if (!window.confirm(`เธขเธทเธเธขเธฑเธเธเธฒเธฃเธ—เธณเธเธงเธฒเธกเธชเธฐเธญเธฒเธ” ${dirtyRooms.length} เธซเนเธญเธ เธเธฃเนเธญเธกเธเธฑเธเธซเธฃเธทเธญเนเธกเน?`)) return;
+    if (!window.confirm(`ยืนยันการทำความสะอาด ${dirtyRooms.length} ห้อง พร้อมกันหรือไม่?`)) return;
 
     setLoading(true);
     const { error } = await supabase
@@ -360,7 +360,7 @@ export default function CheckinPage() {
       fetchData();
     } else {
       console.error(error);
-      alert('เน€เธเธดเธ”เธเนเธญเธเธดเธ”เธเธฅเธฒเธ”เนเธเธเธฒเธฃเธญเธฑเธเน€เธ”เธ•เธชเธ–เธฒเธเธฐเธซเนเธญเธ');
+      alert('เกิดข้อผิดพลาดในการอัปเดตสถานะห้อง');
       setLoading(false);
     }
   };
@@ -369,11 +369,11 @@ export default function CheckinPage() {
     const occupiedRooms = rooms.filter(r => r.status === 'occupied');
     if (occupiedRooms.length === 0) return;
     
-    if (!window.confirm(`[เธชเธณเธซเธฃเธฑเธเธ—เธ”เธชเธญเธ] เธขเธทเธเธขเธฑเธเธเธฒเธฃเน€เธเธฅเธตเธขเธฃเนเนเธเธเธญเธญเธเธเธฒเธเธซเนเธญเธเธ—เธตเนเธกเธตเธเธเธเธฑเธเธญเธขเธนเนเธเธณเธเธงเธ ${occupiedRooms.length} เธซเนเธญเธเธซเธฃเธทเธญเนเธกเน? (เธชเธ–เธฒเธเธฐเธซเนเธญเธเธเธฐเธเธฅเธฒเธขเน€เธเนเธ เธฃเธญเธ—เธณเธเธงเธฒเธกเธชเธฐเธญเธฒเธ”)`)) return;
+    if (!window.confirm(`[สำหรับทดสอบ] ยืนยันการเคลียร์แขกออกจากห้องที่มีคนพักอยู่จำนวน ${occupiedRooms.length} ห้องหรือไม่? (สถานะห้องจะกลายเป็น รอทำความสะอาด)`)) return;
 
     setLoading(true);
 
-    // เธญเธฑเธเน€เธ”เธ•เธ•เธฒเธฃเธฒเธ bookings เนเธซเนเน€เธเนเธ checked_out เธ”เนเธงเธข เธเธฐเนเธ”เนเนเธกเนเน€เธ”เนเธเธเธฅเธฑเธเธกเธฒเน€เธเนเธ reserved เธญเธตเธ
+    // อัปเดตตาราง bookings ให้เป็น checked_out ด้วย จะได้ไม่เด้งกลับมาเป็น reserved อีก
     await supabase
       .from('bookings')
       .update({ status: 'checked_out' })
@@ -399,15 +399,15 @@ export default function CheckinPage() {
       fetchData();
     } else {
       console.error(error);
-      alert('เน€เธเธดเธ”เธเนเธญเธเธดเธ”เธเธฅเธฒเธ”เนเธเธเธฒเธฃเน€เธเธฅเธตเธขเธฃเนเธซเนเธญเธ');
+      alert('เกิดข้อผิดพลาดในการเคลียร์ห้อง');
       setLoading(false);
     }
   };
 
-  // เธเธฑเธ”เน€เธฃเธตเธขเธเนเธฅเธฐเธเธฑเธ”เธเธฅเธธเนเธกเธ•เธฒเธกเธชเธ–เธฒเธเธ—เธตเน
+  // จัดเรียงและจัดกลุ่มตามสถานที่
   const groupedRooms: { [key: string]: RoomStatus[] } = {};
   rooms.forEach((room) => {
-    const loc = room.location || "เนเธกเนเธกเธตเธชเธ–เธฒเธเธ—เธตเน";
+    const loc = room.location || "ไม่มีสถานที่";
     if (!groupedRooms[loc]) groupedRooms[loc] = [];
     groupedRooms[loc].push(room);
   });
@@ -431,7 +431,7 @@ export default function CheckinPage() {
     const diffHours = diffMs / (1000 * 60 * 60);
     const diffMins = diffMs / (1000 * 60);
     
-    // เน€เธ•เธทเธญเธเธเนเธญเธเธซเธกเธ”เน€เธงเธฅเธฒ 15 เธเธฒเธ—เธต เธชเธณเธซเธฃเธฑเธเธ—เธฑเนเธเธเนเธฒเธเธเธทเธเนเธฅเธฐเธเธฑเนเธงเธเธฃเธฒเธง
+    // เตือนก่อนหมดเวลา 15 นาที สำหรับทั้งค้างคืนและชั่วคราว
     const isWarning = diffMins <= 15;
     
     if (room.stay_type === 'overnight') {
@@ -448,8 +448,8 @@ export default function CheckinPage() {
     switch (status) {
       case 'occupied': return "bg-blue-100 border-blue-300 text-blue-800 hover:bg-blue-200 hover:border-blue-400 shadow-sm";
       case 'dirty': return "bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100 hover:border-orange-300";
-      case 'cleaning': return "bg-yellow-100 border-yellow-300 text-yellow-800 hover:bg-yellow-200 hover:border-yellow-400 shadow-sm"; // เธชเธณเธซเธฃเธฑเธเนเธกเนเธเนเธฒเธ
-      case 'reserved': return "bg-purple-100 border-purple-300 text-purple-800 hover:bg-purple-200 hover:border-purple-400 shadow-sm"; // เธญเธเธฒเธเธ• (เธเธญเธ)
+      case 'cleaning': return "bg-yellow-100 border-yellow-300 text-yellow-800 hover:bg-yellow-200 hover:border-yellow-400 shadow-sm"; // สำหรับแม่บ้าน
+      case 'reserved': return "bg-purple-100 border-purple-300 text-purple-800 hover:bg-purple-200 hover:border-purple-400 shadow-sm"; // อนาคต (จอง)
       default: return "bg-white border-emerald-200 text-slate-700 hover:bg-emerald-50 hover:border-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.05)]";
     }
   };
@@ -499,10 +499,10 @@ export default function CheckinPage() {
         <div className="flex-1 flex flex-col md:flex-row justify-center items-center gap-4">
           <div className="text-center hidden md:block">
             <h2 className="text-xl font-black text-slate-800">
-              {dateOffset === 0 ? `เธงเธฑเธเธเธตเน (Today) ${displayDate.toLocaleDateString('th-TH', { weekday: 'long' })} เธ—เธตเน ${displayDate.getDate()}/${displayDate.getMonth() + 1}/${displayDate.getFullYear()}` : displayDate.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'short' })}
+              {dateOffset === 0 ? `วันนี้ (Today) ${displayDate.toLocaleDateString('th-TH', { weekday: 'long' })} ที่ ${displayDate.getDate()}/${displayDate.getMonth() + 1}/${displayDate.getFullYear()}` : displayDate.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'short' })}
             </h2>
             <p className="text-xs text-slate-500">
-              {dateOffset < 0 ? `เธขเนเธญเธเธซเธฅเธฑเธ ${Math.abs(dateOffset)} เธงเธฑเธ` : dateOffset > 0 ? `เธฅเนเธงเธเธซเธเนเธฒ ${dateOffset} เธงเธฑเธ` : "เธชเธ–เธฒเธเธฐเธเธฑเธเธเธธเธเธฑเธเนเธเธ Real-time"}
+              {dateOffset < 0 ? `ย้อนหลัง ${Math.abs(dateOffset)} วัน` : dateOffset > 0 ? `ล่วงหน้า ${dateOffset} วัน` : "สถานะปัจจุบันแบบ Real-time"}
             </p>
           </div>
           
@@ -528,7 +528,7 @@ export default function CheckinPage() {
                 onClick={() => setDateOffset(0)}
                 className="px-4 py-2 bg-blue-100 text-blue-700 text-sm font-bold rounded-xl hover:bg-blue-200 transition-colors h-11 flex items-center"
               >
-                เธงเธฑเธเธเธตเน
+                วันนี้
               </button>
             )}
           </div>
@@ -545,19 +545,19 @@ export default function CheckinPage() {
       {/* Header & Legend */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">เธชเธกเธธเธ”เธเธญเธ & เธชเธ–เธฒเธเธฐเธซเนเธญเธ <span className="text-xs text-slate-400 font-normal ml-2">(v2)</span></h1>
+          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">สมุดจอง & สถานะห้อง <span className="text-xs text-slate-400 font-normal ml-2">(v2)</span></h1>
           <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
             <button 
               onClick={() => setViewMode('grid')}
               className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${viewMode === 'grid' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
-              เธกเธธเธกเธกเธญเธเธ•เธฒเธฃเธฒเธ
+              มุมมองตาราง
             </button>
             <button 
               onClick={() => setViewMode('map')}
               className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${viewMode === 'map' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
-              เธกเธธเธกเธกเธญเธเนเธเธเธเธฑเธ
+              มุมมองแผนผัง
             </button>
           </div>
         </div>
@@ -565,11 +565,11 @@ export default function CheckinPage() {
         {/* Legend & Actions */}
         <div className="flex flex-col xl:flex-row gap-4 items-start xl:items-center">
           <div className="flex flex-wrap gap-4 text-xs font-medium text-slate-600 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm">
-            <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-emerald-300 bg-white"></span>เธงเนเธฒเธ</div>
-            <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-blue-300 bg-blue-100"></span>เธกเธตเนเธเธเธเธฑเธ</div>
-            {dateOffset === 0 && <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-orange-300 bg-orange-100"></span>เธฃเธญเธ—เธณเธเธงเธฒเธกเธชเธฐเธญเธฒเธ”</div>}
-            {dateOffset > 0 && <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-purple-300 bg-purple-100"></span>เธเธญเธเนเธฅเนเธง</div>}
-            <div className="flex items-center gap-1.5 text-[10px] text-slate-400 border-l border-slate-200 pl-4">12 13 = เธงเธฑเธเธ—เธตเนเธ•เธดเธ”เธเธญเธ (เนเธ 7 เธงเธฑเธ)</div>
+            <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-emerald-300 bg-white"></span>ว่าง</div>
+            <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-blue-300 bg-blue-100"></span>มีแขกพัก</div>
+            {dateOffset === 0 && <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-orange-300 bg-orange-100"></span>รอทำความสะอาด</div>}
+            {dateOffset > 0 && <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-purple-300 bg-purple-100"></span>จองแล้ว</div>}
+            <div className="flex items-center gap-1.5 text-[10px] text-slate-400 border-l border-slate-200 pl-4">12 13 = วันที่ติดจอง (ใน 7 วัน)</div>
           </div>
           
           {dateOffset === 0 && rooms.some(r => r.status === 'dirty') && (
@@ -578,7 +578,7 @@ export default function CheckinPage() {
               disabled={loading}
               className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 text-sm font-bold rounded-xl shadow-sm transition-colors active:scale-95"
             >
-              ๐งน เธ—เธณเธเธงเธฒเธกเธชเธฐเธญเธฒเธ”เธ—เธธเธเธซเนเธญเธ
+              🧹 ทำความสะอาดทุกห้อง
             </button>
           )}
 
@@ -588,14 +588,14 @@ export default function CheckinPage() {
               disabled={loading}
               className="flex items-center gap-2 px-4 py-2 bg-orange-50 text-orange-600 border border-orange-200 hover:bg-orange-100 hover:border-orange-300 text-sm font-bold rounded-xl shadow-sm transition-colors active:scale-95"
             >
-              ๐ช เน€เธเธฅเธตเธขเธฃเนเนเธเธ (เธชเธณเธซเธฃเธฑเธเธ—เธ”เธชเธญเธ)
+              🚪 เคลียร์แขก (สำหรับทดสอบ)
             </button>
           )}
         </div>
       </div>
 
       {loading ? (
-        <div className="text-center py-20 text-slate-500">เธเธณเธฅเธฑเธเนเธซเธฅเธ”เธเนเธญเธกเธนเธฅ...</div>
+        <div className="text-center py-20 text-slate-500">กำลังโหลดข้อมูล...</div>
       ) : (
         <div className="space-y-8">
           {sortedLocations.map(loc => {
@@ -605,7 +605,7 @@ export default function CheckinPage() {
                 <h2 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2">
                   <span className="w-2 h-6 bg-slate-300 rounded-full"></span>
                   {loc}
-                  <span className="text-sm font-normal text-slate-400">({locRooms.length} เธซเนเธญเธ)</span>
+                  <span className="text-sm font-normal text-slate-400">({locRooms.length} ห้อง)</span>
                 </h2>
                 
                 {viewMode === 'grid' ? (
@@ -650,14 +650,14 @@ export default function CheckinPage() {
                             {room.status === 'occupied' || room.status === 'reserved' ? (
                               <div className="flex flex-row items-center gap-0 self-start -space-x-[3px] -ml-[2px]">
                                 <div className="relative inline-flex items-center justify-center">
-                                  <span className="text-[11.5px] leading-none opacity-40 grayscale">๐‘ค</span>
+                                  <span className="text-[11.5px] leading-none opacity-40 grayscale">👤</span>
                                   <span className="absolute top-[1.5px] w-full text-center text-[8px] text-slate-900 font-black drop-shadow-sm">
                                     {room.guest_count || 1}
                                   </span>
                                 </div>
                                 {details && (
                                   <div className="relative inline-flex items-center justify-center">
-                                    <span className="text-[11.5px] leading-none opacity-40 grayscale">{details.type === 'overnight' ? '๐' : 'โณ'}</span>
+                                    <span className="text-[11.5px] leading-none opacity-40 grayscale">{details.type === 'overnight' ? '🌙' : '⏳'}</span>
                                     {details.type === 'overnight' ? (
                                       <span className="absolute top-[1px] right-[1px] text-[8px] text-slate-900 font-black drop-shadow-sm">
                                         {details.text}
@@ -718,11 +718,11 @@ export default function CheckinPage() {
                               }
                             }
 
-                            const isDouble = room.room_type?.includes('เธเธนเน');
-                            const isHouse = room.room_type?.includes('เธเนเธฒเธ');
-                            const isSeaBalcony = room.room_type?.includes('เธฃเธฐเน€เธเธตเธขเธเธ—เธฐเน€เธฅ');
-                            const isBalcony = !isSeaBalcony && room.room_type?.includes('เธฃเธฐเน€เธเธตเธขเธ');
-                            const isWindow = room.room_type?.includes('เธซเธเนเธฒเธ•เนเธฒเธ');
+                            const isDouble = room.room_type?.includes('คู่');
+                            const isHouse = room.room_type?.includes('บ้าน');
+                            const isSeaBalcony = room.room_type?.includes('ระเบียงทะเล');
+                            const isBalcony = !isSeaBalcony && room.room_type?.includes('ระเบียง');
+                            const isWindow = room.room_type?.includes('หน้าต่าง');
 
                             return (
                               <div className={`absolute top-0 text-lg sm:text-xl font-black ${roomNoColor} transition-all leading-none flex items-center justify-center gap-0`}>
@@ -738,11 +738,11 @@ export default function CheckinPage() {
                                       <rect x="9" y="7" width="5" height="7" rx="1" fill="#64748b"/>
                                     </svg>
                                   ) : isHouse ? (
-                                    <span className="text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">๐ </span>
+                                    <span className="text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🏠</span>
                                   ) : null}
-                                  {isSeaBalcony && <span className="text-slate-700 grayscale text-[13px] sm:text-[14px] drop-shadow-sm opacity-60">โฑ๏ธ</span>}
+                                  {isSeaBalcony && <span className="text-slate-700 grayscale text-[13px] sm:text-[14px] drop-shadow-sm opacity-60">⛱️</span>}
                                   {isBalcony && <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-600 translate-y-[1px] opacity-80"><path d="M3 12h18"/><path d="M3 16h18"/><path d="M3 20h18"/><path d="M6 12v8"/><path d="M10 12v8"/><path d="M14 12v8"/><path d="M18 12v8"/><path d="M5 4h14a1 1 0 0 1 1 1v7H4V5a1 1 0 0 1 1-1z"/></svg>}
-                                  {isWindow && <span className="text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">๐ช</span>}
+                                  {isWindow && <span className="text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🪟</span>}
                                 </div>
 
                                 {isOverdue && (
@@ -768,7 +768,7 @@ export default function CheckinPage() {
                           
                           {(room.status === 'dirty' || room.status === 'cleaning') && (
                             <div className="absolute bottom-1 sm:bottom-1.5 text-base sm:text-lg opacity-80 flex items-center justify-center">
-                              <span className={room.status === 'cleaning' ? 'animate-broom-swing inline-block' : ''}>๐งน</span>
+                              <span className={room.status === 'cleaning' ? 'animate-broom-swing inline-block' : ''}>🧹</span>
                             </div>
                           )}
 
@@ -874,8 +874,8 @@ export default function CheckinPage() {
               ) : (
                 <div className="relative w-full max-w-5xl mx-auto bg-slate-200 rounded-xl shadow-inner border border-slate-200 overflow-hidden flex flex-col items-center justify-center" style={{ minHeight: '300px' }}>
                     <svg className="w-16 h-16 text-slate-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-                    <h3 className="text-xl font-bold text-slate-700">เธญเธขเธนเนเธฃเธฐเธซเธงเนเธฒเธเธเธฒเธฃเธเธฑเธ’เธเธฒ</h3>
-                    <p className="text-slate-500 mt-2 text-center max-w-md">เธเธตเน€เธเธญเธฃเนเนเธเธเธเธฑเธเธซเนเธญเธเธเธฑเธเธเธณเธฅเธฑเธเธญเธขเธนเนเนเธเธเธฑเนเธเธ•เธญเธเธเธฒเธฃเธเธฑเธ’เธเธฒ เน€เธเธทเนเธญเธเธฃเธฐเธชเธเธเธฒเธฃเธ“เนเนเธเนเธเธฒเธเธ—เธตเนเธ”เธตเธ—เธตเนเธชเธธเธ”</p>
+                    <h3 className="text-xl font-bold text-slate-700">อยู่ระหว่างการพัฒนา</h3>
+                    <p className="text-slate-500 mt-2 text-center max-w-md">ฟีเจอร์แผนผังห้องพักกำลังอยู่ในขั้นตอนการพัฒนา เพื่อประสบการณ์ใช้งานที่ดีที่สุด</p>
                   </div>
                 )}
               </div>
@@ -898,6 +898,5 @@ export default function CheckinPage() {
     </div>
   );
 }
-
 
 
