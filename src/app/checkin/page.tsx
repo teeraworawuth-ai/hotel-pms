@@ -609,7 +609,7 @@ export default function CheckinPage() {
                 </h2>
                 
                 {viewMode === 'grid' ? (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3 sm:gap-4">
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12 gap-3 sm:gap-4 lg:gap-5 2xl:gap-6">
                   {locRooms.map(room => {
                     const statusClass = getStatusClasses(room.status);
                     const details = getStayDetails(room);
