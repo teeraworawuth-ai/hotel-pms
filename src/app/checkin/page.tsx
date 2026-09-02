@@ -618,7 +618,7 @@ export default function CheckinPage() {
                       <button
                         key={room.id}
                         onClick={() => handleRoomClick(room)}
-                        className={`relative aspect-[3.2/3] min-h-[120px] flex items-center justify-center rounded-xl border-2 transition-all active:scale-95 group overflow-hidden ${statusClass}`}
+                        className={`relative aspect-[3.2/3] min-h-[120px] flex items-center justify-center rounded-xl border-2 transition-all active:scale-95 group overflow-hidden isolate ${statusClass}`}
                       >
                         {/* Left Section (Details) */}
                         {(room.status === 'occupied' || room.status === 'reserved' || room.status === 'dirty') && (
@@ -854,7 +854,7 @@ export default function CheckinPage() {
                       
                                                 {/* Financial Summary for Occupied Rooms */}
                         {room.status === 'occupied' && (
-                          <div className="absolute bottom-0 left-0 right-0 w-full h-[24px] flex items-center justify-center gap-1 sm:gap-1.5 text-[11px] sm:text-[13px] font-black z-30 whitespace-nowrap bg-white/60 backdrop-blur-[1px] border-t border-slate-300/40 text-slate-600">
+                          <div className="absolute bottom-0 left-0 right-0 w-full h-[24px] flex items-center justify-center gap-0.5 sm:gap-1 text-[8.5px] sm:text-[9.5px] font-black z-30 whitespace-nowrap bg-white/60 backdrop-blur-[1px] border-t border-slate-300/40 text-slate-600 tracking-tighter overflow-hidden px-0.5">
                             <span>{room.total_charges || 0}</span>
                             <span className="text-slate-400 font-bold">-</span>
                             <span>{room.total_payments || 0}</span>
