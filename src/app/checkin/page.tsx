@@ -609,7 +609,7 @@ export default function CheckinPage() {
                 </h2>
                 
                 {viewMode === 'grid' ? (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12 gap-3 sm:gap-4 lg:gap-5 2xl:gap-6">
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10 gap-2 sm:gap-3 xl:gap-4">
                   {locRooms.map(room => {
                     const statusClass = getStatusClasses(room.status);
                     const details = getStayDetails(room);
@@ -618,7 +618,7 @@ export default function CheckinPage() {
                       <button
                         key={room.id}
                         onClick={() => handleRoomClick(room)}
-                        className={`relative aspect-[16/15] w-full flex items-center justify-center rounded-xl border-2 transition-all active:scale-95 group overflow-hidden isolate ${statusClass}`}
+                        className={`relative aspect-[16/15] w-full flex items-center justify-center rounded-xl border-2 transition-all active:scale-95 group overflow-hidden ${statusClass}`}
                       >
                         {/* Left Section (Details) */}
                         {(room.status === 'occupied' || room.status === 'reserved' || room.status === 'dirty') && (
@@ -854,7 +854,7 @@ export default function CheckinPage() {
                       
                                                 {/* Financial Summary for Occupied Rooms */}
                         {room.status === 'occupied' && (
-                          <div className="absolute bottom-0 left-0 right-0 w-full h-[24px] flex items-center justify-center gap-0.5 sm:gap-1 text-[8px] sm:text-[9px] font-black z-30 whitespace-nowrap bg-white/60 backdrop-blur-[1px] border-t border-slate-300/40 text-slate-600 tracking-tighter overflow-hidden px-0.5">
+                          <div className="absolute bottom-0 left-0 right-0 w-full h-[24px] flex items-center justify-center gap-1 sm:gap-1.5 text-[10px] sm:text-[11px] font-black z-30 whitespace-nowrap bg-white/60 backdrop-blur-[1px] border-t border-slate-300/40 text-slate-600 tracking-tight overflow-hidden px-1">
                             <span>{room.total_charges || 0}</span>
                             <span className="text-slate-400 font-bold">-</span>
                             <span>{room.total_payments || 0}</span>
