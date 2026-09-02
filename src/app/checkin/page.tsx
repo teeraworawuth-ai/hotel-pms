@@ -618,7 +618,7 @@ export default function CheckinPage() {
                       <button
                         key={room.id}
                         onClick={() => handleRoomClick(room)}
-                        className={`relative min-h-[140px] flex items-center justify-center rounded-xl border-2 transition-all active:scale-95 group overflow-hidden ${statusClass}`}
+                        className={`relative min-h-[140px] pb-[34px] flex items-center justify-center rounded-xl border-2 transition-all active:scale-95 group overflow-hidden ${statusClass}`}
                       >
                         {/* Left Section (Details) */}
                         {(room.status === 'occupied' || room.status === 'reserved' || room.status === 'dirty') && (
@@ -741,7 +741,7 @@ export default function CheckinPage() {
                                     <span className="text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🏠</span>
                                   ) : null}
                                   {isSeaBalcony && <span className="text-slate-700 grayscale text-[13px] sm:text-[14px] drop-shadow-sm opacity-60">⛱️</span>}
-                                  {isBalcony && <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-600 translate-y-[1px] opacity-80"><path d="M3 12h18"/><path d="M3 16h18"/><path d="M3 20h18"/><path d="M6 12v8"/><path d="M10 12v8"/><path d="M14 12v8"/><path d="M18 12v8"/><path d="M5 4h14a1 1 0 0 1 1 1v7H4V5a1 1 0 0 1 1-1z"/></svg>}
+                                  {isBalcony && <img src="/balcony.png" className="w-[20px] h-[20px] sm:w-[22px] sm:h-[22px] object-contain mix-blend-multiply opacity-80 translate-y-[1.5px]" alt="ระเบียง" />}
                                   {isWindow && <span className="text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🪟</span>}
                                 </div>
 
@@ -826,8 +826,7 @@ export default function CheckinPage() {
                               );
                             })()}
                           </div>
-
-</div>
+                        </div>
 
                         {/* Right Section (7-Day Availability Indicator) */}
                         {((room.has_upcoming && room.upcoming_days && room.upcoming_days.length > 0) || (room.incoming_today && (room.status === 'occupied' || room.status === 'dirty'))) && (
@@ -852,19 +851,24 @@ export default function CheckinPage() {
                             })}
                           </div>
                         )}
-                        
-
-
+                      
                         {/* Financial Summary for Occupied Rooms */}
                         {room.status === 'occupied' && (
-                          <div className="absolute bottom-0 left-0 right-0 w-full pt-0.5 pb-1 flex items-center justify-center gap-1 sm:gap-1.5 text-[11px] sm:text-[13px] font-black z-30 whitespace-nowrap bg-white/80 border-t border-slate-300/40">
-                            <span className="text-slate-600">{room.total_charges || 0}</span>
-                            <span className="text-slate-400 font-bold">-</span>
-                            <span className="text-slate-600">{room.total_payments || 0}</span>
-                            <span className="text-slate-400 font-bold">=</span>
-                            <span className={((room.unpaid_balance || 0) < 0) ? 'text-indigo-600' : (room.unpaid_balance || 0) > 0 ? 'text-rose-600' : 'text-emerald-600'}>
-                              {room.unpaid_balance || 0}
-                            </span>
+                          <div className="absolute bottom-0 left-0 right-0 z-30 bg-slate-50/95 backdrop-blur-sm border-t border-slate-200 px-1.5 py-1 text-[10px] sm:text-[11px] leading-tight flex flex-col justify-center shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+                            <div className="flex justify-between items-center text-slate-500 mb-[1px]">
+                              <span>ยอดเรียกเก็บ</span>
+                              <span className="font-medium text-slate-700">฿{(room.total_charges || 0).toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-slate-500 mb-[1px]">
+                              <span>ยอดชำระแล้ว</span>
+                              <span className="font-medium text-emerald-600">฿{(room.total_payments || 0).toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between items-center border-t border-slate-200/60 mt-[2px] pt-[2px] font-bold">
+                              <span>ยอดคงเหลือ</span>
+                              <span className={((room.unpaid_balance || 0) < 0) ? 'text-rose-600' : (room.unpaid_balance || 0) > 0 ? 'text-indigo-600' : 'text-emerald-600'}>
+                                ฿{Math.abs(room.unpaid_balance || 0).toLocaleString()} {((room.unpaid_balance || 0) < 0) ? '(ค้าง)' : ''}
+                              </span>
+                            </div>
                           </div>
                         )}
                       </button>
