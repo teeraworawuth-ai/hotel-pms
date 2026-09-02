@@ -545,7 +545,7 @@ export default function CheckinPage() {
       {/* Header & Legend */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">สมุดจอง & สถานะห้อง</h1>
+          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">สมุดจอง & สถานะห้อง <span className="text-xs text-slate-400 font-normal ml-2">(v2)</span></h1>
           <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
             <button 
               onClick={() => setViewMode('grid')}
