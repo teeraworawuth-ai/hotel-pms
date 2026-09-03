@@ -706,9 +706,9 @@ export default function CheckinPage() {
                             let roomNoColor = 'text-slate-700';
                             if (room.status === 'occupied' || room.status === 'reserved') {
                               const unpaid = room.unpaid_balance || 0;
-                              const total = room.actual_price || 0;
+                              const payments = room.total_payments || 0;
                               if (unpaid > 0) {
-                                if (total > 0 && unpaid < total) {
+                                if (payments > 0) {
                                   roomNoColor = 'text-orange-500';
                                 } else {
                                   roomNoColor = 'text-rose-600';
