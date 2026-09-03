@@ -854,12 +854,12 @@ export default function CheckinPage() {
                       
                                                 {/* Financial Summary for Occupied Rooms */}
                         {room.status === 'occupied' && (
-                          <div className="absolute bottom-0 left-0 right-0 w-full h-[24px] flex items-center justify-center gap-0.5 sm:gap-1 text-[9px] sm:text-[9.5px] font-black z-30 whitespace-nowrap bg-white/60 backdrop-blur-[1px] border-t border-slate-300/40 text-slate-600 tracking-tight overflow-hidden px-0.5">
+                          <div className="absolute bottom-0 left-0 right-0 w-full h-[24px] flex items-center justify-center gap-0.5 sm:gap-1 text-[9px] sm:text-[9.5px] font-black z-30 whitespace-nowrap bg-white/60 backdrop-blur-[1px] border-t border-slate-300/40 text-slate-500 tracking-tight overflow-hidden px-0.5">
                             <span>{room.total_charges || 0}</span>
-                            <span className="text-slate-400 font-bold">-</span>
+                            <span className="text-slate-300 font-bold">-</span>
                             <span>{room.total_payments || 0}</span>
-                            <span className="text-slate-400 font-bold">=</span>
-                            <span className={((room.unpaid_balance || 0) < 0) ? 'text-indigo-600' : (room.unpaid_balance || 0) > 0 ? 'text-rose-600' : 'text-emerald-600'}>
+                            <span className="text-slate-300 font-bold">=</span>
+                            <span className={((room.unpaid_balance || 0) < 0) ? 'text-blue-400' : (room.unpaid_balance || 0) > 0 ? 'text-rose-400' : 'text-emerald-400'}>
                               {room.unpaid_balance || 0}
                             </span>
                           </div>
