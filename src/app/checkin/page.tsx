@@ -688,7 +688,7 @@ export default function CheckinPage() {
                         )}
 
                         {/* Center Section (Room No & Price) */}
-                        <div className="flex-1 w-full h-full relative flex flex-col items-center justify-start pt-[22px] sm:pt-6 pb-[24px] z-10">
+                        <div className="flex-1 w-full h-full flex flex-col items-center justify-start pt-[22px] sm:pt-6 pb-[24px]">
                           {(() => {
                             let isOverdue = false;
                             let overdueMinutes = 0;
@@ -725,9 +725,9 @@ export default function CheckinPage() {
                             const isWindow = room.room_type?.includes('หน้าต่าง');
 
                             return (
-                              <div className={`absolute top-0 text-lg sm:text-xl font-black ${roomNoColor} transition-all leading-none flex items-center justify-center gap-0`}>
+                              <div className={`absolute top-0 text-lg sm:text-xl font-black ${roomNoColor} transition-all leading-none flex items-center justify-center gap-0 mix-blend-multiply`}>
                                 <span>{room.room_no}</span>
-                                <div className="flex items-center text-[13px] leading-none -space-x-1 -ml-0.5 opacity-90">
+                                <div className="flex items-center text-[13px] leading-none -space-x-1 -ml-0.5">
                                   {isDouble ? (
                                     <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-[15px] h-[15px] sm:w-[17px] sm:h-[17px] opacity-90 drop-shadow-sm">
                                       <rect x="2" y="3" width="5" height="11" rx="1" fill="#cbd5e1"/>
