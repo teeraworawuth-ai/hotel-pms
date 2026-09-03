@@ -618,11 +618,11 @@ export default function CheckinPage() {
                       <button
                         key={room.id}
                         onClick={() => handleRoomClick(room)}
-                        className={`relative aspect-[16/15] w-full flex items-center justify-center rounded-xl border-2 transition-all active:scale-95 group overflow-hidden ${statusClass}`}
+                        className={`relative aspect-[16/14] w-full flex items-center justify-center rounded-xl border-2 transition-all active:scale-95 group overflow-hidden ${statusClass}`}
                       >
                         {/* Left Section (Details) */}
                         {(room.status === 'occupied' || room.status === 'reserved' || room.status === 'dirty') && (
-                          <div className="absolute top-0.5 left-0 bottom-[24px] w-[30%] flex flex-col justify-between items-start text-[8.5px] sm:text-[9.5px] leading-none font-semibold opacity-90 pl-0.5 py-0.5">
+                          <div className="absolute top-0.5 left-0 bottom-[18px] w-[30%] flex flex-col justify-between items-start text-[8.5px] sm:text-[9.5px] leading-none font-semibold opacity-90 pl-0.5 py-0.5">
                             {room.status === 'reserved' && room.booking_created_at ? (
                               <div className="flex flex-col items-start gap-[1px] w-full text-purple-600">
                                 <div className="text-purple-400 h-[10px] flex items-center">
@@ -688,7 +688,7 @@ export default function CheckinPage() {
                         )}
 
                         {/* Center Section (Room No & Price) */}
-                        <div className="flex-1 w-full h-full flex flex-col items-center justify-start pt-[22px] sm:pt-6 pb-[24px]">
+                        <div className="flex-1 w-full h-full flex flex-col items-center justify-start pt-[22px] sm:pt-6 pb-[18px]">
                           {(() => {
                             let isOverdue = false;
                             let overdueMinutes = 0;
@@ -830,7 +830,7 @@ export default function CheckinPage() {
 
                         {/* Right Section (7-Day Availability Indicator) */}
                         {((room.has_upcoming && room.upcoming_days && room.upcoming_days.length > 0) || (room.incoming_today && (room.status === 'occupied' || room.status === 'dirty'))) && (
-                          <div className={`absolute top-0 right-1 bottom-[24px] flex flex-col items-end ${((room.upcoming_days?.length || 0) + (room.incoming_today && (room.status === 'occupied' || room.status === 'dirty') ? 1 : 0)) >= 6 ? 'justify-between py-1 gap-0' : 'gap-[2px] pt-1'} text-slate-400 overflow-hidden pr-0.5`}>
+                          <div className={`absolute top-0 right-1 bottom-[18px] flex flex-col items-end ${((room.upcoming_days?.length || 0) + (room.incoming_today && (room.status === 'occupied' || room.status === 'dirty') ? 1 : 0)) >= 6 ? 'justify-between py-1 gap-0' : 'gap-[2px] pt-1'} text-slate-400 overflow-hidden pr-0.5`}>
                             {room.incoming_today && (room.status === 'occupied' || room.status === 'dirty') && (
                               <span className="font-black leading-none text-[11px] text-emerald-500 animate-[pulse_1s_ease-in-out_infinite]">
                                 {displayDate.getDate()}
@@ -854,7 +854,7 @@ export default function CheckinPage() {
                       
                                                 {/* Financial Summary for Occupied Rooms */}
                         {room.status === 'occupied' && (
-                          <div className="absolute bottom-0 left-0 right-0 w-full h-[24px] flex items-center justify-center gap-0.5 sm:gap-1 text-[9px] sm:text-[9.5px] font-bold z-30 whitespace-nowrap bg-white/60 backdrop-blur-[1px] border-t border-slate-300/40 text-slate-500 tracking-tight overflow-hidden px-0.5">
+                          <div className="absolute bottom-0 left-0 right-0 w-full h-[18px] flex items-center justify-center gap-0.5 sm:gap-1 text-[9px] sm:text-[9.5px] font-bold z-30 whitespace-nowrap bg-white/60 backdrop-blur-[1px] border-t border-slate-300/40 text-slate-500 tracking-tight overflow-hidden px-0.5">
                             <span>{room.total_charges || 0}</span>
                             <span className="text-slate-300 font-bold">-</span>
                             <span>{room.total_payments || 0}</span>
