@@ -1,8 +1,8 @@
-{
+﻿{
   "crons": [
     {
       "path": "/api/cron/night-audit",
-      "schedule": "0 19 * * *"
+      "schedule": "45 2 * * *"
     }
   ],
   "functions": {
@@ -14,3 +14,4 @@
     }
   }
 }
+
