@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useShift } from '@/contexts/ShiftContext';
+import { useSimulatedTime } from '@/contexts/SimulatedTimeContext';
 
 type PosItem = { id: string, name: string, default_price: number };
 type Transaction = { id: string, transaction_type: string, category: string, amount: number, created_at: string, staff_name: string };
@@ -25,6 +26,8 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   // Custom POS states
   const [customItemName, setCustomItemName] = useState('');
   const [customItemPrice, setCustomItemPrice] = useState<number | ''>('');
+  const [billTab, setBillTab] = useState<'daily' | 'full'>('daily');
+  const { getNow } = useSimulatedTime();
 
   useEffect(() => {
     fetchData();
@@ -42,7 +45,18 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     setLoading(false);
   };
 
-  const balance = transactions.reduce((acc, tx) => acc + (tx.category.includes('Voided') ? 0 : Number(tx.amount)), 0);
+  const now = getNow();
+  const businessCutoff = new Date(now);
+  if (now.getHours() < 9 || (now.getHours() === 9 && now.getMinutes() < 45)) {
+    businessCutoff.setDate(businessCutoff.getDate() - 1);
+  }
+  businessCutoff.setHours(9, 45, 0, 0);
+
+  const pastTransactions = transactions.filter(tx => new Date(tx.created_at).getTime() < businessCutoff.getTime());
+  const todayTransactions = transactions.filter(tx => new Date(tx.created_at).getTime() >= businessCutoff.getTime());
+
+  const balanceForward = pastTransactions.reduce((acc, tx) => acc + (tx.category.includes('(Voided)') ? 0 : Number(tx.amount)), 0);
+  const balance = transactions.reduce((acc, tx) => acc + (tx.category.includes('(Voided)') ? 0 : Number(tx.amount)), 0);
 
   useEffect(() => {
     if (balance > 0 && payAmount === '') {
