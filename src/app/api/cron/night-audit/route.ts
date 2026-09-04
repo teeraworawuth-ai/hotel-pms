@@ -2,6 +2,9 @@
 import { supabase } from '@/lib/supabase';
 
 export async function POST(req: Request) {
+  const url = new URL(req.url);
+  const simulatedDate = url.searchParams.get('simulated_date');
+  const targetDate = simulatedDate ? new Date(simulatedDate) : new Date();
   try {
     // 1. Find all active bookings (checked_in)
     const { data: bookings, error: bookingsError } = await supabase
@@ -24,7 +27,7 @@ export async function POST(req: Request) {
     if (roomsError) throw roomsError;
 
     // 3. For each booking, check if we need to post a charge for today
-    const todayStr = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+    const todayStr = targetDate.toISOString().split('T')[0]; // Format: YYYY-MM-DD
     let postedCount = 0;
 
     for (const booking of bookings) {
