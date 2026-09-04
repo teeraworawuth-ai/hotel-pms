@@ -62,7 +62,7 @@ export async function POST(req: Request) {
       const { error: insertError } = await supabase
         .from('ledger_transactions')
         .insert({
-          staff_name: 'SYSTEM (Night Audit)',
+          staff_name: simulatedDate ? 'SYSTEM (Simulated)' : 'SYSTEM (Night Audit)',
           room_id: booking.room_id,
           booking_id: booking.id,
           transaction_type: 'revenue',
