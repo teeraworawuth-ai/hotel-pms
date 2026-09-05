@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -28,10 +28,10 @@ export default function Navbar() {
           <div className="flex-shrink-0 flex items-center">
             <Link
               href="/"
-              className="text-xl font-bold text-slate-800"
+              className="text-xl font-bold text-slate-800 flex items-center"
               onClick={() => setIsOpen(false)}
             >
-              ⚡ Hotel PMS
+              ⚡ Hotel PMS <span className="ml-2 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black tracking-widest leading-none">v2.2</span>
             </Link>
           </div>
 
