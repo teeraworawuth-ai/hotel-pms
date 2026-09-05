@@ -147,8 +147,10 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       if (room.status !== 'occupied' || !room.check_out_time || !room.booking_id || !activeShift) return;
       
       const coTime = new Date(room.check_out_time).getTime();
-      const nowTime = getNow().getTime();
-      if (nowTime <= coTime) return; // Not late
+      // ใช้เวลาจริงเสมอ ไม่ใช้ Simulated Time
+      // เพื่อป้องกัน Simulator ทำให้เกิดค่าปรับปลอม
+      const nowTime = new Date().getTime();
+      if (nowTime <= coTime) return; // Not late (real-time check)
       
       const overdueMinutes = (nowTime - coTime) / (1000 * 60);
 
