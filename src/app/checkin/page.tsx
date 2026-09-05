@@ -622,7 +622,7 @@ export default function CheckinPage() {
                       >
                         {/* Left Section (Details) */}
                         {(room.status === 'occupied' || room.status === 'reserved' || room.status === 'dirty') && (
-                          <div className="absolute top-0.5 left-0 bottom-[18px] w-[30%] flex flex-col justify-between items-start text-[8.5px] sm:text-[9.5px] leading-none font-semibold opacity-90 pl-0.5 py-0.5">
+                          <div className="absolute top-0.5 left-0 bottom-[22px] sm:bottom-[18px] w-[30%] flex flex-col justify-between items-start text-[8.5px] sm:text-[9.5px] leading-none font-semibold opacity-90 pl-0.5 py-0.5">
                             {room.status === 'reserved' && room.booking_created_at ? (
                               <div className="flex flex-col items-start gap-[1px] w-full text-purple-600">
                                 <div className="text-purple-400 h-[10px] flex items-center">
