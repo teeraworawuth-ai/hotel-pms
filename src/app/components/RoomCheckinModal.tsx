@@ -1226,8 +1226,6 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     💳 จัดการบิล / ชำระเงิน / POS
                   </button>
                 )}
-                <button 
-                  
                   <button 
                     onClick={() => setShowVoidPinPrompt(true)} disabled={loading}
                     className="w-full py-4 text-slate-700 font-bold rounded-xl text-lg bg-slate-200 hover:bg-slate-300 shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 mb-2"
