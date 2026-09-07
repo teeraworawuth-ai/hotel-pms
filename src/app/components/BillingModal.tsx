@@ -26,7 +26,8 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   // Custom POS states
   const [customItemName, setCustomItemName] = useState('');
   const [customItemPrice, setCustomItemPrice] = useState<number | ''>('');
-  const [billTab, setBillTab] = useState<'daily' | 'full'>('daily');
+  const [selectedDate, setSelectedDate] = useState<string>('ALL');
+  const [showPayments, setShowPayments] = useState<boolean>(true);
   const { getNow } = useSimulatedTime();
 
   useEffect(() => {
@@ -54,6 +55,25 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
 
   const pastTransactions = transactions.filter(tx => new Date(tx.created_at).getTime() < businessCutoff.getTime());
   const todayTransactions = transactions.filter(tx => new Date(tx.created_at).getTime() >= businessCutoff.getTime());
+
+  const availableDates = Array.from(new Set(transactions.map(tx => new Date(tx.created_at).toLocaleDateString('th-TH'))));
+  
+  const filteredTransactions = transactions.filter(tx => {
+    if (selectedDate !== 'ALL') {
+      const txDate = new Date(tx.created_at).toLocaleDateString('th-TH');
+      if (txDate !== selectedDate) return false;
+    }
+    
+    // Payments have negative amounts
+    if (!showPayments && Number(tx.amount) < 0) {
+      return false;
+    }
+    
+    return true;
+  });
+  
+  const displayTransactions = filteredTransactions;
+
 
   const balanceForward = pastTransactions.reduce((acc, tx) => acc + (tx.category.includes('(Voided)') ? 0 : Number(tx.amount)), 0);
   const balance = transactions.reduce((acc, tx) => acc + (tx.category.includes('(Voided)') ? 0 : Number(tx.amount)), 0);
@@ -147,10 +167,29 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
           {/* ขวา: รายการบิลปัจจุบัน */}
           <div className="flex-1 flex flex-col">
             <h3 className="text-sm font-bold text-slate-500 mb-3 uppercase tracking-wider">รายการในบิล (Folio)</h3>
-            <div className="flex bg-slate-100 rounded-lg p-1 mb-2 shrink-0">
-              <button onClick={() => setBillTab('daily')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${billTab === 'daily' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>บิลวันนี้ (Daily)</button>
-              <button onClick={() => setBillTab('full')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${billTab === 'full' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>ประวัติทั้งหมด (Full)</button>
-            </div>
+            <div className="flex flex-col bg-slate-100 rounded-lg p-3 mb-2 shrink-0 gap-3 border border-slate-200">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-bold text-slate-600 whitespace-nowrap">เลือกวันที่:</label>
+                  <select 
+                    value={selectedDate} 
+                    onChange={e => setSelectedDate(e.target.value)}
+                    className="flex-1 bg-white border border-slate-300 rounded-md py-1.5 px-2 text-xs font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="ALL">ทั้งหมด (ALL)</option>
+                    {availableDates.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2 pl-1 border-t border-slate-200 pt-2">
+                  <input 
+                    type="checkbox" 
+                    id="showPayments" 
+                    checked={showPayments} 
+                    onChange={e => setShowPayments(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                  <label htmlFor="showPayments" className="text-xs font-bold text-slate-600 cursor-pointer">แสดงรายการรับชำระเงิน (Payments)</label>
+                </div>
+              </div>
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden flex-1 flex flex-col shadow-sm min-h-[300px]">
               <div className="flex-1 overflow-y-auto p-2 space-y-1">
                 {loading && transactions.length === 0 ? (
@@ -159,19 +198,12 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                   <p className="text-center text-slate-400 py-10">ไม่มีรายการค้างชำระ</p>
                 ) : (
                   <>
-                    {billTab === 'daily' && pastTransactions.length > 0 && (
-                      <div className="flex justify-between items-center p-3 bg-blue-50/50 rounded-lg text-sm border border-blue-100 mb-2">
-                        <div>
-                          <p className="font-bold text-blue-800">📌 ยอดยกมาจากวันก่อน</p>
-                          <p className="text-[10px] text-blue-500">Balance Forward</p>
-                        </div>
-                        <p className={`font-black ${balanceForward > 0 ? 'text-red-500' : balanceForward < 0 ? 'text-emerald-600' : 'text-slate-500'}`}>
-                          {balanceForward > 0 ? '+' : ''}{balanceForward.toLocaleString()}
+                    
                         </p>
                       </div>
                     )}
                     
-                    {(billTab === 'daily' ? todayTransactions : transactions).map(tx => {
+                    {displayTransactions.map(tx => {
                       const isVoid = tx.category.includes('Voided');
                       return (
                         <div key={tx.id} className="flex justify-between items-center p-2 hover:bg-slate-50 rounded-lg text-sm border-b border-slate-50 last:border-0">
@@ -189,13 +221,13 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                 )}
               </div>
               
-              {billTab === 'full' && (
+              {true && (
                 <div className="p-2 border-t border-slate-100 bg-slate-50">
                   <button 
                     onClick={() => window.print()}
                     className="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-2 rounded-lg flex items-center justify-center gap-2 transition-colors"
                   >
-                    <span>🖨️</span> พิมพ์ใบเสร็จรวมทั้งหมด (Print Full Receipt)
+                    <span>🖨️</span> พิมพ์ใบเสร็จ (Print Receipt)
                   </button>
                 </div>
               )}
