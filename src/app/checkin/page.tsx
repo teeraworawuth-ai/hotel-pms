@@ -609,7 +609,7 @@ export default function CheckinPage() {
                 </h2>
                 
                 {viewMode === 'grid' ? (
-                <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12 gap-1.5 sm:gap-2 lg:gap-2.5">
+                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12 gap-1.5 sm:gap-2 lg:gap-2.5">
                   {locRooms.map(room => {
                     const statusClass = getStatusClasses(room.status);
                     const details = getStayDetails(room);
@@ -618,14 +618,14 @@ export default function CheckinPage() {
                       <button
                         key={room.id}
                         onClick={() => handleRoomClick(room)}
-                        className={`relative min-h-[150px] sm:min-h-0 sm:aspect-[16/14] w-full flex items-center justify-center rounded-xl border-2 transition-all active:scale-95 group overflow-hidden ${statusClass}`}
+                        className={`relative aspect-[14/16] sm:aspect-[16/14] w-full flex items-center justify-center rounded-xl border-2 transition-all active:scale-95 group overflow-hidden ${statusClass}`}
                       >
                         {/* Left Section (Details) */}
                         {(room.status === 'occupied' || room.status === 'reserved' || room.status === 'dirty') && (
-                          <div className="absolute top-0.5 left-0 bottom-[28px] sm:bottom-[18px] w-[30%] flex flex-col justify-between items-start text-[7.5px] sm:text-[9.5px] leading-none font-semibold opacity-90 pl-0.5 py-0.5">
+                          <div className="absolute top-0.5 left-0 bottom-[15px] sm:bottom-[18px] w-[30%] flex flex-col justify-between items-start text-[6px] sm:text-[9.5px] leading-none font-semibold opacity-90 pl-0.5 py-0.5">
                             {room.status === 'reserved' && room.booking_created_at ? (
                               <div className="flex flex-col items-start gap-[1px] w-full text-purple-600">
-                                <div className="text-purple-400 h-[10px] flex items-center">
+                                <div className="text-purple-400 h-[8px] sm:h-[10px] flex items-center">
                                   {formatDateStr(room.booking_created_at) === formatDateStr(displayDate.toISOString()) ? (
                                     <span>&nbsp;</span>
                                   ) : (
@@ -636,7 +636,7 @@ export default function CheckinPage() {
                               </div>
                             ) : room.check_in_time && (
                               <div className="flex flex-col items-start gap-[1px] w-full">
-                                <div className="text-slate-500 h-[10px] flex items-center">
+                                <div className="text-slate-500 h-[8px] sm:h-[10px] flex items-center">
                                   {formatDateStr(room.check_in_time) ? (
                                     <>{formatDateStr(room.check_in_time)}</>
                                   ) : (
@@ -650,20 +650,20 @@ export default function CheckinPage() {
                             {room.status === 'occupied' || room.status === 'reserved' ? (
                               <div className="flex flex-row items-center gap-0 self-start -space-x-[3px] -ml-[2px]">
                                 <div className="relative inline-flex items-center justify-center">
-                                  <span className="text-[11.5px] leading-none opacity-40 grayscale">👤</span>
-                                  <span className="absolute top-[1.5px] w-full text-center text-[8px] text-slate-900 font-black drop-shadow-sm">
+                                  <span className="text-[9px] sm:text-[11.5px] leading-none opacity-40 grayscale">👤</span>
+                                  <span className="absolute top-[1.5px] w-full text-center text-[6px] sm:text-[8px] text-slate-900 font-black drop-shadow-sm">
                                     {room.guest_count || 1}
                                   </span>
                                 </div>
                                 {details && (
                                   <div className="relative inline-flex items-center justify-center">
-                                    <span className="text-[11.5px] leading-none opacity-40 grayscale">{details.type === 'overnight' ? '🌙' : '⏳'}</span>
+                                    <span className="text-[9px] sm:text-[11.5px] leading-none opacity-40 grayscale">{details.type === 'overnight' ? '🌙' : '⏳'}</span>
                                     {details.type === 'overnight' ? (
-                                      <span className="absolute top-[1px] right-[1px] text-[8px] text-slate-900 font-black drop-shadow-sm">
+                                      <span className="absolute top-[1px] right-[1px] text-[6px] sm:text-[8px] text-slate-900 font-black drop-shadow-sm">
                                         {details.text}
                                       </span>
                                     ) : (
-                                      <span className="absolute bottom-[1px] w-full text-center text-[8px] text-slate-900 font-black drop-shadow-sm">
+                                      <span className="absolute bottom-[1px] w-full text-center text-[6px] sm:text-[8px] text-slate-900 font-black drop-shadow-sm">
                                         {details.text}
                                       </span>
                                     )}
@@ -675,7 +675,7 @@ export default function CheckinPage() {
                             {room.check_out_time && (
                               <div className="flex flex-col items-start gap-[1px] w-full">
                                 <div className="font-bold text-slate-700">{formatTimeStr(room.check_out_time)}</div>
-                                <div className="text-slate-500 h-[10px] flex items-center">
+                                <div className="text-slate-500 h-[8px] sm:h-[10px] flex items-center">
                                   {formatDateStr(room.check_out_time) ? (
                                     <>{formatDateStr(room.check_out_time)}</>
                                   ) : (
@@ -725,7 +725,7 @@ export default function CheckinPage() {
                             const isWindow = room.room_type?.includes('หน้าต่าง');
 
                             return (
-                              <div className={`absolute top-0 text-lg sm:text-xl font-black ${roomNoColor} transition-all leading-none flex items-center justify-center gap-0 mix-blend-multiply`}>
+                              <div className={`absolute top-0 text-base sm:text-xl top-0 sm:top-1 font-black ${roomNoColor} transition-all leading-none flex items-center justify-center gap-0 mix-blend-multiply`}>
                                 <span>{room.room_no}</span>
                                 <div className="flex items-center text-[13px] leading-none -space-x-1 -ml-0.5">
                                   {isDouble ? (
@@ -748,13 +748,13 @@ export default function CheckinPage() {
                                 {isOverdue && (
                                   <span className="absolute -right-[14px] sm:-right-[18px] top-1/2 -translate-y-1/2 flex items-center justify-center">
                                     {overdueMinutes >= 195 ? (
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#1e293b" stroke="#000000" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-[18px] sm:h-[18px]">
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#1e293b" stroke="#000000" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-[18px] sm:h-[14px] sm:h-[18px]">
                                         <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
                                         <line x1="12" y1="9" x2="12" y2="13" stroke="#ffffff"/>
                                         <line x1="12" y1="17" x2="12.01" y2="17" stroke="#ffffff"/>
                                       </svg>
                                     ) : (
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#fee2e2" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-[18px] sm:h-[18px]">
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#fee2e2" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-[18px] sm:h-[14px] sm:h-[18px]">
                                         <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
                                         <line x1="12" y1="9" x2="12" y2="13"/>
                                         <line x1="12" y1="17" x2="12.01" y2="17"/>
@@ -805,19 +805,19 @@ export default function CheckinPage() {
                                   {/* Line 1: Base Price */}
                                   <div className="h-[12px] sm:h-[14px] flex items-center justify-center">
                                     {basePriceText !== null && (
-                                      <span className="opacity-40 text-[12px] sm:text-[13px] leading-none">{basePriceText}</span>
+                                      <span className="opacity-40 text-[10px] sm:text-[13px] leading-none">{basePriceText}</span>
                                     )}
                                   </div>
                                   
                                   {/* Line 2: Difference */}
-                                  <div className="h-[10px] sm:h-[12px] flex items-center justify-center">
+                                  <div className="h-[8px] sm:h-[10px] sm:h-[12px] flex items-center justify-center">
                                     {diffText && (
                                       <span className={`${diffColor} leading-none`}>({diffText})</span>
                                     )}
                                   </div>
                                   
                                   {/* Line 3: Staff Name */}
-                                  <div className="h-[10px] sm:h-[12px] flex items-center justify-center">
+                                  <div className="h-[8px] sm:h-[10px] sm:h-[12px] flex items-center justify-center">
                                     {staffNameText && (
                                       <span className="text-[8px] sm:text-[9px] text-slate-400 font-medium leading-none">{staffNameText}</span>
                                     )}
@@ -854,7 +854,7 @@ export default function CheckinPage() {
                       
                                                 {/* Financial Summary for Occupied Rooms */}
                         {room.status === 'occupied' && (
-                          <div className="absolute bottom-0 left-0 right-0 w-full h-[18px] flex items-center justify-center gap-0.5 sm:gap-1 text-[9px] sm:text-[9.5px] font-bold z-30 whitespace-nowrap bg-white/60 backdrop-blur-[1px] border-t border-slate-300/40 text-slate-500 tracking-tight overflow-hidden px-0.5">
+                          <div className="absolute bottom-0 left-0 right-0 w-full h-[14px] sm:h-[18px] flex items-center justify-center gap-0.5 sm:gap-1 text-[7px] sm:text-[9.5px] font-bold z-30 whitespace-nowrap bg-white/60 backdrop-blur-[1px] border-t border-slate-300/40 text-slate-500 tracking-tight overflow-hidden px-0.5">
                             <span>{room.total_charges || 0}</span>
                             <span className="text-slate-300 font-bold">-</span>
                             <span>{room.total_payments || 0}</span>
