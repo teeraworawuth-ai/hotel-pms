@@ -618,7 +618,7 @@ export default function CheckinPage() {
                       <button
                         key={room.id}
                         onClick={() => handleRoomClick(room)}
-                        className={`relative min-h-[110px] sm:min-h-0 sm:aspect-[16/14] w-full flex items-center justify-center rounded-xl border-2 transition-all active:scale-95 group overflow-hidden ${statusClass}`}
+                        className={`relative min-h-[120px] sm:min-h-0 sm:aspect-[16/14] w-full flex items-center justify-center rounded-xl border-2 transition-all active:scale-95 group overflow-hidden ${statusClass}`}
                       >
                         {/* Left Section (Details) */}
                         {(room.status === 'occupied' || room.status === 'reserved' || room.status === 'dirty') && (

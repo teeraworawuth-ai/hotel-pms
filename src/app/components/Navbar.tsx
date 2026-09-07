@@ -31,7 +31,7 @@ export default function Navbar() {
               className="text-xl font-bold text-slate-800 flex items-center"
               onClick={() => setIsOpen(false)}
             >
-              ⚡ Hotel PMS <span className="ml-2 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black tracking-widest leading-none">v2.2</span>
+              ⚡ Hotel PMS <span className="ml-2 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black tracking-widest leading-none">v3.0</span>
             </Link>
           </div>
 
