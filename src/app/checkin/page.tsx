@@ -618,11 +618,11 @@ export default function CheckinPage() {
                       <button
                         key={room.id}
                         onClick={() => handleRoomClick(room)}
-                        className={`relative min-h-[120px] sm:min-h-0 sm:aspect-[16/14] w-full flex items-center justify-center rounded-xl border-2 transition-all active:scale-95 group overflow-hidden ${statusClass}`}
+                        className={`relative min-h-[150px] sm:min-h-0 sm:aspect-[16/14] w-full flex items-center justify-center rounded-xl border-2 transition-all active:scale-95 group overflow-hidden ${statusClass}`}
                       >
                         {/* Left Section (Details) */}
                         {(room.status === 'occupied' || room.status === 'reserved' || room.status === 'dirty') && (
-                          <div className="absolute top-0.5 left-0 bottom-[22px] sm:bottom-[18px] w-[30%] flex flex-col justify-between items-start text-[8.5px] sm:text-[9.5px] leading-none font-semibold opacity-90 pl-0.5 py-0.5">
+                          <div className="absolute top-0.5 left-0 bottom-[28px] sm:bottom-[18px] w-[30%] flex flex-col justify-between items-start text-[7.5px] sm:text-[9.5px] leading-none font-semibold opacity-90 pl-0.5 py-0.5">
                             {room.status === 'reserved' && room.booking_created_at ? (
                               <div className="flex flex-col items-start gap-[1px] w-full text-purple-600">
                                 <div className="text-purple-400 h-[10px] flex items-center">
