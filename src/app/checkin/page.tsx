@@ -601,7 +601,7 @@ export default function CheckinPage() {
           {sortedLocations.map(loc => {
             const locRooms = groupedRooms[loc].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
             return (
-              <div key={loc} className="bg-slate-50/50 p-4 sm:p-6 rounded-2xl border border-slate-100">
+              <div key={loc} className="bg-slate-50/50 p-2 sm:p-6 rounded-2xl border border-slate-100">
                 <h2 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2">
                   <span className="w-2 h-6 bg-slate-300 rounded-full"></span>
                   {loc}
