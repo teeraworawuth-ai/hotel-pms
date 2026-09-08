@@ -18,12 +18,30 @@ export const SimulatedTimeProvider = ({ children }: { children: React.ReactNode 
   const [simulatedTime, setSimulatedTimeState] = useState<Date | null>(null);
   const [timeOffsetMs, setTimeOffsetMs] = useState<number | null>(null);
 
+  useEffect(() => {
+    try {
+      const savedOffset = sessionStorage.getItem('simulatedTimeOffsetMs');
+      if (savedOffset) {
+        const offset = Number(savedOffset);
+        setTimeOffsetMs(offset);
+        setSimulatedTimeState(new Date(Date.now() + offset));
+      }
+    } catch (e) {}
+  }, []);
+
   const setSimulatedTime = (date: Date | null) => {
     setSimulatedTimeState(date);
     if (date) {
-      setTimeOffsetMs(date.getTime() - Date.now());
+      const offset = date.getTime() - Date.now();
+      setTimeOffsetMs(offset);
+      try {
+        sessionStorage.setItem('simulatedTimeOffsetMs', offset.toString());
+      } catch (e) {}
     } else {
       setTimeOffsetMs(null);
+      try {
+        sessionStorage.removeItem('simulatedTimeOffsetMs');
+      } catch (e) {}
     }
   };
 
