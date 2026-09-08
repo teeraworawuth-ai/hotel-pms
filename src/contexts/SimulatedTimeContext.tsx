@@ -20,7 +20,7 @@ export const SimulatedTimeProvider = ({ children }: { children: React.ReactNode 
 
   useEffect(() => {
     try {
-      const savedOffset = sessionStorage.getItem('simulatedTimeOffsetMs');
+      const savedOffset = localStorage.getItem('simulatedTimeOffsetMs');
       if (savedOffset) {
         const offset = Number(savedOffset);
         setTimeOffsetMs(offset);
@@ -35,12 +35,12 @@ export const SimulatedTimeProvider = ({ children }: { children: React.ReactNode 
       const offset = date.getTime() - Date.now();
       setTimeOffsetMs(offset);
       try {
-        sessionStorage.setItem('simulatedTimeOffsetMs', offset.toString());
+        localStorage.setItem('simulatedTimeOffsetMs', offset.toString());
       } catch (e) {}
     } else {
       setTimeOffsetMs(null);
       try {
-        sessionStorage.removeItem('simulatedTimeOffsetMs');
+        localStorage.removeItem('simulatedTimeOffsetMs');
       } catch (e) {}
     }
   };
