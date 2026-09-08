@@ -198,11 +198,6 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                   <p className="text-center text-slate-400 py-10">ไม่มีรายการค้างชำระ</p>
                 ) : (
                   <>
-                    
-                        </p>
-                      </div>
-                    )}
-                    
                     {displayTransactions.map(tx => {
                       const isVoid = tx.category.includes('Voided');
                       return (
