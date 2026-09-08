@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
 export async function POST(req: Request) {
@@ -34,6 +34,27 @@ export async function POST(req: Request) {
       // Find the room
       const room = rooms?.find(r => r.id === booking.room_id);
       if (!room) continue;
+
+      // DO NOT post charge if targetDate is the check-out day or later
+      if (booking.check_out_time) {
+        const checkoutDate = new Date(booking.check_out_time);
+        
+        // Extract local Thai date components for accurate comparison
+        const checkoutYear = checkoutDate.getFullYear();
+        const checkoutMonth = checkoutDate.getMonth();
+        const checkoutDay = checkoutDate.getDate();
+        
+        const targetYear = targetDate.getFullYear();
+        const targetMonth = targetDate.getMonth();
+        const targetDay = targetDate.getDate();
+        
+        // If the target date is >= the checkout date, skip charging for this night.
+        // (If a customer checks out on the 9th, they don't pay for the night of the 9th)
+        if (new Date(targetYear, targetMonth, targetDay).getTime() >= new Date(checkoutYear, checkoutMonth, checkoutDay).getTime()) {
+          console.log(`Skipping charge for booking ${booking.id}: Target date is >= Checkout date`);
+          continue; 
+        }
+      }
 
       const chargeAmount = room.actual_price || room.price_night || 0;
       if (chargeAmount <= 0) continue;
