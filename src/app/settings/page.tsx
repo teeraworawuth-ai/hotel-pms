@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import PosSettings from "@/app/components/PosSettings";
 import TuyaApiSettings from "@/app/components/TuyaApiSettings";
+import RatePlanSettings from "@/app/components/RatePlanSettings";
 
 type Room = {
   id: string;
@@ -22,7 +23,7 @@ type Room = {
 };
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'rooms' | 'pos' | 'tuya'>('rooms');
+  const [activeTab, setActiveTab] = useState<'rooms' | 'pos' | 'tuya' | 'rate-plans'>('rate-plans');
   
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
@@ -204,32 +205,40 @@ export default function SettingsPage() {
           <h1 className="text-3xl font-bold text-slate-800 tracking-tight">ตั้งค่าระบบ</h1>
           <p className="text-slate-500 mt-2">ตั้งค่าห้องพัก และจัดการปุ่มรายได้อื่นๆ (POS)</p>
         </div>
-        <div className="flex gap-2 bg-slate-100 p-1 rounded-xl">
+                <div className="flex gap-2 bg-slate-100 p-1 rounded-xl overflow-x-auto">
           <button 
             onClick={() => setActiveTab('rooms')} 
-            className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${activeTab === 'rooms' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+            className={`whitespace-nowrap px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${activeTab === 'rooms' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
           >
             ตั้งค่าห้องพัก
           </button>
           <button 
+            onClick={() => setActiveTab('rate-plans')} 
+            className={`whitespace-nowrap px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${activeTab === 'rate-plans' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+          >
+            แผนราคา (Rate Plans)
+          </button>
+          <button 
             onClick={() => setActiveTab('pos')} 
-            className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${activeTab === 'pos' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+            className={`whitespace-nowrap px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${activeTab === 'pos' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
           >
             จัดการปุ่ม POS
           </button>
           <button 
             onClick={() => setActiveTab('tuya')} 
-            className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${activeTab === 'tuya' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+            className={`whitespace-nowrap px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${activeTab === 'tuya' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
           >
             ตั้งค่าคีย์ Tuya
           </button>
         </div>
       </header>
 
-      {activeTab === 'pos' ? (
+            {activeTab === 'pos' ? (
         <PosSettings />
       ) : activeTab === 'tuya' ? (
         <TuyaApiSettings />
+      ) : activeTab === 'rate-plans' ? (
+        <RatePlanSettings />
       ) : (
         <>
           <div className="flex flex-col sm:flex-row gap-4 mb-4">
