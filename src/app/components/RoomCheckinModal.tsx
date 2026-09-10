@@ -7,6 +7,18 @@ import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
 import BillingModal from "./BillingModal";
 import { useShift } from "@/contexts/ShiftContext";
 
+
+export type RatePlan = {
+  id: string;
+  name: string;
+};
+export type DailyRate = {
+  date: string;
+  targetPrice: number;
+  actualPrice: number;
+  isOverride: boolean;
+};
+
 interface ModalProps {
   room: RoomStatus;
   dateOffset: number;
@@ -34,6 +46,13 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [extendHours, setExtendHours] = useState<number | ''>(1);
   const [extendNights, setExtendNights] = useState<number | ''>(1);
   const [activeTab, setActiveTab] = useState<'overnight' | 'short_stay'>('overnight');
+  
+  // Rate Plan State
+  const [ratePlans, setRatePlans] = useState<RatePlan[]>([]);
+  const [selectedRatePlanId, setSelectedRatePlanId] = useState<string>('');
+  const [dailyBreakdown, setDailyBreakdown] = useState<DailyRate[]>([]);
+  const [totalTargetPrice, setTotalTargetPrice] = useState(0);
+
   const [actualPrice, setActualPrice] = useState<number | ''>(room.actual_price || room.price_night || '');
   const [staffName, setStaffName] = useState<string>(room.staff_name || '');
   
