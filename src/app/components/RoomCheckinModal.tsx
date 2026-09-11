@@ -29,6 +29,8 @@ interface ModalProps {
 export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }: ModalProps) {
   const { getNow } = useSimulatedTime();
   const { activeShift } = useShift();
+  const displayDate = getNow();
+  displayDate.setDate(displayDate.getDate() + dateOffset);
   const [showBilling, setShowBilling] = useState(false);
   const [newBookingId, setNewBookingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -346,10 +348,6 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     }
     checkAndApplyLateFee();
   }, [room.status, room.check_out_time, room.booking_id, activeShift]);
-
-  const displayDate = getNow();
-  displayDate.setDate(displayDate.getDate() + dateOffset);
-
   // คำนวณ Time Band
   const now = getNow();
   const currentHour = now.getHours();
