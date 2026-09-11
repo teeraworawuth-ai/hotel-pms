@@ -53,6 +53,100 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [dailyBreakdown, setDailyBreakdown] = useState<DailyRate[]>([]);
   const [totalTargetPrice, setTotalTargetPrice] = useState(0);
 
+  // Fetch Rate Plans on Mount
+  useEffect(() => {
+    const fetchRatePlans = async () => {
+      const { data } = await supabase.from('rate_plans').select('id, name').order('created_at', { ascending: true });
+      if (data && data.length > 0) {
+        setRatePlans(data);
+        setSelectedRatePlanId(data[0].id);
+      }
+    };
+    fetchRatePlans();
+  }, []);
+
+  // Recalculate Daily Breakdown when Rate Plan or Dates change
+  useEffect(() => {
+    const generateBreakdown = async () => {
+      if (activeTab !== 'overnight' || !selectedRatePlanId) {
+        setDailyBreakdown([]);
+        return;
+      }
+      
+      const numNights = Number(nights) || 0;
+      if (numNights <= 0) return;
+
+      const startDate = new Date(displayDate);
+      if (dateOffset > 0) startDate.setHours(14, 0, 0, 0);
+
+      // Fetch Base Price
+      const { data: baseData } = await supabase
+        .from('rate_plan_room_types')
+        .select('base_price')
+        .eq('rate_plan_id', selectedRatePlanId)
+        .eq('room_type', room.room_type)
+        .single();
+        
+      const basePrice = baseData ? Number(baseData.base_price) : (room.price_night || 0);
+
+      const { data: calendarData } = await supabase
+        .from('rate_plan_calendar')
+        .select('target_date, price')
+        .eq('rate_plan_id', selectedRatePlanId)
+        .eq('room_type', room.room_type);
+
+      const calendarMap = new Map(calendarData?.map(c => [c.target_date, Number(c.price)]) || []);
+
+      const breakdown: DailyRate[] = [];
+      let total = 0;
+
+      for (let i = 0; i < numNights; i++) {
+        const currentDate = new Date(startDate);
+        currentDate.setDate(startDate.getDate() + i);
+        const dateStr = currentDate.toISOString().split('T')[0];
+        
+        const targetPrice = calendarMap.get(dateStr) ?? basePrice;
+        breakdown.push({
+          date: dateStr,
+          targetPrice,
+          actualPrice: targetPrice,
+          isOverride: false
+        });
+        total += targetPrice;
+      }
+
+      setDailyBreakdown(prev => {
+        if (prev.length === 0) return breakdown;
+        return breakdown.map(newDay => {
+          const existingDay = prev.find(p => p.date === newDay.date);
+          if (existingDay && existingDay.isOverride) {
+            return { ...newDay, actualPrice: existingDay.actualPrice, isOverride: true };
+          }
+          return newDay;
+        });
+      });
+      
+    };
+    generateBreakdown();
+  }, [nights, selectedRatePlanId, activeTab, displayDate, dateOffset, room.room_type, room.price_night]);
+
+  useEffect(() => {
+    if (activeTab === 'overnight') {
+      const totalAct = dailyBreakdown.reduce((sum, d) => sum + d.actualPrice, 0);
+      const totalTgt = dailyBreakdown.reduce((sum, d) => sum + d.targetPrice, 0);
+      setActualPrice(totalAct);
+      setTotalTargetPrice(totalTgt);
+    }
+  }, [dailyBreakdown, activeTab]);
+
+  const updateDailyActualPrice = (dateStr: string, newPrice: string) => {
+    const numPrice = newPrice === '' ? 0 : Number(newPrice);
+    setDailyBreakdown(prev => prev.map(d => 
+      d.date === dateStr ? { ...d, actualPrice: numPrice, isOverride: true } : d
+    ));
+  };
+
+
   const [actualPrice, setActualPrice] = useState<number | ''>(room.actual_price || room.price_night || '');
   const [staffName, setStaffName] = useState<string>(room.staff_name || '');
   
