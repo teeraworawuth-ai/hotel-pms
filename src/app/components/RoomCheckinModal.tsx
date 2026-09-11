@@ -15,7 +15,7 @@ export type RatePlan = {
 export type DailyRate = {
   date: string;
   targetPrice: number;
-  actualPrice: number;
+  actualPrice: number | '';
   isOverride: boolean;
 };
 
@@ -134,7 +134,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
   useEffect(() => {
     if (activeTab === 'overnight') {
-      const totalAct = dailyBreakdown.reduce((sum, d) => sum + d.actualPrice, 0);
+      const totalAct = dailyBreakdown.reduce((sum, d) => sum + (d.actualPrice === '' ? 0 : d.actualPrice), 0);
       const totalTgt = dailyBreakdown.reduce((sum, d) => sum + d.targetPrice, 0);
       setActualPrice(totalAct);
       setTotalTargetPrice(totalTgt);
@@ -142,9 +142,9 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   }, [dailyBreakdown, activeTab]);
 
   const updateDailyActualPrice = (dateStr: string, newPrice: string) => {
-    const numPrice = newPrice === '' ? 0 : Number(newPrice);
+    const val = newPrice === '' ? '' : Number(newPrice);
     setDailyBreakdown(prev => prev.map(d => 
-      d.date === dateStr ? { ...d, actualPrice: numPrice, isOverride: true } : d
+      d.date === dateStr ? { ...d, actualPrice: val, isOverride: true } : d
     ));
   };
 
@@ -414,15 +414,28 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     if (insertedBooking) {
         if (type === 'overnight') {
           if (dailyBreakdown.length > 0) {
-            const inserts = dailyBreakdown.map(d => ({
-              booking_id: insertedBooking.id,
-              target_date: d.date,
-              amount: d.actualPrice,
-              original_rate_plan_id: selectedRatePlanId,
-              is_manual_override: d.isOverride
-            }));
-            await supabase.from('booking_daily_rates').insert(inserts);
-          }
+              const inserts = dailyBreakdown.map(d => ({
+                booking_id: insertedBooking.id,
+                target_date: d.date,
+                amount: d.actualPrice === '' ? 0 : d.actualPrice,
+                original_rate_plan_id: selectedRatePlanId,
+                is_manual_override: d.isOverride
+              }));
+              await supabase.from('booking_daily_rates').insert(inserts);
+
+              const firstNightPrice = dailyBreakdown[0].actualPrice === '' ? 0 : dailyBreakdown[0].actualPrice;
+              if (firstNightPrice > 0) {
+                await supabase.from('ledger_transactions').insert({
+                  shift_id: activeShift.id,
+                  staff_name: activeShift.staff_name,
+                  room_id: room.id,
+                  booking_id: insertedBooking.id,
+                  transaction_type: 'revenue',
+                  category: 'room_charge',
+                  amount: Number(firstNightPrice)
+                });
+              }
+            }
         } else {
           if (actualPrice !== '') {
             await supabase.from('ledger_transactions').insert({
@@ -1114,7 +1127,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                                       <span className="absolute left-2 top-2 text-xs">{icon}</span>
                                       <input 
                                         type="number" min="0" 
-                                        value={day.actualPrice === 0 && day.targetPrice !== 0 && !day.isOverride ? '' : day.actualPrice} 
+                                        value={day.actualPrice} 
                                         onChange={(e) => updateDailyActualPrice(day.date, e.target.value)}
                                         className={`w-full border rounded-lg pl-7 pr-2 py-1.5 font-bold ${colorClass} ${bgClass} transition-colors`}
                                       />

@@ -65,7 +65,7 @@ export async function POST(req: Request) {
         .from('ledger_transactions')
         .select('id, created_at')
         .eq('booking_id', booking.id)
-        .eq('category', 'ค่าห้องพัก')
+        .in('category', ['ค่าห้องพัก', 'room_charge'])
         .gte('created_at', `${todayStr}T00:00:00.000Z`)
         .lte('created_at', `${todayStr}T23:59:59.999Z`);
 

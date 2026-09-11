@@ -166,8 +166,26 @@ export default function CheckinPage() {
     const activeBookingIds = allTargetBookings?.map(b => b.id) || [];
     const financialSummary: Record<string, { charges: number, payments: number, balance: number }> = {};
     
-    if (activeBookingIds.length > 0) {
-      const { data: ledgers, error: ledgerError } = await supabase
+    
+      // [NEW] Fetch daily rates for today to display the correct price on the dashboard
+      const dailyRatesMap: Record<string, number> = {};
+      const targetDateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth()+1).padStart(2,'0')}-${String(targetDate.getDate()).padStart(2,'0')}`;
+      if (activeBookingIds.length > 0) {
+        const { data: dailyRates } = await supabase
+          .from('booking_daily_rates')
+          .select('booking_id, amount')
+          .in('booking_id', activeBookingIds)
+          .eq('target_date', targetDateStr);
+          
+        if (dailyRates) {
+          dailyRates.forEach(dr => {
+            dailyRatesMap[dr.booking_id] = Number(dr.amount);
+          });
+        }
+      }
+
+      if (activeBookingIds.length > 0) {
+        const { data: ledgers, error: ledgerError } = await supabase
         .from('ledger_transactions')
         .select('booking_id, amount')
         .in('booking_id', activeBookingIds);
@@ -273,14 +291,17 @@ export default function CheckinPage() {
         
         // ถ้าสถานะเป็น occupied ให้ดึง booking_id จากการจองของวันนี้ที่เป็น checked_in
         if (finalRoom.status === 'occupied') {
-          const activeBooking = roomBookings.find(b => b.status === 'checked_in');
-          if (activeBooking) {
-            finalRoom.booking_id = activeBooking.id;
-            finalRoom.unpaid_balance = financialSummary[activeBooking.id]?.balance || 0;
-            finalRoom.total_charges = financialSummary[activeBooking.id]?.charges || 0;
-            finalRoom.total_payments = financialSummary[activeBooking.id]?.payments || 0;
+            const activeBooking = roomBookings.find(b => b.status === 'checked_in');
+            if (activeBooking) {
+              finalRoom.booking_id = activeBooking.id;
+              finalRoom.unpaid_balance = financialSummary[activeBooking.id]?.balance || 0;
+              finalRoom.total_charges = financialSummary[activeBooking.id]?.charges || 0;
+              finalRoom.total_payments = financialSummary[activeBooking.id]?.payments || 0;
+              if (dailyRatesMap[activeBooking.id] !== undefined) {
+                finalRoom.actual_price = dailyRatesMap[activeBooking.id];
+              }
+            }
           }
-        }
         
         return finalRoom;
       } else {
@@ -295,7 +316,7 @@ export default function CheckinPage() {
             guest_count: targetDayBooking.guest_count,
             guest_name: targetDayBooking.guest_name,
             guest_phone: targetDayBooking.guest_phone,
-            actual_price: targetDayBooking.actual_price,
+            actual_price: dailyRatesMap[targetDayBooking.id] !== undefined ? dailyRatesMap[targetDayBooking.id] : targetDayBooking.actual_price,
             staff_name: targetDayBooking.staff_name,
             booking_id: targetDayBooking.id,
             booking_created_at: targetDayBooking.created_at,
