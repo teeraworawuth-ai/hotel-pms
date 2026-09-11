@@ -967,14 +967,91 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                   </div>
                 )}
                 
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">ราคาห้อง (Price)</label>
-                  <input 
-                    type="number" min="0" 
-                    value={actualPrice} onChange={(e) => setActualPrice(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full border-slate-200 rounded-xl px-4 py-3 text-lg font-bold focus:ring-emerald-500 focus:border-emerald-500 bg-emerald-50 text-emerald-700"
-                  />
-                </div>
+                                  {activeTab === 'overnight' ? (
+                    <div className="col-span-2 border border-slate-200 rounded-xl overflow-hidden mt-2">
+                      <div className="bg-slate-50 p-3 border-b border-slate-200 flex justify-between items-center">
+                        <label className="text-sm font-bold text-slate-700">📌 แผนราคา (Rate Plan)</label>
+                        <select 
+                          value={selectedRatePlanId} 
+                          onChange={(e) => setSelectedRatePlanId(e.target.value)}
+                          className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-bold bg-white focus:ring-2 focus:ring-blue-500 w-1/2"
+                        >
+                          {ratePlans.length === 0 && <option value="">กำลังโหลด...</option>}
+                          {ratePlans.map(rp => (
+                            <option key={rp.id} value={rp.id}>⭐ {rp.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      
+                      <div className="p-0">
+                        <table className="w-full text-sm text-left">
+                          <thead className="bg-slate-100 text-slate-500 uppercase text-xs">
+                            <tr>
+                              <th className="px-4 py-2">วันที่ (Date)</th>
+                              <th className="px-4 py-2 text-right">เป้าหมาย</th>
+                              <th className="px-4 py-2 w-32">ราคาขายจริง</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dailyBreakdown.map(day => {
+                              const dt = new Date(day.date);
+                              const dateDisplay = dt.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' });
+                              
+                              let colorClass = "text-slate-800 focus:border-slate-400";
+                              let icon = "";
+                              let bgClass = "bg-white";
+                              
+                              if (day.isOverride) {
+                                if (day.actualPrice < day.targetPrice) {
+                                  colorClass = "text-red-600 focus:border-red-500 border-red-300";
+                                  bgClass = "bg-red-50";
+                                  icon = "🔻";
+                                } else if (day.actualPrice > day.targetPrice) {
+                                  colorClass = "text-emerald-600 focus:border-emerald-500 border-emerald-300";
+                                  bgClass = "bg-emerald-50";
+                                  icon = "🔺";
+                                }
+                              }
+                              
+                              return (
+                                <tr key={day.date} className="border-b border-slate-100 last:border-0">
+                                  <td className="px-4 py-3 font-medium text-slate-600">{dateDisplay}</td>
+                                  <td className="px-4 py-3 text-right text-slate-400">฿{day.targetPrice}</td>
+                                  <td className="px-3 py-2">
+                                    <div className="relative">
+                                      <span className="absolute left-2 top-2 text-xs">{icon}</span>
+                                      <input 
+                                        type="number" min="0" 
+                                        value={day.actualPrice === 0 && day.targetPrice !== 0 && !day.isOverride ? '' : day.actualPrice} 
+                                        onChange={(e) => updateDailyActualPrice(day.date, e.target.value)}
+                                        className={`w-full border rounded-lg pl-7 pr-2 py-1.5 font-bold ${colorClass} ${bgClass} transition-colors`}
+                                      />
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="bg-slate-50 p-3 border-t border-slate-200 flex justify-between items-center">
+                        <span className="text-sm font-bold text-slate-500">รวมที่ต้องเก็บจริง (Total)</span>
+                        <div className="text-right">
+                          <span className="text-xs text-slate-400 mr-2 line-through">เป้าหมาย: ฿{totalTargetPrice}</span>
+                          <span className="text-xl font-black text-slate-800">฿{actualPrice}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">ราคาห้อง (Price)</label>
+                      <input 
+                        type="number" min="0" 
+                        value={actualPrice} onChange={(e) => setActualPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                        className="w-full border-slate-200 rounded-xl px-4 py-3 text-lg font-bold focus:ring-emerald-500 focus:border-emerald-500 bg-emerald-50 text-emerald-700"
+                      />
+                    </div>
+                  )}
                 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">พนักงานที่รับเช็คอิน</label>
