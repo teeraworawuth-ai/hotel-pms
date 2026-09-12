@@ -30,6 +30,8 @@ export type RoomStatus = {
   unpaid_balance?: number;
   total_charges?: number;
   total_payments?: number;
+    c_all?: number;
+    c_today?: number;
   map_x?: number;
   map_y?: number;
   map_width?: number;
@@ -164,51 +166,64 @@ export default function CheckinPage() {
 
     // [NEW] Fetch ledger transactions for active bookings to calculate unpaid balances
     const activeBookingIds = allTargetBookings?.map(b => b.id) || [];
-    const financialSummary: Record<string, { charges: number, payments: number, balance: number }> = {};
-    
-    
-      // [NEW] Fetch daily rates for today to display the correct price on the dashboard
+    const financialSummary: Record<string, { charges: number, payments: number, balance: number, c_all: number, c_today: number }> = {};
+      
       const dailyRatesMap: Record<string, number> = {};
       const targetDateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth()+1).padStart(2,'0')}-${String(targetDate.getDate()).padStart(2,'0')}`;
+      
       if (activeBookingIds.length > 0) {
-        const { data: dailyRates } = await supabase
+        // 1. Fetch all daily rates to calculate C_all (total expected room charge)
+        const { data: allDailyRates } = await supabase
           .from('booking_daily_rates')
-          .select('booking_id, amount')
-          .in('booking_id', activeBookingIds)
-          .eq('target_date', targetDateStr);
+          .select('booking_id, amount, target_date')
+          .in('booking_id', activeBookingIds);
+
+        if (allDailyRates) {
+          allDailyRates.forEach(dr => {
+            if (!financialSummary[dr.booking_id]) {
+              financialSummary[dr.booking_id] = { charges: 0, payments: 0, balance: 0, c_all: 0, c_today: 0 };
+            }
+            financialSummary[dr.booking_id].c_all += Number(dr.amount);
+            
+            // Map today's rate for the dashboard
+            if (dr.target_date === targetDateStr) {
+              dailyRatesMap[dr.booking_id] = Number(dr.amount);
+            }
+          });
+        }
+
+        // 2. Fetch ledgers for C_today, P_all, and extra charges
+        const { data: ledgers, error: ledgerError } = await supabase
+          .from('ledger_transactions')
+          .select('booking_id, amount, category')
+          .in('booking_id', activeBookingIds);
           
-        if (dailyRates) {
-          dailyRates.forEach(dr => {
-            dailyRatesMap[dr.booking_id] = Number(dr.amount);
+        if (!ledgerError && ledgers) {
+          ledgers.forEach(tx => {
+            if (tx.booking_id) {
+              if (!financialSummary[tx.booking_id]) {
+                financialSummary[tx.booking_id] = { charges: 0, payments: 0, balance: 0, c_all: 0, c_today: 0 };
+              }
+              const amt = Number(tx.amount);
+              financialSummary[tx.booking_id].balance += amt;
+              
+              if (amt > 0) {
+                financialSummary[tx.booking_id].charges += amt;
+                financialSummary[tx.booking_id].c_today += amt; // C_today = all posted charges
+                
+                // If it's not a room charge, it's an extra fee, so add it to C_all
+                if (tx.category !== 'ค่าห้องพัก' && tx.category !== 'room_charge') {
+                  financialSummary[tx.booking_id].c_all += amt;
+                }
+              } else {
+                financialSummary[tx.booking_id].payments += Math.abs(amt);
+              }
+            }
           });
         }
       }
-
-      if (activeBookingIds.length > 0) {
-        const { data: ledgers, error: ledgerError } = await supabase
-        .from('ledger_transactions')
-        .select('booking_id, amount')
-        .in('booking_id', activeBookingIds);
-        
-      if (!ledgerError && ledgers) {
-        ledgers.forEach(tx => {
-          if (tx.booking_id) {
-            if (!financialSummary[tx.booking_id]) {
-              financialSummary[tx.booking_id] = { charges: 0, payments: 0, balance: 0 };
-            }
-            const amt = Number(tx.amount);
-            financialSummary[tx.booking_id].balance += amt;
-            if (amt > 0) {
-              financialSummary[tx.booking_id].charges += amt;
-            } else {
-              financialSummary[tx.booking_id].payments += Math.abs(amt);
-            }
-          }
-        });
-      }
-    }
-
-    const mergedRooms = allRooms.map(room => {
+  
+      const mergedRooms = allRooms.map(room => {
       const roomBookings = allTargetBookings?.filter(b => b.room_id === room.id) || [];
       
       // หาคิวสำหรับหน้าปัจจุบัน (Target Date) โดยใช้จุดตัดที่ 14:00 น. (เวลา Check-in มาตรฐาน)
@@ -286,6 +301,8 @@ export default function CheckinPage() {
             finalRoom.unpaid_balance = financialSummary[incomingBookingToday.id]?.balance || 0;
             finalRoom.total_charges = financialSummary[incomingBookingToday.id]?.charges || 0;
             finalRoom.total_payments = financialSummary[incomingBookingToday.id]?.payments || 0;
+                finalRoom.c_all = financialSummary[incomingBookingToday.id]?.c_all || 0;
+                finalRoom.c_today = financialSummary[incomingBookingToday.id]?.c_today || 0;
           }
         }
         
@@ -297,6 +314,8 @@ export default function CheckinPage() {
               finalRoom.unpaid_balance = financialSummary[activeBooking.id]?.balance || 0;
               finalRoom.total_charges = financialSummary[activeBooking.id]?.charges || 0;
               finalRoom.total_payments = financialSummary[activeBooking.id]?.payments || 0;
+              finalRoom.c_all = financialSummary[activeBooking.id]?.c_all || 0;
+              finalRoom.c_today = financialSummary[activeBooking.id]?.c_today || 0;
               if (dailyRatesMap[activeBooking.id] !== undefined) {
                 finalRoom.actual_price = dailyRatesMap[activeBooking.id];
               }
