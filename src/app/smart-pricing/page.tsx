@@ -98,6 +98,24 @@ export default function SmartPricingPage() {
       setDailySettings(mapping);
     }
 
+    // Fetch Room Types from system_settings
+    const { data: rtData } = await supabase.from('system_settings').select('value').eq('key', 'room_types').single();
+    let currentRoomTypes = ['เดี่ยว', 'คู่', 'บ้าน'];
+    if (rtData && rtData.value) {
+      currentRoomTypes = rtData.value;
+      setRoomTypes(currentRoomTypes);
+    }
+    const targetRoomType = previewRoomType || currentRoomTypes[0] || 'เดี่ยว';
+    if (!previewRoomType && currentRoomTypes.length > 0) setPreviewRoomType(currentRoomTypes[0]);
+
+    // Fetch Base Prices for the selected room type
+    const { data: bpData } = await supabase.from('rate_plan_room_types').select('rate_plan_id, base_price').eq('room_type', targetRoomType);
+    if (bpData) setBasePrices(bpData);
+
+    // Fetch Calendar Overrides
+    const { data: cpData } = await supabase.from('rate_plan_calendar').select('rate_plan_id, target_date, price').eq('room_type', targetRoomType).gte('target_date', startStr).lte('target_date', endStr);
+    if (cpData) setCalPrices(cpData);
+
     setLoading(false);
   };
 
@@ -183,9 +201,20 @@ export default function SmartPricingPage() {
           {/* Calendar Section */}
           <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-black text-slate-800">
-                {currentDate.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })}
-              </h2>
+              <div className="flex items-center gap-4">
+                <h2 className="text-xl font-black text-slate-800">
+                  {currentDate.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })}
+                </h2>
+                {roomTypes.length > 0 && (
+                  <select 
+                    value={previewRoomType} 
+                    onChange={e => setPreviewRoomType(e.target.value)}
+                    className="border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold bg-white text-blue-700"
+                  >
+                    {roomTypes.map(rt => <option key={rt} value={rt}>ดูราคา: {rt}</option>)}
+                  </select>
+                )}
+              </div>
               <div className="flex gap-2">
                 <button 
                   onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))}
@@ -235,9 +264,21 @@ export default function SmartPricingPage() {
                     
                     {setting ? (
                       <div className="mt-auto">
-                        <div className="text-[10px] font-bold text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded truncate mb-1">
-                          ⭐ {ratePlanName || 'Unknown'}
-                        </div>
+                        <div className="text-[10px] font-bold text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded truncate mb-0.5">
+                            ⭐ {ratePlanName || 'Unknown'}
+                          </div>
+                          {(() => {
+                            const base = basePrices.find(b => b.rate_plan_id === setting.rate_plan_id)?.base_price;
+                            const cal = calPrices.find(c => c.rate_plan_id === setting.rate_plan_id && c.target_date === dateStr)?.price;
+                            const price = cal ?? base;
+                            return price !== undefined ? (
+                              <div className="text-xs font-black text-blue-700 mb-1">
+                                ฿{price}
+                              </div>
+                            ) : (
+                              <div className="text-[10px] font-bold text-slate-400 mb-1">ไม่มีราคา</div>
+                            );
+                          })()}
                         <div className="flex gap-1">
                           {setting.enable_time_discount && <span className="text-[10px] bg-purple-100 text-purple-700 px-1 rounded font-bold" title="Late Night Sale">🌙</span>}
                           {setting.enable_occupancy_sale && <span className="text-[10px] bg-red-100 text-red-700 px-1 rounded font-bold" title="Clearance Sale">🔥</span>}
