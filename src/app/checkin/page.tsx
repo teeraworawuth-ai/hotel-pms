@@ -104,7 +104,7 @@ export default function CheckinPage() {
   // 0 = Today, -1 = Yesterday, 1 = Tomorrow
   const [dateOffset, setDateOffset] = useState<number>(0);
   const [smartPricesMap, setSmartPricesMap] = useState<Record<string, number>>({});
-  const [roomTypeIconsMap, setRoomTypeIconsMap] = useState<Record<string, string>>({});
+  const [roomTypeIconsMap, setRoomTypeIconsMap] = useState<Record<string, string[]>>({});
 
   const fetchData = async (silentRefresh = false) => {
     if (!silentRefresh) setLoading(true);
@@ -194,7 +194,11 @@ export default function CheckinPage() {
       // --- [NEW] Fetch Room Type Icons ---
       const { data: iconData } = await supabase.from('system_settings').select('value').eq('key', 'room_type_icons').single();
       if (iconData && iconData.value) {
-        setRoomTypeIconsMap(iconData.value);
+        const parsedIcons = typeof iconData.value === 'object' ? iconData.value : {};
+        for (const k in parsedIcons) {
+          if (typeof parsedIcons[k] === 'string') parsedIcons[k] = [parsedIcons[k]];
+        }
+        setRoomTypeIconsMap(parsedIcons);
       } else {
         setRoomTypeIconsMap({});
       }
@@ -797,8 +801,8 @@ export default function CheckinPage() {
                               <div className={`absolute top-0 text-[15px] sm:text-xl top-[1px] sm:top-1 font-black ${roomNoColor} transition-all leading-none flex items-center justify-center gap-0 mix-blend-multiply`}>
                                 <span>{room.room_no}</span>
                                 <div className="flex items-center text-[13px] leading-none -space-x-1 -ml-0.5">
-                                  {customIcon ? (
-                                      <span className="opacity-90 ml-1 drop-shadow-sm text-[11px] sm:text-[13px]">{customIcon}</span>
+                                  {(customIcon && customIcon.length > 0) ? (
+                                      <span className="opacity-90 ml-1 drop-shadow-sm text-[11px] sm:text-[13px]">{customIcon.join("")}</span>
                                     ) : isDouble ? (
                                     <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-[13px] h-[13px] sm:w-[17px] sm:h-[17px] opacity-90 drop-shadow-sm">
                                       <rect x="2" y="3" width="5" height="11" rx="1" fill="#cbd5e1"/>

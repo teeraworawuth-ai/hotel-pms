@@ -34,7 +34,11 @@ export default function SettingsPage() {
   const [savedRoomTypes, setSavedRoomTypes] = useState<string[]>(['เดี่ยว', 'คู่', 'บ้าน']);
   const [roomTypeInput, setRoomTypeInput] = useState("");
   const [showRoomTypeDropdown, setShowRoomTypeDropdown] = useState(false);
-  const [roomTypeIcons, setRoomTypeIcons] = useState<Record<string, string>>({});
+  const [roomTypeIcons, setRoomTypeIcons] = useState<Record<string, string[]>>({});
+  const [savedRoomOptions, setSavedRoomOptions] = useState<string[]>([]);
+  const [roomOptionInput, setRoomOptionInput] = useState("");
+  const [showRoomOptionDropdown, setShowRoomOptionDropdown] = useState(false);
+  const [roomOptionsMap, setRoomOptionsMap] = useState<Record<string, string>>({});
   const availableIcons = ["🛏️", "👑", "🌟", "🏠", "🏢", "🌊", "🌴", "💕", "🔑", "🛁", "✨", "💎", "🌙"];
 
   // Form State
@@ -118,6 +122,7 @@ export default function SettingsPage() {
     if (room) {
       setEditingRoom(room);
         setRoomTypeInput(room.room_type);
+      setRoomOptionInput(roomOptionsMap[room.id] || "");
       setFormData({
         room_no: room.room_no,
         floor: room.floor,
@@ -145,6 +150,7 @@ export default function SettingsPage() {
         tuya_ip: "",
         has_balcony: false,
       });
+      setRoomOptionInput("");
     }
     setIsModalOpen(true);
   }
@@ -194,6 +200,13 @@ export default function SettingsPage() {
     }
 
     await supabase.from("system_settings").upsert({ key: "room_type_icons", value: roomTypeIcons });
+    
+    const newMap = { ...roomOptionsMap };
+    if (savedRoomId) {
+      if (roomOptionInput) newMap[savedRoomId] = roomOptionInput;
+      else delete newMap[savedRoomId];
+      await supabase.from("system_settings").upsert({ key: "room_options_map", value: newMap });
+    }
       closeModal();
       fetchRooms();
     }
@@ -309,8 +322,8 @@ export default function SettingsPage() {
             <div key={room.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:shadow-md transition-shadow">
               <div className="flex items-center gap-4 w-full sm:w-auto">
                 <div className="flex flex-col items-center justify-center min-w-[5rem]">
-                  <div className="bg-slate-100 text-slate-800 text-2xl font-black py-2.5 px-4 rounded-xl w-full text-center shadow-inner border border-slate-200/60">
-                    {room.room_no}
+                  <div className="bg-slate-100 text-slate-800 text-2xl font-black py-2.5 px-4 rounded-xl w-full text-center shadow-inner border border-slate-200/60 flex items-center justify-center gap-1">
+                    {room.room_no} {roomTypeIcons[room.room_type]?.join(' ')} {roomOptionsMap[room.id] && <span className="text-sm font-normal ml-1 text-slate-500">({roomOptionsMap[room.id]})</span>}
                   </div>
                   <div className="mt-1.5 text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full tracking-wide">
                     {room.room_type || "ไม่ระบุ"}
@@ -416,7 +429,8 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 
-                <div className="mb-6 relative">
+                <div className="mb-6 grid grid-cols-2 gap-4">
+<div className="relative">
                   <label className="block text-xs font-semibold text-slate-500 mb-1">ประเภทห้อง (Room Type) *</label>
                   <div className="relative">
                     <input 
@@ -482,21 +496,83 @@ export default function SettingsPage() {
                         )}
                       </div>
                     )}
+                  
+</div>
                   </div>
-                </div>
+                    
+                    <div className="relative">
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">ออปชัน (Option)</label>
+                      <input 
+                        type="text" 
+                        value={roomOptionInput} 
+                        onChange={e => {
+                          setRoomOptionInput(e.target.value);
+                          setShowRoomOptionDropdown(true);
+                        }}
+                        onFocus={() => setShowRoomOptionDropdown(true)}
+                        onBlur={() => setTimeout(() => setShowRoomOptionDropdown(false), 200)}
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        placeholder="เตียงเสริม, วิวสวน..."
+                      />
+                      {showRoomOptionDropdown && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                          {savedRoomOptions.filter(rt => rt.toLowerCase().includes(roomOptionInput.toLowerCase())).map((rt, idx) => (
+                            <div key={idx} className="flex justify-between items-center px-4 py-2 hover:bg-slate-50 cursor-pointer">
+                              <span 
+                                className="flex-1"
+                                onClick={() => {
+                                  setRoomOptionInput(rt);
+                                  setShowRoomOptionDropdown(false);
+                                }}
+                              >
+                                {rt}
+                              </span>
+                              <button 
+                                type="button"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  const newList = savedRoomOptions.filter(t => t !== rt);
+                                  setSavedRoomOptions(newList);
+                                  await supabase.from('system_settings').upsert({ key: 'room_options', value: newList });
+                                }}
+                                className="text-red-400 hover:text-red-600 p-1 rounded-md hover:bg-red-50"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          ))}
+                          {roomOptionInput && !savedRoomOptions.includes(roomOptionInput) && (
+                            <div 
+                              className="px-4 py-2 text-blue-600 font-semibold hover:bg-blue-50 cursor-pointer"
+                              onClick={async () => {
+                                const newList = [...savedRoomOptions, roomOptionInput];
+                                setSavedRoomOptions(newList);
+                                await supabase.from('system_settings').upsert({ key: 'room_options', value: newList });
+                                setRoomOptionInput(roomOptionInput);
+                                setShowRoomOptionDropdown(false);
+                              }}
+                            >
+                              + เพิ่ม "{roomOptionInput}" เป็นออปชันใหม่
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                 {formData.room_type && (
                   <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg">
                     <label className="flex items-center gap-2 cursor-pointer mb-3">
                       <input 
                         type="checkbox" 
-                        checked={!!roomTypeIcons[formData.room_type]}
+                        checked={roomTypeIcons[formData.room_type]?.length > 0}
                         onChange={(e) => {
                            const checked = e.target.checked;
                            const newIcons = { ...roomTypeIcons };
                            if (!checked) {
                              delete newIcons[formData.room_type];
                            } else {
-                             newIcons[formData.room_type] = availableIcons[0]; // default
+                             newIcons[formData.room_type] = [availableIcons[0]]; // default
                            }
                            setRoomTypeIcons(newIcons);
                         }}
@@ -505,14 +581,24 @@ export default function SettingsPage() {
                       <span className="text-sm font-semibold text-slate-700 cursor-pointer">ไอคอน (ใช้ร่วมกันสำหรับประเภท {formData.room_type} ทั้งหมด)</span>
                     </label>
                     
-                    {roomTypeIcons[formData.room_type] && (
+                    {(roomTypeIcons[formData.room_type]?.length > 0) && (
                        <div className="flex flex-wrap gap-2 mt-2">
                          {availableIcons.map(icon => (
                            <button 
                              type="button" 
                              key={icon}
-                             onClick={() => setRoomTypeIcons({...roomTypeIcons, [formData.room_type]: icon})}
-                             className={`w-9 h-9 rounded-md flex items-center justify-center text-xl transition-all ${roomTypeIcons[formData.room_type] === icon ? 'bg-blue-100 border-2 border-blue-500 scale-110 shadow-sm' : 'bg-white border border-slate-200 hover:bg-slate-100'}`}
+                             onClick={() => {
+                               const current = roomTypeIcons[formData.room_type] || [];
+                               let next = [...current];
+                               if (next.includes(icon)) {
+                                 next = next.filter(i => i !== icon);
+                               } else {
+                                 if (next.length >= 2) next.shift(); // keep max 2
+                                 next.push(icon);
+                               }
+                               setRoomTypeIcons({...roomTypeIcons, [formData.room_type]: next});
+                             }}
+                             className={`w-9 h-9 rounded-md flex items-center justify-center text-xl transition-all ${(roomTypeIcons[formData.room_type] || []).includes(icon) ? 'bg-blue-100 border-2 border-blue-500 scale-110 shadow-sm' : 'bg-white border border-slate-200 hover:bg-slate-100'}`}
                            >
                              {icon}
                            </button>
