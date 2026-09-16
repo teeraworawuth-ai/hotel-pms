@@ -216,14 +216,14 @@ export default function SmartPricingPage() {
                   <div 
                     key={d} 
                     onClick={() => toggleDateSelection(dateStr)}
-                    className={\`h-24 border-2 rounded-xl p-2 cursor-pointer transition-all flex flex-col \${
+                    className={`h-24 border-2 rounded-xl p-2 cursor-pointer transition-all flex flex-col ${
                       isSelected 
                         ? 'border-blue-500 bg-blue-50 shadow-sm' 
                         : 'border-slate-100 hover:border-slate-300 bg-white'
-                    }\`}
+                    }`}
                   >
                     <div className="flex justify-between items-start">
-                      <span className={\`font-black \${isSelected ? 'text-blue-700' : 'text-slate-700'}\`}>{d}</span>
+                      <span className={`font-black ${isSelected ? 'text-blue-700' : 'text-slate-700'}`}>{d}</span>
                       {isSelected && <span className="text-blue-500">✓</span>}
                     </div>
                     

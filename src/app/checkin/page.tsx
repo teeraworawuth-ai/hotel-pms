@@ -339,7 +339,7 @@ export default function CheckinPage() {
             staff_name: targetDayBooking.staff_name,
             booking_id: targetDayBooking.id,
             booking_created_at: targetDayBooking.created_at,
-            unpaid_balance: unpaidBalances[targetDayBooking.id] || 0
+            unpaid_balance: financialSummary[targetDayBooking.id] || 0
           };
         } else {
           finalRoom = {
