@@ -17,6 +17,7 @@ export type DailyRate = {
   targetPrice: number;
   actualPrice: number | '';
   isOverride: boolean;
+  ratePlanName?: string;
 };
 
 interface ModalProps {
@@ -55,82 +56,147 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [dailyBreakdown, setDailyBreakdown] = useState<DailyRate[]>([]);
   const [totalTargetPrice, setTotalTargetPrice] = useState(0);
 
-  // Fetch Rate Plans on Mount
-  useEffect(() => {
-    const fetchRatePlans = async () => {
-      const { data } = await supabase.from('rate_plans').select('id, name').order('created_at', { ascending: true });
-      if (data && data.length > 0) {
-        setRatePlans(data);
-        setSelectedRatePlanId(data[0].id);
-      }
-    };
-    fetchRatePlans();
-  }, []);
+  // Fetch Base Data on Mount
+    const [yieldRules, setYieldRules] = useState<any>(null);
+    const [availablePercent, setAvailablePercent] = useState(100);
 
-  // Recalculate Daily Breakdown when Rate Plan or Dates change
-  useEffect(() => {
-    const generateBreakdown = async () => {
-      if (activeTab !== 'overnight' || !selectedRatePlanId) {
-        setDailyBreakdown([]);
-        return;
-      }
-      
-      const numNights = Number(nights) || 0;
-      if (numNights <= 0) return;
+    useEffect(() => {
+      const fetchBaseData = async () => {
+        // 1. Fetch Rate Plans
+        const { data: plans } = await supabase.from('rate_plans').select('id, name').order('created_at', { ascending: true });
+        if (plans) setRatePlans(plans);
 
-      const startDate = new Date(displayDate);
-      if (dateOffset > 0) startDate.setHours(14, 0, 0, 0);
+        // 2. Fetch Global Yield Rules
+        const { data: rulesData } = await supabase.from('system_settings').select('value').eq('key', 'yield_management_rules').single();
+        if (rulesData && rulesData.value) setYieldRules(rulesData.value);
 
-      // Fetch Base Price
-      const { data: baseData } = await supabase
-        .from('rate_plan_room_types')
-        .select('base_price')
-        .eq('rate_plan_id', selectedRatePlanId)
-        .eq('room_type', room.room_type)
-        .single();
+        // 3. Fetch Occupancy
+        const { data: rooms } = await supabase.from('rooms').select('status');
+        if (rooms && rooms.length > 0) {
+          const available = rooms.filter(r => r.status === 'available' || r.status === 'dirty').length;
+          setAvailablePercent((available / rooms.length) * 100);
+        }
+      };
+      fetchBaseData();
+    }, []);
+
+    // Recalculate Daily Breakdown when Dates change
+    useEffect(() => {
+      const generateBreakdown = async () => {
+        if (activeTab !== 'overnight') {
+          setDailyBreakdown([]);
+          return;
+        }
         
-      const basePrice = baseData ? Number(baseData.base_price) : (room.price_night || 0);
+        const numNights = Number(nights) || 0;
+        if (numNights <= 0) return;
 
-      const { data: calendarData } = await supabase
-        .from('rate_plan_calendar')
-        .select('target_date, price')
-        .eq('rate_plan_id', selectedRatePlanId)
-        .eq('room_type', room.room_type);
+        const startDate = new Date(displayDate);
+        if (dateOffset > 0) startDate.setHours(14, 0, 0, 0);
 
-      const calendarMap = new Map(calendarData?.map(c => [c.target_date, Number(c.price)]) || []);
+        // 1. Fetch Daily Settings for the duration
+        const targetDates: string[] = [];
+        for (let i = 0; i < numNights; i++) {
+          const d = new Date(startDate);
+          d.setDate(startDate.getDate() + i);
+          targetDates.push(d.toLocaleDateString('en-CA'));
+        }
 
-      const breakdown: DailyRate[] = [];
-      let total = 0;
+        const { data: dailySettings } = await supabase
+          .from('daily_pricing_settings')
+          .select('*')
+          .in('target_date', targetDates);
 
-      for (let i = 0; i < numNights; i++) {
-        const currentDate = new Date(startDate);
-        currentDate.setDate(startDate.getDate() + i);
-        const dateStr = currentDate.toISOString().split('T')[0];
-        
-        const targetPrice = calendarMap.get(dateStr) ?? basePrice;
-        breakdown.push({
-          date: dateStr,
-          targetPrice,
-          actualPrice: targetPrice,
-          isOverride: false
-        });
-        total += targetPrice;
-      }
+        // 2. Fallback Rate Plan (if missing)
+        let fallbackPlanId = ratePlans.length > 0 ? ratePlans[0].id : null;
 
-      setDailyBreakdown(prev => {
-        if (prev.length === 0) return breakdown;
-        return breakdown.map(newDay => {
-          const existingDay = prev.find(p => p.date === newDay.date);
-          if (existingDay && existingDay.isOverride) {
-            return { ...newDay, actualPrice: existingDay.actualPrice, isOverride: true };
+        // 3. Fetch Base Prices and Calendar Prices for all relevant rate plans
+        const relevantPlanIds = new Set(dailySettings?.map(s => s.rate_plan_id) || []);
+        if (fallbackPlanId) relevantPlanIds.add(fallbackPlanId);
+
+        const { data: baseData } = await supabase
+          .from('rate_plan_room_types')
+          .select('rate_plan_id, base_price')
+          .eq('room_type', room.room_type)
+          .in('rate_plan_id', Array.from(relevantPlanIds));
+
+        const { data: calendarData } = await supabase
+          .from('rate_plan_calendar')
+          .select('rate_plan_id, target_date, price')
+          .eq('room_type', room.room_type)
+          .in('rate_plan_id', Array.from(relevantPlanIds))
+          .in('target_date', targetDates);
+
+        const breakdown: DailyRate[] = [];
+        let total = 0;
+
+        for (let i = 0; i < numNights; i++) {
+          const currentDate = new Date(startDate);
+          currentDate.setDate(startDate.getDate() + i);
+          const dateStr = targetDates[i];
+          
+          const setting = dailySettings?.find(s => s.target_date === dateStr);
+          const activePlanId = setting ? setting.rate_plan_id : fallbackPlanId;
+          const activePlanName = ratePlans.find(rp => rp.id === activePlanId)?.name || 'Default';
+
+          let targetPrice = room.price_night || 0;
+          
+          if (activePlanId) {
+            const calPrice = calendarData?.find(c => c.rate_plan_id === activePlanId && c.target_date === dateStr);
+            if (calPrice) {
+              targetPrice = Number(calPrice.price);
+            } else {
+              const baseP = baseData?.find(b => b.rate_plan_id === activePlanId);
+              if (baseP) targetPrice = Number(baseP.base_price);
+            }
           }
-          return newDay;
-        });
-      });
+
+          let finalPrice = targetPrice;
+          let rulesApplied = [];
+
+          // APPLY SMART RULES
+          if (setting && yieldRules) {
+            // 1. Occupancy Sale
+            if (setting.enable_occupancy_sale && availablePercent >= yieldRules.sale_threshold_percent) {
+              const discount = targetPrice * (yieldRules.sale_adjustment_percent / 100);
+              finalPrice -= discount;
+              rulesApplied.push('🔥');
+            }
+            // 2. Occupancy Surge
+            if (setting.enable_occupancy_surge && availablePercent <= yieldRules.surge_threshold_percent) {
+              const surge = targetPrice * (yieldRules.surge_adjustment_percent / 100);
+              finalPrice += surge;
+              rulesApplied.push('📈');
+            }
+            // 3. Time Discount
+            if (setting.enable_time_discount) {
+              const now = new Date();
+              const [h, m] = yieldRules.time_discount_start_time.split(':').map(Number);
+              if (now.getHours() > h || (now.getHours() === h && now.getMinutes() >= m)) {
+                const discount = targetPrice * (yieldRules.time_discount_percent / 100);
+                finalPrice -= discount;
+                rulesApplied.push('🌙');
+              }
+            }
+          }
+
+          finalPrice = Math.round(finalPrice);
+          total += finalPrice;
+
+          breakdown.push({
+            date: dateStr,
+            ratePlanName: activePlanName + (rulesApplied.length > 0 ? ` ${rulesApplied.join('')}` : ''),
+            targetPrice: finalPrice,
+            actualPrice: finalPrice,
+            isOverride: false
+          });
+        }
+        
+        setDailyBreakdown(breakdown);
+      };
       
-    };
-    generateBreakdown();
-  }, [nights, selectedRatePlanId, activeTab, displayDate, dateOffset, room.room_type, room.price_night]);
+      generateBreakdown();
+    }, [activeTab, nights, displayDate, dateOffset, room, yieldRules, ratePlans, availablePercent]);
 
   useEffect(() => {
     if (activeTab === 'overnight') {
@@ -1074,19 +1140,9 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                 
                                   {activeTab === 'overnight' ? (
                     <div className="col-span-2 border border-slate-200 rounded-xl overflow-hidden mt-2">
-                      <div className="bg-slate-50 p-3 border-b border-slate-200 flex justify-between items-center">
-                        <label className="text-sm font-bold text-slate-700">📌 แผนราคา (Rate Plan)</label>
-                        <select 
-                          value={selectedRatePlanId} 
-                          onChange={(e) => setSelectedRatePlanId(e.target.value)}
-                          className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-bold bg-white focus:ring-2 focus:ring-blue-500 w-1/2"
-                        >
-                          {ratePlans.length === 0 && <option value="">กำลังโหลด...</option>}
-                          {ratePlans.map(rp => (
-                            <option key={rp.id} value={rp.id}>⭐ {rp.name}</option>
-                          ))}
-                        </select>
-                      </div>
+                      <div className="bg-slate-50 p-3 border-b border-slate-200">
+                          <label className="text-sm font-bold text-slate-700">📌 สรุปยอดค่าห้องพัก (อัตโนมัติตามปฏิทิน)</label>
+                        </div>
                       
                       <div className="p-0">
                         <table className="w-full text-sm text-left">
