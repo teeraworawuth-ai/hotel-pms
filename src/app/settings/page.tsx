@@ -31,6 +31,9 @@ export default function SettingsPage() {
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [locations, setLocations] = useState<string[]>([]);
   const [activeLocation, setActiveLocation] = useState<string>("ทั้งหมด");
+  const [savedRoomTypes, setSavedRoomTypes] = useState<string[]>(['เดี่ยว', 'คู่', 'บ้าน']);
+  const [roomTypeInput, setRoomTypeInput] = useState("");
+  const [showRoomTypeDropdown, setShowRoomTypeDropdown] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -112,6 +115,7 @@ export default function SettingsPage() {
   function openModal(room: Room | null = null) {
     if (room) {
       setEditingRoom(room);
+        setRoomTypeInput(room.room_type);
       setFormData({
         room_no: room.room_no,
         floor: room.floor,
@@ -126,6 +130,7 @@ export default function SettingsPage() {
       });
     } else {
       setEditingRoom(null);
+        setRoomTypeInput('เดี่ยว');
       setFormData({
         room_no: "",
         floor: "1",
@@ -408,83 +413,76 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 
-                {(() => {
-                  const baseType = formData.room_type.includes('บ้าน') ? 'บ้าน' : formData.room_type.includes('คู่') ? 'คู่' : 'เดี่ยว';
-                  const addon = formData.room_type.includes('ระเบียงทะเล') ? 'ระเบียงทะเล' : formData.room_type.includes('ระเบียง') ? 'ระเบียง' : formData.room_type.includes('หน้าต่าง') ? 'หน้าต่าง' : 'none';
-                  const isSpecial = formData.room_type.includes('พิเศษ');
-
-                  const updateRoomType = (newBase: string, newAddon: string, newSpecial: boolean) => {
-                    let rt = newBase;
-                    if (newBase !== 'บ้าน' && newAddon !== 'none') rt += `,${newAddon}`;
-                    if (newSpecial) rt += `,พิเศษ`;
-                    setFormData({...formData, room_type: rt});
-                  };
-
-                  return (
-                    <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-4">
-                      <div className={`grid ${baseType === 'บ้าน' ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-500 mb-1">ประเภทห้อง (Base) *</label>
-                          <select
-                            required
-                            value={baseType} onChange={e => updateRoomType(e.target.value, addon, isSpecial)}
-                            className="w-full p-2.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none"
-                          >
-                            <option value="เดี่ยว">เดี่ยว</option>
-                            <option value="คู่">คู่</option>
-                            <option value="บ้าน">บ้าน</option>
-                          </select>
-                        </div>
-                        {baseType !== 'บ้าน' && (
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-500 mb-1">ตัวเลือกเสริม (Add-on)</label>
-                            <select
-                              value={addon} onChange={e => updateRoomType(baseType, e.target.value, isSpecial)}
-                              className="w-full p-2.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none"
+                <div className="mb-6 relative">
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">ประเภทห้อง (Room Type) *</label>
+                  <div className="relative">
+                    <input 
+                      type="text" required
+                      value={roomTypeInput} 
+                      onChange={e => {
+                        setRoomTypeInput(e.target.value);
+                        setFormData({...formData, room_type: e.target.value});
+                        setShowRoomTypeDropdown(true);
+                      }}
+                      onFocus={() => setShowRoomTypeDropdown(true)}
+                      onBlur={() => setTimeout(() => setShowRoomTypeDropdown(false), 200)}
+                      className="w-full p-2.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                      placeholder="พิมพ์ประเภทห้อง หรือเลือกจากรายการ"
+                    />
+                    {showRoomTypeDropdown && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                        {savedRoomTypes.filter(rt => rt.toLowerCase().includes(roomTypeInput.toLowerCase())).map((rt, idx) => (
+                          <div key={idx} className="flex justify-between items-center px-4 py-2 hover:bg-slate-50 cursor-pointer">
+                            <span 
+                              className="flex-1"
+                              onClick={() => {
+                                setRoomTypeInput(rt);
+                                setFormData({...formData, room_type: rt});
+                                setShowRoomTypeDropdown(false);
+                              }}
                             >
-                              <option value="none">ไม่มี</option>
-                              <option value="หน้าต่าง">มีหน้าต่าง (🪟)</option>
-                              <option value="ระเบียง">มีระเบียง</option>
-                              <option value="ระเบียงทะเล">ระเบียงทะเล (⛱️)</option>
-                            </select>
+                              {rt}
+                            </span>
+                            <button 
+                              type="button"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                const { data: usedRooms } = await supabase.from('rooms').select('id').eq('room_type', rt);
+                                if (usedRooms && usedRooms.length > 0) {
+                                  if (usedRooms.length === 1) alert("ไม่สามารถลบได้! โปรดลบห้องนี้ หรือเปลี่ยนประเภทห้องก่อน");
+                                  else alert("ไม่สามารถลบได้! มีการใช้ประเภทห้องนี้อยู่ โปรดลบหรือเปลี่ยนประเภทของห้องที่เกี่ยวข้องก่อน");
+                                  return;
+                                }
+                                const newList = savedRoomTypes.filter(t => t !== rt);
+                                setSavedRoomTypes(newList);
+                                await supabase.from('system_settings').upsert({ key: 'room_types', value: newList });
+                              }}
+                              className="text-red-400 hover:text-red-600 p-1 rounded-md hover:bg-red-50"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        ))}
+                        {roomTypeInput && !savedRoomTypes.includes(roomTypeInput) && (
+                          <div 
+                            className="px-4 py-2 text-blue-600 font-semibold hover:bg-blue-50 cursor-pointer"
+                            onClick={async () => {
+                              const newList = [...savedRoomTypes, roomTypeInput];
+                              setSavedRoomTypes(newList);
+                              await supabase.from('system_settings').upsert({ key: 'room_types', value: newList });
+                              setFormData({...formData, room_type: roomTypeInput});
+                              setShowRoomTypeDropdown(false);
+                            }}
+                          >
+                            + เพิ่ม "{roomTypeInput}" เป็นประเภทใหม่
                           </div>
                         )}
                       </div>
-
-                      <div className="flex items-center gap-2 mt-2 pt-4 border-t border-slate-200/60">
-                        <input 
-                          type="checkbox" 
-                          id="is_special"
-                          checked={isSpecial}
-                          onChange={e => updateRoomType(baseType, addon, e.target.checked)}
-                          className="w-4 h-4 text-rose-600 bg-white border-slate-300 rounded focus:ring-rose-500 cursor-pointer"
-                        />
-                        <label htmlFor="is_special" className="text-sm font-semibold text-rose-600 cursor-pointer select-none">
-                          ตั้งราคาเฉพาะเจาะจง (ล็อกราคาแยกต่างหาก ไม่ใช้ราคาอิงกลุ่ม)
-                        </label>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                <div className="grid grid-cols-2 gap-4 mb-6">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">ราคาค้างคืน (บาท)</label>
-                    <input 
-                      type="number"
-                      value={formData.price_night} onChange={e => setFormData({...formData, price_night: Number(e.target.value)})}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">ราคาชั่วคราว (บาท)</label>
-                    <input 
-                      type="number"
-                      value={formData.price_temp} onChange={e => setFormData({...formData, price_temp: Number(e.target.value)})}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                    />
+                    )}
                   </div>
                 </div>
+
+                
 
                 <div className="pt-4 border-t border-slate-100">
                   <h3 className="text-sm font-semibold text-slate-600 mb-4 flex items-center gap-2">
