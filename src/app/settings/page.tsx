@@ -34,6 +34,8 @@ export default function SettingsPage() {
   const [savedRoomTypes, setSavedRoomTypes] = useState<string[]>(['เดี่ยว', 'คู่', 'บ้าน']);
   const [roomTypeInput, setRoomTypeInput] = useState("");
   const [showRoomTypeDropdown, setShowRoomTypeDropdown] = useState(false);
+  const [roomTypeIcons, setRoomTypeIcons] = useState<Record<string, string>>({});
+  const availableIcons = ["🛏️", "👑", "🌟", "🏠", "🏢", "🌊", "🌴", "💕", "🔑", "🛁", "✨", "💎", "🌙"];
 
   // Form State
   const [formData, setFormData] = useState({
@@ -191,9 +193,10 @@ export default function SettingsPage() {
       console.error("Tuya sync error", err);
     }
 
-    closeModal();
-    fetchRooms();
-  }
+    await supabase.from("system_settings").upsert({ key: "room_type_icons", value: roomTypeIcons });
+      closeModal();
+      fetchRooms();
+    }
 
   async function handleDelete(id: string, roomNo: string) {
     if (confirm(`คุณต้องการลบห้อง ${roomNo} ใช่หรือไม่?`)) {
@@ -481,6 +484,44 @@ export default function SettingsPage() {
                     )}
                   </div>
                 </div>
+                {formData.room_type && (
+                  <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                    <label className="flex items-center gap-2 cursor-pointer mb-3">
+                      <input 
+                        type="checkbox" 
+                        checked={!!roomTypeIcons[formData.room_type]}
+                        onChange={(e) => {
+                           const checked = e.target.checked;
+                           const newIcons = { ...roomTypeIcons };
+                           if (!checked) {
+                             delete newIcons[formData.room_type];
+                           } else {
+                             newIcons[formData.room_type] = availableIcons[0]; // default
+                           }
+                           setRoomTypeIcons(newIcons);
+                        }}
+                        className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <span className="text-sm font-semibold text-slate-700 cursor-pointer">ไอคอน (ใช้ร่วมกันสำหรับประเภท {formData.room_type} ทั้งหมด)</span>
+                    </label>
+                    
+                    {roomTypeIcons[formData.room_type] && (
+                       <div className="flex flex-wrap gap-2 mt-2">
+                         {availableIcons.map(icon => (
+                           <button 
+                             type="button" 
+                             key={icon}
+                             onClick={() => setRoomTypeIcons({...roomTypeIcons, [formData.room_type]: icon})}
+                             className={`w-9 h-9 rounded-md flex items-center justify-center text-xl transition-all ${roomTypeIcons[formData.room_type] === icon ? 'bg-blue-100 border-2 border-blue-500 scale-110 shadow-sm' : 'bg-white border border-slate-200 hover:bg-slate-100'}`}
+                           >
+                             {icon}
+                           </button>
+                         ))}
+                       </div>
+                    )}
+                  </div>
+                )}
+
 
                 
 
