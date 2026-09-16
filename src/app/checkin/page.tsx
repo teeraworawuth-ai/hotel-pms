@@ -103,6 +103,7 @@ export default function CheckinPage() {
 
   // 0 = Today, -1 = Yesterday, 1 = Tomorrow
   const [dateOffset, setDateOffset] = useState<number>(0);
+  const [smartPricesMap, setSmartPricesMap] = useState<Record<string, number>>({});
 
   const fetchData = async (silentRefresh = false) => {
     if (!silentRefresh) setLoading(true);
@@ -170,6 +171,24 @@ export default function CheckinPage() {
       
       const dailyRatesMap: Record<string, number> = {};
       const targetDateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth()+1).padStart(2,'0')}-${String(targetDate.getDate()).padStart(2,'0')}`;
+      
+      // --- [NEW] Fetch Smart Pricing for targetDateStr ---
+      const { data: dailySetting } = await supabase.from('daily_pricing_settings').select('rate_plan_id').eq('target_date', targetDateStr).single();
+      if (dailySetting?.rate_plan_id) {
+        const { data: basePrices } = await supabase.from('rate_plan_room_types').select('room_type, base_price').eq('rate_plan_id', dailySetting.rate_plan_id);
+        const { data: calPrices } = await supabase.from('rate_plan_calendar').select('room_type, price').eq('rate_plan_id', dailySetting.rate_plan_id).eq('target_date', targetDateStr);
+        
+        const pricesMap: Record<string, number> = {};
+        if (basePrices) {
+          basePrices.forEach(b => pricesMap[b.room_type] = b.base_price);
+        }
+        if (calPrices) {
+          calPrices.forEach(c => pricesMap[c.room_type] = c.price);
+        }
+        setSmartPricesMap(pricesMap);
+      } else {
+        setSmartPricesMap({});
+      }
       
       if (activeBookingIds.length > 0) {
         // 1. Fetch all daily rates to calculate C_all (total expected room charge)
@@ -339,7 +358,7 @@ export default function CheckinPage() {
             staff_name: targetDayBooking.staff_name,
             booking_id: targetDayBooking.id,
             booking_created_at: targetDayBooking.created_at,
-            unpaid_balance: financialSummary[targetDayBooking.id] || 0
+            unpaid_balance: financialSummary[targetDayBooking.id]?.balance || 0
           };
         } else {
           finalRoom = {
@@ -819,7 +838,9 @@ export default function CheckinPage() {
                               let diffColor = '';
                               let staffNameText: string | null = null;
                               
-                              const defPrice = room.stay_type === 'short_stay' ? room.price_temp : room.price_night;
+                              const defPrice = room.stay_type === 'short_stay' 
+                                  ? room.price_temp 
+                                  : (smartPricesMap[room.room_type] !== undefined ? smartPricesMap[room.room_type] : room.price_night);
 
                               if (!room.status || room.status === 'available' || room.status === 'dirty') {
                                 basePriceText = defPrice || room.price_night || null;
