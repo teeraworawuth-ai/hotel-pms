@@ -54,9 +54,15 @@ export default function SmartPricingPage() {
   const [editOccSurge, setEditOccSurge] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
 
+  // Price Preview State
+  const [roomTypes, setRoomTypes] = useState<string[]>(['เดี่ยว', 'คู่', 'บ้าน']);
+  const [previewRoomType, setPreviewRoomType] = useState<string>('เดี่ยว');
+  const [basePrices, setBasePrices] = useState<any[]>([]);
+  const [calPrices, setCalPrices] = useState<any[]>([]);
+
   useEffect(() => {
     fetchData();
-  }, [currentDate]);
+  }, [currentDate, previewRoomType]);
 
   const fetchData = async () => {
     setLoading(true);
