@@ -206,6 +206,12 @@ export default function SettingsPage() {
     
     const newMap = { ...roomOptionsMap };
     if (savedRoomId) {
+      const newIconMap = { ...roomIconsMap };
+      if (formIcons.length > 0) newIconMap[savedRoomId] = formIcons;
+      else delete newIconMap[savedRoomId];
+      await supabase.from("system_settings").upsert({ key: "room_icons_map", value: newIconMap });
+      setRoomIconsMap(newIconMap);
+
       if (roomOptionInput) newMap[savedRoomId] = roomOptionInput;
       else delete newMap[savedRoomId];
       await supabase.from("system_settings").upsert({ key: "room_options_map", value: newMap });
