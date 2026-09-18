@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { AVAILABLE_ICONS, renderIcon } from "../components/RoomIcons";
 import PosSettings from "@/app/components/PosSettings";
 import TuyaApiSettings from "@/app/components/TuyaApiSettings";
 import RatePlanSettings from "@/app/components/RatePlanSettings";
@@ -39,7 +40,7 @@ export default function SettingsPage() {
   const [roomOptionInput, setRoomOptionInput] = useState("");
   const [showRoomOptionDropdown, setShowRoomOptionDropdown] = useState(false);
   const [roomOptionsMap, setRoomOptionsMap] = useState<Record<string, string>>({});
-  const availableIcons = ["🛏️", "👑", "🌟", "🏠", "🏢", "🌊", "🌴", "💕", "🔑", "🛁", "✨", "💎", "🌙"];
+  const availableIcons = AVAILABLE_ICONS;
 
   // Form State
   const [formData, setFormData] = useState({
@@ -323,7 +324,7 @@ export default function SettingsPage() {
               <div className="flex items-center gap-4 w-full sm:w-auto">
                 <div className="flex flex-col items-center justify-center min-w-[5rem]">
                   <div className="bg-slate-100 text-slate-800 text-2xl font-black py-2.5 px-4 rounded-xl w-full text-center shadow-inner border border-slate-200/60 flex items-center justify-center gap-1">
-                    {room.room_no} {roomTypeIcons[room.room_type]?.join(' ')} {roomOptionsMap[room.id] && <span className="text-sm font-normal ml-1 text-slate-500">({roomOptionsMap[room.id]})</span>}
+                    {room.room_no} <span className="flex items-center gap-1 mx-1">{roomTypeIcons[room.room_type]?.map(id => <span key={id} className="text-slate-700">{renderIcon(id, 'w-5 h-5')}</span>)}</span> {roomOptionsMap[room.id] && <span className="text-sm font-normal ml-1 text-slate-500">({roomOptionsMap[room.id]})</span>}
                   </div>
                   <div className="mt-1.5 text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full tracking-wide">
                     {room.room_type || "ไม่ระบุ"}
@@ -583,7 +584,7 @@ export default function SettingsPage() {
                     
                     {(roomTypeIcons[formData.room_type]?.length > 0) && (
                        <div className="flex flex-wrap gap-2 mt-2">
-                         {availableIcons.map(icon => (
+                         {availableIcons.map((icon: string) => (
                            <button 
                              type="button" 
                              key={icon}
