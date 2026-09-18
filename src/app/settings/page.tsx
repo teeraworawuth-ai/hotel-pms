@@ -395,23 +395,22 @@ export default function SettingsPage() {
       {/* Modal Overlay */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-slate-800">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[95vh] flex flex-col animate-in zoom-in-95 duration-200 overflow-hidden">
+              <div className="p-5 border-b border-slate-100 flex justify-between items-center flex-shrink-0 bg-white z-10">
+                <h2 className="text-xl font-bold text-slate-800">
                   {editingRoom ? `✏️ แก้ไขข้อมูลห้อง ${editingRoom.room_no}` : '➕ เพิ่มห้องพักใหม่'}
                 </h2>
-                <button onClick={closeModal} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+                <button type="button" onClick={closeModal} className="text-slate-400 hover:text-slate-600 text-3xl leading-none">&times;</button>
               </div>
-
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+                <div className="p-5 overflow-y-auto space-y-3 flex-1 custom-scrollbar">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 mb-1">เลขห้อง *</label>
                     <input 
                       type="text" required
                       value={formData.room_no} onChange={e => setFormData({...formData, room_no: e.target.value})}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                      className="w-full p-2 bg-slate-50 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                     />
                   </div>
                   <div>
@@ -419,7 +418,7 @@ export default function SettingsPage() {
                     <input 
                       type="text"
                       value={formData.floor} onChange={e => setFormData({...formData, floor: e.target.value})}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                      className="w-full p-2 bg-slate-50 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                     />
                   </div>
                 </div>
@@ -432,7 +431,7 @@ export default function SettingsPage() {
                     <input 
                       type="text" required
                       value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                      className="w-full p-2 bg-slate-50 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                       placeholder="เช่น ซอย 1, ตึก A"
                     />
                   </div>
@@ -629,7 +628,7 @@ export default function SettingsPage() {
                       <input 
                         type="text"
                         value={formData.tuya_device_id} onChange={e => setFormData({...formData, tuya_device_id: e.target.value})}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        className="w-full p-2 bg-slate-50 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                         placeholder="e.g. vdevo160981c72902hiuf"
                       />
                     </div>
@@ -639,7 +638,7 @@ export default function SettingsPage() {
                         <input 
                           type="text"
                           value={formData.tuya_local_key} onChange={e => setFormData({...formData, tuya_local_key: e.target.value})}
-                          className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                          className="w-full p-2 bg-slate-50 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                         />
                       </div>
                       <div>
@@ -647,24 +646,24 @@ export default function SettingsPage() {
                         <input 
                           type="text"
                           value={formData.tuya_ip} onChange={e => setFormData({...formData, tuya_ip: e.target.value})}
-                          className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                          className="w-full p-2 bg-slate-50 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                         />
                       </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="pt-6 flex gap-3 justify-end">
-                  <button type="button" onClick={closeModal} className="px-5 py-2.5 bg-slate-100 text-slate-700 font-semibold rounded-lg hover:bg-slate-200 transition-colors">
+                </div>
+                <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3 justify-end flex-shrink-0 z-10">
+                  <button type="button" onClick={closeModal} className="px-5 py-2 bg-white border border-slate-300 text-slate-700 font-bold rounded-lg hover:bg-slate-50 transition-colors">
                     ยกเลิก
                   </button>
-                  <button type="submit" className="px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
+                  <button type="submit" className="px-5 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
                     บันทึกข้อมูล
                   </button>
                 </div>
               </form>
             </div>
-          </div>
         </div>
       )}
       </>
