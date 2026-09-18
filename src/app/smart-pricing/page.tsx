@@ -29,6 +29,7 @@ type DailySetting = {
 export default function SmartPricingPage() {
   const [loading, setLoading] = useState(true);
   const [ratePlans, setRatePlans] = useState<RatePlan[]>([]);
+  const [ratePlanIcons, setRatePlanIcons] = useState<Record<string, string>>({});
   const [dailySettings, setDailySettings] = useState<Record<string, DailySetting>>({});
   
   // Global Rules State
@@ -66,6 +67,12 @@ export default function SmartPricingPage() {
 
   const fetchData = async () => {
     setLoading(true);
+    
+    // Fetch Rate Plan Icons
+    const { data: iconData } = await supabase.from('system_settings').select('value').eq('key', 'rate_plan_icons').single();
+    if (iconData?.value) {
+      setRatePlanIcons(iconData.value);
+    }
     
     // 1. Fetch Rate Plans
     const { data: plans } = await supabase.from('rate_plans').select('id, name');
@@ -277,7 +284,7 @@ export default function SmartPricingPage() {
                     {setting ? (
                       <div className="mt-auto">
                         <div className="text-[10px] font-bold text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded truncate mb-0.5">
-                            ⭐ {ratePlanName || 'Unknown'}
+                            {ratePlanIcons[setting.rate_plan_id] || '⭐'} {ratePlanName || 'Unknown'}
                           </div>
                           {(() => {
                             const base = basePrices.find(b => b.rate_plan_id === setting.rate_plan_id)?.base_price;

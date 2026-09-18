@@ -29,6 +29,9 @@ export default function RatePlanSettings() {
   const [availableRoomTypes, setAvailableRoomTypes] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [ratePlanIcons, setRatePlanIcons] = useState<Record<string, string>>({});
+  const [selectedIcon, setSelectedIcon] = useState<string>('⭐');
+  const RATE_PLAN_EMOJIS = ['⭐', '🌟', '🔥', '💎', '🏖️', '❄️', '🚀', '🎁', '👑', '🌈', '⚡', '🎉', '🎃', '🎄', '💘'];
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<RatePlan | null>(null);
 
@@ -57,6 +60,12 @@ export default function RatePlanSettings() {
       setAvailableRoomTypes(uniqueTypes);
     }
 
+    // Fetch Rate Plan Icons
+    const { data: iconData } = await supabase.from('system_settings').select('value').eq('key', 'rate_plan_icons').single();
+    if (iconData?.value) {
+      setRatePlanIcons(iconData.value);
+    }
+    
     // 2. Fetch Rate Plans and their base prices
     const { data: plans, error } = await supabase.from('rate_plans').select('*').order('created_at', { ascending: true });
     if (!error && plans) {
@@ -187,7 +196,7 @@ export default function RatePlanSettings() {
           <p className="text-sm text-slate-500">จัดการราคามาตรฐานและราคาพิเศษรายวัน คลุมทุกประเภทห้อง</p>
         </div>
         <button 
-          onClick={() => { setEditingPlan(null); setIsPlanModalOpen(true); }}
+          onClick={() => { setEditingPlan(null); setSelectedIcon('⭐'); setIsPlanModalOpen(true); }}
           className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
         >
           + สร้าง Rate Plan
@@ -197,7 +206,7 @@ export default function RatePlanSettings() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {ratePlans.map(plan => (
           <div key={plan.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow">
-            <h3 className="font-bold text-slate-800 text-lg mb-1">{plan.name}</h3>
+            <h3 className="font-bold text-slate-800 text-lg mb-1">{ratePlanIcons[plan.id] || '⭐'} {plan.name}</h3>
             <p className="text-sm text-slate-500 mb-4 h-10 overflow-hidden">{plan.description || '-'}</p>
             
             <div className="bg-slate-50 rounded-lg p-3 mb-4 border border-slate-100 max-h-40 overflow-y-auto space-y-1">
@@ -221,7 +230,7 @@ export default function RatePlanSettings() {
                 📅 ปฏิทินราคาพิเศษ
               </button>
               <button 
-                onClick={() => { setEditingPlan(plan); setIsPlanModalOpen(true); }}
+                onClick={() => { setEditingPlan(plan); setSelectedIcon(ratePlanIcons[plan.id] || '⭐'); setIsPlanModalOpen(true); }}
                 className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg transition-colors"
               >
                 ✏️
@@ -252,6 +261,19 @@ export default function RatePlanSettings() {
             </div>
             <form onSubmit={saveRatePlan} className="p-4 overflow-y-auto flex-1 space-y-4">
               <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">สัญลักษณ์ (Icon)</label>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {RATE_PLAN_EMOJIS.map((emoji: string) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => setSelectedIcon(emoji)}
+                      className={`w-10 h-10 rounded-xl text-xl flex items-center justify-center transition-all ${selectedIcon === emoji ? 'bg-blue-100 border-2 border-blue-500 scale-110 shadow-sm' : 'bg-white border border-slate-200 hover:bg-slate-50'}`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">ชื่อแพ็กเกจราคา (Name)</label>
                 <input required name="name" defaultValue={editingPlan?.name} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" placeholder="เช่น Standard Rate, Weekend Promo" />
               </div>
