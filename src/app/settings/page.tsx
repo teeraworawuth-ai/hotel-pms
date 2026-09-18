@@ -35,7 +35,8 @@ export default function SettingsPage() {
   const [savedRoomTypes, setSavedRoomTypes] = useState<string[]>(['เดี่ยว', 'คู่', 'บ้าน']);
   const [roomTypeInput, setRoomTypeInput] = useState("");
   const [showRoomTypeDropdown, setShowRoomTypeDropdown] = useState(false);
-  const [roomTypeIcons, setRoomTypeIcons] = useState<Record<string, string[]>>({});
+  const [roomIconsMap, setRoomIconsMap] = useState<Record<string, string[]>>({});
+  const [formIcons, setFormIcons] = useState<string[]>([]);
   const [savedRoomOptions, setSavedRoomOptions] = useState<string[]>([]);
   const [roomOptionInput, setRoomOptionInput] = useState("");
   const [showRoomOptionDropdown, setShowRoomOptionDropdown] = useState(false);
@@ -124,6 +125,7 @@ export default function SettingsPage() {
       setEditingRoom(room);
         setRoomTypeInput(room.room_type);
       setRoomOptionInput(roomOptionsMap[room.id] || "");
+      setFormIcons(roomIconsMap[room.id] || []);
       setFormData({
         room_no: room.room_no,
         floor: room.floor,
@@ -200,7 +202,7 @@ export default function SettingsPage() {
       console.error("Tuya sync error", err);
     }
 
-    await supabase.from("system_settings").upsert({ key: "room_type_icons", value: roomTypeIcons });
+    
     
     const newMap = { ...roomOptionsMap };
     if (savedRoomId) {
@@ -324,7 +326,7 @@ export default function SettingsPage() {
               <div className="flex items-center gap-4 w-full sm:w-auto">
                 <div className="flex flex-col items-center justify-center min-w-[5rem]">
                   <div className="bg-slate-100 text-slate-800 text-2xl font-black py-2.5 px-4 rounded-xl w-full text-center shadow-inner border border-slate-200/60 flex items-center justify-center gap-1">
-                    {room.room_no} <span className="flex items-center gap-1 mx-1">{roomTypeIcons[room.room_type]?.map(id => <span key={id} className="text-slate-700">{renderIcon(id, 'w-5 h-5')}</span>)}</span> {roomOptionsMap[room.id] && <span className="text-sm font-normal ml-1 text-slate-500">({roomOptionsMap[room.id]})</span>}
+                    {room.room_no} <span className="flex items-center gap-1 mx-1">{roomIconsMap[room.id]?.map(id => <span key={id} className="text-slate-700">{renderIcon(id, 'w-5 h-5')}</span>)}</span> {roomOptionsMap[room.id] && <span className="text-sm font-normal ml-1 text-slate-500">({roomOptionsMap[room.id]})</span>}
                   </div>
                   <div className="mt-1.5 text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full tracking-wide">
                     {room.room_type || "ไม่ระบุ"}
@@ -566,30 +568,28 @@ export default function SettingsPage() {
                     <label className="flex items-center gap-2 cursor-pointer mb-3">
                       <input 
                         type="checkbox" 
-                        checked={roomTypeIcons[formData.room_type]?.length > 0}
+                        checked={formIcons.length > 0}
                         onChange={(e) => {
                            const checked = e.target.checked;
-                           const newIcons = { ...roomTypeIcons };
                            if (!checked) {
-                             delete newIcons[formData.room_type];
-                           } else {
-                             newIcons[formData.room_type] = [availableIcons[0]]; // default
-                           }
-                           setRoomTypeIcons(newIcons);
+                               setFormIcons([]);
+                             } else {
+                               setFormIcons([availableIcons[0]]);
+                             }
                         }}
                         className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
                       />
-                      <span className="text-sm font-semibold text-slate-700 cursor-pointer">ไอคอน (ใช้ร่วมกันสำหรับประเภท {formData.room_type} ทั้งหมด)</span>
+                      <span className="text-sm font-semibold text-slate-700 cursor-pointer">กำหนดไอคอนเฉพาะห้องนี้</span>
                     </label>
                     
-                    {(roomTypeIcons[formData.room_type]?.length > 0) && (
+                    {(formIcons.length > 0) && (
                        <div className="flex flex-wrap gap-2 mt-2">
                          {availableIcons.map((icon: string) => (
                            <button 
                              type="button" 
                              key={icon}
                              onClick={() => {
-                               const current = roomTypeIcons[formData.room_type] || [];
+                               const current = formIcons;
                                let next = [...current];
                                if (next.includes(icon)) {
                                  next = next.filter(i => i !== icon);
@@ -597,9 +597,9 @@ export default function SettingsPage() {
                                  if (next.length >= 2) next.shift(); // keep max 2
                                  next.push(icon);
                                }
-                               setRoomTypeIcons({...roomTypeIcons, [formData.room_type]: next});
+                               setFormIcons(next);
                              }}
-                             className={`w-9 h-9 rounded-md flex items-center justify-center text-xl transition-all ${(roomTypeIcons[formData.room_type] || []).includes(icon) ? 'bg-blue-100 border-2 border-blue-500 scale-110 shadow-sm' : 'bg-white border border-slate-200 hover:bg-slate-100'}`}
+                             className={`w-9 h-9 rounded-md flex items-center justify-center text-xl transition-all ${formIcons.includes(icon) ? 'bg-blue-100 border-2 border-blue-500 scale-110 shadow-sm' : 'bg-white border border-slate-200 hover:bg-slate-100'}`}
                            >
                               {renderIcon(icon, "w-5 h-5 text-slate-700")}
                             </button>

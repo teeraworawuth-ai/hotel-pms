@@ -105,7 +105,7 @@ export default function CheckinPage() {
   // 0 = Today, -1 = Yesterday, 1 = Tomorrow
   const [dateOffset, setDateOffset] = useState<number>(0);
   const [smartPricesMap, setSmartPricesMap] = useState<Record<string, number>>({});
-  const [roomTypeIconsMap, setRoomTypeIconsMap] = useState<Record<string, string[]>>({});
+  const [roomIconsMap, setRoomIconsMap] = useState<Record<string, string[]>>({});
 
   const fetchData = async (silentRefresh = false) => {
     if (!silentRefresh) setLoading(true);
@@ -193,15 +193,15 @@ export default function CheckinPage() {
       }
       
       // --- [NEW] Fetch Room Type Icons ---
-      const { data: iconData } = await supabase.from('system_settings').select('value').eq('key', 'room_type_icons').single();
+      const { data: iconData } = await supabase.from('system_settings').select('value').eq('key', 'room_icons_map').single();
       if (iconData && iconData.value) {
         const parsedIcons = typeof iconData.value === 'object' ? iconData.value : {};
         for (const k in parsedIcons) {
           if (typeof parsedIcons[k] === 'string') parsedIcons[k] = [parsedIcons[k]];
         }
-        setRoomTypeIconsMap(parsedIcons);
+        setRoomIconsMap(parsedIcons);
       } else {
-        setRoomTypeIconsMap({});
+        setRoomIconsMap({});
       }
       
       if (activeBookingIds.length > 0) {
@@ -796,7 +796,7 @@ export default function CheckinPage() {
                             const isSeaBalcony = room.room_type?.includes('ระเบียงทะเล');
                             const isBalcony = !isSeaBalcony && room.room_type?.includes('ระเบียง');
                             const isWindow = room.room_type?.includes('หน้าต่าง');
-                              const customIcon = roomTypeIconsMap[room.room_type];
+                              const customIcon = roomIconsMap[room.id];
 
                             return (
                               <div className={`absolute top-0 text-[15px] sm:text-xl top-[1px] sm:top-1 font-black ${roomNoColor} transition-all leading-none flex items-center justify-center gap-0 mix-blend-multiply`}>
@@ -804,21 +804,10 @@ export default function CheckinPage() {
                                 <div className="flex items-center text-[13px] leading-none -space-x-1 -ml-0.5">
                                   {(customIcon && customIcon.length > 0) ? (
                                       <span className="opacity-90 ml-[2px] drop-shadow-sm text-slate-700 flex items-center gap-[1px]">{customIcon.map(id => <span key={id}>{renderIcon(id, 'w-[13px] h-[16px] sm:w-[17px] sm:h-[20px]')}</span>)}</span>
-                                    ) : isDouble ? (
-                                    <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-[13px] h-[16px] sm:w-[17px] sm:h-[20px] opacity-90 drop-shadow-sm">
-                                      <rect x="2" y="3" width="5" height="11" rx="1" fill="#cbd5e1"/>
-                                      <rect x="2.5" y="4" width="4" height="2" rx="0.5" fill="#ffffff"/>
-                                      <rect x="2" y="7" width="5" height="7" rx="1" fill="#64748b"/>
-                                      <rect x="9" y="3" width="5" height="11" rx="1" fill="#cbd5e1"/>
-                                      <rect x="9.5" y="4" width="4" height="2" rx="0.5" fill="#ffffff"/>
-                                      <rect x="9" y="7" width="5" height="7" rx="1" fill="#64748b"/>
-                                    </svg>
-                                  ) : isHouse ? (
-                                    <span className="text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🏠</span>
-                                  ) : null}
-                                  {isSeaBalcony && <span className="text-slate-700 grayscale text-[13px] sm:text-[14px] drop-shadow-sm opacity-60">⛱️</span>}
-                                  {isBalcony && <img src="/balcony.png" className="w-[20px] h-[20px] sm:w-[22px] sm:h-[22px] object-contain mix-blend-multiply opacity-80 translate-y-[1.5px]" alt="ระเบียง" />}
-                                  {isWindow && <span className="text-slate-700 grayscale text-[15px] sm:text-base drop-shadow-sm">🪟</span>}
+                                    ) : null}
+                                  
+                                  
+                                  
                                 </div>
 
                                 {isOverdue && (
