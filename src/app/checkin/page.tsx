@@ -803,9 +803,9 @@ export default function CheckinPage() {
                                 <span>{room.room_no}</span>
                                 <div className="flex items-center text-[13px] leading-none -space-x-1 -ml-0.5">
                                   {(customIcon && customIcon.length > 0) ? (
-                                      <span className="opacity-90 ml-1 drop-shadow-sm text-slate-700 flex items-center gap-0.5">{customIcon.map(id => <span key={id}>{renderIcon(id, 'w-[13px] h-[13px] sm:w-[17px] sm:h-[17px]')}</span>)}</span>
+                                      <span className="opacity-90 ml-[2px] drop-shadow-sm text-slate-700 flex items-center gap-[1px]">{customIcon.map(id => <span key={id}>{renderIcon(id, 'w-[13px] h-[16px] sm:w-[17px] sm:h-[20px]')}</span>)}</span>
                                     ) : isDouble ? (
-                                    <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-[13px] h-[13px] sm:w-[17px] sm:h-[17px] opacity-90 drop-shadow-sm">
+                                    <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-[13px] h-[16px] sm:w-[17px] sm:h-[20px] opacity-90 drop-shadow-sm">
                                       <rect x="2" y="3" width="5" height="11" rx="1" fill="#cbd5e1"/>
                                       <rect x="2.5" y="4" width="4" height="2" rx="0.5" fill="#ffffff"/>
                                       <rect x="2" y="7" width="5" height="7" rx="1" fill="#64748b"/>
