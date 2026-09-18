@@ -3,8 +3,8 @@ import React from 'react';
 export const ROOM_ICONS: Record<string, React.ReactNode> = {
   'twin-bed': (
     <svg viewBox="0 0 24 24" preserveAspectRatio="none" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
-      <rect x="2" y="8" width="9" height="10" rx="1" />
-      <rect x="13" y="8" width="9" height="10" rx="1" />
+      <rect x="2" y="8" width="9" height="12" rx="1" />
+      <rect x="13" y="8" width="9" height="12" rx="1" />
       <path d="M2 13h9 M13 13h9 M4 11h5 M15 11h5 M6 8V6a1 1 0 0 1 1-1h1 M17 8V6a1 1 0 0 1 1-1h1" />
     </svg>
   ),
@@ -17,9 +17,9 @@ export const ROOM_ICONS: Record<string, React.ReactNode> = {
   ),
   'balcony': (
     <svg viewBox="0 0 24 24" preserveAspectRatio="none" fill="none" stroke="currentColor" strokeWidth="2" className="w-full h-full">
-      <path d="M3 15c0 3 2 5 5 5h8c3 0 5-2 5-5" />
-      <path d="M2 15h20" />
-      <path d="M8 15v5 M12 15v5 M16 15v5" />
+      <path d="M3 9c0 4 2 7 5 7h8c3 0 5-3 5-7" />
+      <path d="M2 9h20" />
+      <path d="M8 9v7 M12 9v7 M16 9v7" />
     </svg>
   ),
   'sea-balcony': (
