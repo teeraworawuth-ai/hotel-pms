@@ -601,8 +601,8 @@ export default function SettingsPage() {
                              }}
                              className={`w-9 h-9 rounded-md flex items-center justify-center text-xl transition-all ${(roomTypeIcons[formData.room_type] || []).includes(icon) ? 'bg-blue-100 border-2 border-blue-500 scale-110 shadow-sm' : 'bg-white border border-slate-200 hover:bg-slate-100'}`}
                            >
-                             {icon}
-                           </button>
+                              {renderIcon(icon, "w-5 h-5 text-slate-700")}
+                            </button>
                          ))}
                        </div>
                     )}
