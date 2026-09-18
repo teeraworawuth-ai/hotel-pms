@@ -551,7 +551,7 @@ export default function SettingsPage() {
                   </div>
 
                 {formData.room_type && (
-                  <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                  <div className="mb-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
                     <label className="flex items-center gap-2 cursor-pointer mb-3">
                       <input 
                         type="checkbox" 
@@ -619,8 +619,6 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 </details>
-                  </div>
-                </div>
 
                 </div>
                 <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3 justify-end flex-shrink-0 z-10">
