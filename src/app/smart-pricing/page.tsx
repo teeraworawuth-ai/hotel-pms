@@ -244,7 +244,19 @@ export default function SmartPricingPage() {
                 const dateStr = dDate.toLocaleDateString('en-CA');
                 
                 const isSelected = selectedDates.has(dateStr);
-                const setting = dailySettings[dateStr];
+                  let setting = dailySettings[dateStr];
+                  
+                  // Live Preview Logic
+                  if (isSelected && editRatePlanId) {
+                    setting = {
+                      ...setting,
+                      target_date: dateStr,
+                      rate_plan_id: editRatePlanId,
+                      enable_time_discount: editTimeDiscount,
+                      enable_occupancy_sale: editOccSale,
+                      enable_occupancy_surge: editOccSurge
+                    };
+                  }
                 const ratePlanName = ratePlans.find(rp => rp.id === setting?.rate_plan_id)?.name;
                 
                 return (
