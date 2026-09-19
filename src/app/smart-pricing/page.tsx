@@ -411,13 +411,23 @@ export default function SmartPricingPage() {
                   </div>
                 </div>
 
-                <button 
-                  onClick={handleSaveDailySettings}
-                  disabled={savingSettings}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3 rounded-xl shadow-md transition-colors"
-                >
-                  {savingSettings ? 'กำลังบันทึก...' : 'บันทึกการตั้งค่า'}
-                </button>
+                <div className="flex gap-2">
+                    <button 
+                      onClick={handleSaveDailySettings}
+                      disabled={savingSettings}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3 rounded-xl shadow-md transition-colors"
+                    >
+                      {savingSettings ? 'กำลังบันทึก...' : 'บันทึกการตั้งค่า'}
+                    </button>
+                    <button 
+                      onClick={handleClearDailySettings}
+                      disabled={savingSettings}
+                      className="w-auto bg-white hover:bg-red-50 text-red-500 border border-red-200 font-bold py-3 px-4 rounded-xl shadow-sm transition-colors whitespace-nowrap"
+                      title="ล้างการตั้งค่าสำหรับวันที่เลือก"
+                    >
+                      🗑️ ล้าง
+                    </button>
+                  </div>
               </div>
             )}
           </div>
