@@ -317,75 +317,73 @@ export default function SettingsPage() {
       )}
 
       {/* Room List */}
-      <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         {loading ? (
-          <div className="text-center py-10 text-slate-500">กำลังโหลดข้อมูล...</div>
+          <div className="text-center py-10 text-slate-500 col-span-full">กำลังโหลดข้อมูล...</div>
         ) : rooms.length === 0 ? (
-          <div className="text-center py-10 bg-white rounded-xl shadow-sm border border-slate-100 text-slate-500">
+          <div className="text-center py-10 bg-white rounded-xl shadow-sm border border-slate-100 text-slate-500 col-span-full">
             ยังไม่มีข้อมูลห้องพัก
           </div>
         ) : (
           rooms
             .filter(room => activeLocation === "ทั้งหมด" || (room.location || "ไม่มีสถานที่") === activeLocation)
             .map((room) => (
-            <div key={room.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-4 w-full sm:w-auto">
-                <div className="flex flex-col items-center justify-center min-w-[5rem]">
-                  <div className="bg-slate-100 text-slate-800 text-2xl font-black py-2.5 px-4 rounded-xl w-full text-center shadow-inner border border-slate-200/60 flex items-center justify-center gap-1">
-                    {room.room_no} <span className="flex items-center gap-1 mx-1">{roomIconsMap[room.id]?.map(id => <span key={id} className="text-slate-700">{renderIcon(id, 'w-5 h-5')}</span>)}</span> {roomOptionsMap[room.id] && <span className="text-sm font-normal ml-1 text-slate-500">({roomOptionsMap[room.id]})</span>}
-                  </div>
-                  <div className="mt-1.5 text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full tracking-wide">
-                    {room.room_type || "ไม่ระบุ"}
-                  </div>
+            <div key={room.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col hover:shadow-md transition-all group relative">
+              <div className="flex justify-between items-start mb-4">
+                <div className="bg-slate-50 text-slate-800 text-xl font-black py-1.5 px-3 rounded-lg border border-slate-200/60 flex items-center justify-center gap-1">
+                  {room.room_no} 
+                  {roomIconsMap[room.id] && roomIconsMap[room.id].length > 0 && (
+                    <span className="flex items-center gap-1 ml-1">
+                      {roomIconsMap[room.id].map(id => <span key={id} className="text-slate-700">{renderIcon(id, 'w-4 h-4')}</span>)}
+                    </span>
+                  )}
                 </div>
-                <div>
-                  <div className="text-sm font-semibold text-slate-700">{room.location || "ไม่มีสถานที่"}</div>
-                  <div className="text-xs text-slate-500 font-medium mb-1">สถานะอุปกรณ์ (IoT)</div>
+                <div className="flex gap-1">
+                  <button onClick={() => openModal(room)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="แก้ไข">✏️</button>
+                  <button onClick={() => handleDelete(room.id, room.room_no)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="ลบ">🗑️</button>
+                </div>
+              </div>
+              
+              <div className="flex flex-col gap-2 flex-1 text-sm">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-50">
+                  <span className="text-slate-500">ประเภทห้อง</span>
+                  <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full text-[11px]">{room.room_type || "ไม่ระบุ"}</span>
+                </div>
+                <div className="flex justify-between items-center pb-2 border-b border-slate-50">
+                  <span className="text-slate-500">สถานที่</span>
+                  <span className="font-semibold text-slate-700">{room.location || "ไม่มีสถานที่"}</span>
+                </div>
+                <div className="flex justify-between items-center mt-auto pt-1">
+                  <span className="text-slate-500">สถานะ IoT</span>
                   {room.tuya_device_id ? (
                     (() => {
                       let isOnline = false;
                       if (room.last_active_at) {
                         const lastActive = new Date(room.last_active_at).getTime();
                         const now = new Date().getTime();
-                        // 5 minutes = 5 * 60 * 1000 = 300000 ms
-                        if (now - lastActive <= 300000) {
-                          isOnline = true;
-                        }
+                        if (now - lastActive <= 300000) isOnline = true;
                       }
-                      
                       return isOnline ? (
-                        <div className="text-sm font-bold text-emerald-600 flex items-center gap-1">
-                          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                          ออนไลน์ (Online)
-                        </div>
+                        <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>ออนไลน์
+                        </span>
                       ) : (
-                        <div className="text-sm font-bold text-red-500 flex items-center gap-1">
-                          <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                          ออฟไลน์ (Offline)
-                        </div>
+                        <span className="text-xs font-bold text-red-500 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>ออฟไลน์
+                        </span>
                       );
                     })()
                   ) : (
-                    <div className="text-sm font-semibold text-slate-400 flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full bg-slate-300"></div>
-                      ไม่มีระบบ IoT
-                    </div>
+                    <span className="text-xs text-slate-400 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>ไม่มีระบบ
+                    </span>
                   )}
                 </div>
-              </div>
-              <div className="flex gap-2 w-full sm:w-auto">
-                <button 
-                  onClick={() => openModal(room)}
-                  className="flex-1 sm:flex-none px-4 py-2 bg-white border border-slate-200 text-blue-600 rounded-lg text-sm font-semibold hover:bg-blue-50 transition-colors"
-                >
-                  ✏️ แก้ไข
-                </button>
-                <button 
-                  onClick={() => handleDelete(room.id, room.room_no)}
-                  className="flex-1 sm:flex-none px-4 py-2 bg-white border border-slate-200 text-red-500 rounded-lg text-sm font-semibold hover:bg-red-50 transition-colors"
-                >
-                  🗑️ ลบ
-                </button>
+                {roomOptionsMap[room.id] && (
+                  <div className="mt-2 text-xs text-slate-400 bg-slate-50 p-2 rounded-lg italic">
+                    ออปชัน: {roomOptionsMap[room.id]}
+                  </div>
+                )}
               </div>
             </div>
           ))
