@@ -10,9 +10,9 @@ export const ROOM_ICONS: Record<string, React.ReactNode> = {
   ),
   'window': (
     <svg viewBox="0 0 24 24" preserveAspectRatio="none" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-full h-full">
-      <rect x="5" y="4" width="14" height="16" rx="1" />
-      <path d="M12 4v16 M5 12h14" />
-      <path d="M2 20h20" strokeWidth="2" />
+      <rect x="8" y="10" width="8" height="10" rx="1" />
+      <path d="M12 10v10 M8 15h8" />
+      <path d="M6 20h12" strokeWidth="2" />
     </svg>
   ),
   'balcony': (
