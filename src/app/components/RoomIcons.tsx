@@ -5,7 +5,7 @@ export const ROOM_ICONS: Record<string, React.ReactNode> = {
     <svg viewBox="0 0 24 24" preserveAspectRatio="none" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
       <rect x="2" y="8" width="9" height="12" rx="1" />
       <rect x="13" y="8" width="9" height="12" rx="1" />
-      <path d="M2 13h9 M13 13h9 M4 11h5 M15 11h5 M6 8V6a1 1 0 0 1 1-1h1 M17 8V6a1 1 0 0 1 1-1h1" />
+      <path d="M2 13h9 M13 13h9 M4 11h5 M15 11h5" />
     </svg>
   ),
   'window': (
