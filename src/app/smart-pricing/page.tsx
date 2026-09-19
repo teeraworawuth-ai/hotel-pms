@@ -303,7 +303,7 @@ export default function SmartPricingPage() {
                     {setting ? (
                       <div className="mt-auto">
                         <div className="text-[10px] font-bold text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded truncate mb-0.5">
-                            {ratePlanIcons[setting.rate_plan_id] || '⭐'} {ratePlanName || 'Unknown'}
+                            {ratePlanIcons[setting.rate_plan_id] !== undefined ? ratePlanIcons[setting.rate_plan_id] : '⭐'} {ratePlanName || 'Unknown'}
                           </div>
                           {(() => {
                             const base = basePrices.find(b => b.rate_plan_id === setting.rate_plan_id)?.base_price;

@@ -206,7 +206,7 @@ export default function RatePlanSettings() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {ratePlans.map(plan => (
           <div key={plan.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow">
-            <h3 className="font-bold text-slate-800 text-lg mb-1">{ratePlanIcons[plan.id] || '⭐'} {plan.name}</h3>
+            <h3 className="font-bold text-slate-800 text-lg mb-1">{ratePlanIcons[plan.id] !== undefined ? ratePlanIcons[plan.id] : '⭐'} {plan.name}</h3>
             <p className="text-sm text-slate-500 mb-4 h-10 overflow-hidden">{plan.description || '-'}</p>
             
             <div className="bg-slate-50 rounded-lg p-3 mb-4 border border-slate-100 max-h-40 overflow-y-auto space-y-1">
@@ -225,7 +225,7 @@ export default function RatePlanSettings() {
             <div className="flex gap-2">
               
               <button 
-                onClick={() => { setEditingPlan(plan); setSelectedIcon(ratePlanIcons[plan.id] || '⭐'); setIsPlanModalOpen(true); }}
+                onClick={() => { setEditingPlan(plan); setSelectedIcon(ratePlanIcons[plan.id] !== undefined ? ratePlanIcons[plan.id] : '⭐'); setIsPlanModalOpen(true); }}
                 className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm"
                 >
                   ✏️ แก้ไขแพ็กเกจ
@@ -258,7 +258,15 @@ export default function RatePlanSettings() {
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">สัญลักษณ์ (Icon)</label>
                 <div className="flex flex-wrap gap-2 mb-4">
-                  {RATE_PLAN_EMOJIS.map((emoji: string) => (
+                  <button
+                        type="button"
+                        onClick={() => setSelectedIcon('')}
+                        className={`w-10 h-10 rounded-xl text-xs font-bold flex items-center justify-center transition-all ${selectedIcon === '' ? 'bg-blue-100 border-2 border-blue-500 scale-110 shadow-sm text-blue-600' : 'bg-white border border-slate-200 hover:bg-slate-50 text-slate-400'}`}
+                        title="ไม่ใช้ไอคอน"
+                      >
+                        ไม่มี
+                      </button>
+                    {RATE_PLAN_EMOJIS.map((emoji: string) => (
                     <button
                       key={emoji}
                       type="button"
