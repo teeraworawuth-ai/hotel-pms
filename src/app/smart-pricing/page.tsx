@@ -137,6 +137,25 @@ export default function SmartPricingPage() {
     alert('บันทึกเงื่อนไขสำเร็จ');
   };
 
+  const handleClearDailySettings = async () => {
+    if (selectedDates.size === 0) return;
+    if (!confirm('คุณต้องการลบเรทแพลนและเงื่อนไขสำหรับวันที่เลือกใช่หรือไม่?')) return;
+    
+    setSavingSettings(true);
+    const datesArray = Array.from(selectedDates);
+    
+    // We can delete using in() since it's an array of dates
+    const { error } = await supabase.from('daily_pricing_settings').delete().in('target_date', datesArray);
+    
+    if (error) {
+      alert('เกิดข้อผิดพลาดในการลบ: ' + error.message);
+    } else {
+      setSelectedDates(new Set());
+      fetchData();
+    }
+    setSavingSettings(false);
+  };
+
   const handleSaveDailySettings = async () => {
     if (selectedDates.size === 0) return;
     if (!editRatePlanId) {
