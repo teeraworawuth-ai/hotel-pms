@@ -64,12 +64,28 @@ export default function SettingsPage() {
   async function fetchRooms() {
     setLoading(true);
     
-    // Fetch locations order
-    const { data: settingsData } = await supabase
+        // Fetch system settings
+    const { data: allSettings } = await supabase
       .from("system_settings")
-      .select("value")
-      .eq("key", "locations_order")
-      .single();
+      .select("*");
+      
+    let settingsData = null;
+    if (allSettings) {
+      const locOrder = allSettings.find(s => s.key === "locations_order");
+      if (locOrder) settingsData = locOrder;
+      
+      const rTypes = allSettings.find(s => s.key === "room_types")?.value;
+      if (rTypes) setSavedRoomTypes(rTypes);
+      
+      const rOpts = allSettings.find(s => s.key === "room_options")?.value;
+      if (rOpts) setSavedRoomOptions(rOpts);
+      
+      const rIcons = allSettings.find(s => s.key === "room_icons_map")?.value;
+      if (rIcons) setRoomIconsMap(rIcons);
+      
+      const rOptsMap = allSettings.find(s => s.key === "room_options_map")?.value;
+      if (rOptsMap) setRoomOptionsMap(rOptsMap);
+    }
       
     // Fetch rooms ordered by their individual sort_order
     const { data: roomsData, error } = await supabase
