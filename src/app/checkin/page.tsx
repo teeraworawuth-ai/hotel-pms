@@ -23,6 +23,7 @@ export type RoomStatus = {
   incoming_today?: boolean; // True if there is a new booking arriving today
   price_night?: number;
   price_temp?: number;
+  key_deposit?: number;
   actual_price?: number;
   staff_name?: string | null;
   guest_phone?: string | null;
@@ -132,9 +133,9 @@ export default function CheckinPage() {
     }
 
     // ดึงโครงสร้างห้องทั้งหมด
-    const { data: roomsData, error } = await supabase
-      .from("rooms")
-      .select("id, room_no, room_type, location, sort_order, status, stay_type, check_in_time, check_out_time, guest_count, price_night, price_temp, actual_price, staff_name");
+      const { data: roomsData, error } = await supabase
+        .from("rooms")
+        .select("id, room_no, room_type, location, sort_order, status, stay_type, check_in_time, check_out_time, guest_count, price_night, price_temp, actual_price, staff_name, key_deposit");
     
     if (error) {
       console.error("Error fetching rooms:", error);
