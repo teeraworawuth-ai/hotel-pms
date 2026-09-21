@@ -216,6 +216,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
 
   const [actualPrice, setActualPrice] = useState<number | ''>(room.actual_price || room.price_night || '');
+  const [paymentMethod, setPaymentMethod] = useState<'unpaid' | 'cash' | 'transfer' | 'credit_card'>('unpaid');
   const [staffName, setStaffName] = useState<string>(room.staff_name || '');
   
   // สถานะสำหรับการย้ายห้อง
