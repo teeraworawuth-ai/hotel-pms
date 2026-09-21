@@ -32,6 +32,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const { activeShift } = useShift();
   const displayDate = getNow();
   displayDate.setDate(displayDate.getDate() + dateOffset);
+  const displayDateStr = displayDate.toLocaleDateString('en-CA');
   const [showBilling, setShowBilling] = useState(false);
   const [newBookingId, setNewBookingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -91,7 +92,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         const numNights = Number(nights) || 0;
         if (numNights <= 0) return;
 
-        const startDate = new Date(displayDate);
+        const startDate = new Date(displayDateStr);
         if (dateOffset > 0) startDate.setHours(14, 0, 0, 0);
 
         // 1. Fetch Daily Settings for the duration
@@ -196,7 +197,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       };
       
       generateBreakdown();
-    }, [activeTab, nights, displayDate, dateOffset, room, yieldRules, ratePlans, availablePercent]);
+    }, [activeTab, nights, displayDateStr, dateOffset, room, yieldRules, ratePlans, availablePercent]);
 
   useEffect(() => {
     if (activeTab === 'overnight') {
@@ -446,7 +447,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       return;
     }
     setLoading(true);
-    const startDate = new Date(displayDate);
+    const startDate = new Date(displayDateStr);
     if (dateOffset > 0 || isReservationForToday) {
       // ถ้าจองล่วงหน้า หรือจองของวันนี้ที่ยังไม่มาถึง ให้เวลาเริ่มคือ 14:00 น. ของวันนั้น
       startDate.setHours(14, 0, 0, 0);
