@@ -60,41 +60,64 @@ export async function POST(req: Request) {
       if (chargeAmount <= 0) continue;
 
       // Check if a room_charge has already been posted TODAY for this booking
-      // We look at the date part of created_at
       const { data: existingCharges, error: txError } = await supabase
         .from('ledger_transactions')
-        .select('id, created_at')
+        .select('id, category')
         .eq('booking_id', booking.id)
-        .in('category', ['ค่าห้องพัก', 'room_charge'])
         .gte('created_at', `${todayStr}T00:00:00.000Z`)
         .lte('created_at', `${todayStr}T23:59:59.999Z`);
+        
+      const hasRoomCharge = existingCharges?.some(tx => tx.category === 'ค่าห้องพัก' || tx.category === 'room_charge');
 
       if (txError) {
-        console.error('Error checking ledger:', txError);
+        console.error('Error checking existing transactions:', txError);
         continue;
       }
 
-      if (existingCharges && existingCharges.length > 0) {
-        // Already posted today, skip
-        continue;
+      if (!hasRoomCharge && chargeAmount > 0) {
+        // Post the room charge
+        const { error: insertError } = await supabase
+          .from('ledger_transactions')
+          .insert({
+            staff_name: simulatedDate ? 'SYSTEM (Simulated)' : 'SYSTEM (Night Audit)',
+            room_id: booking.room_id,
+            booking_id: booking.id,
+            transaction_type: 'revenue',
+            category: 'ค่าห้องพัก',
+            amount: chargeAmount
+          });
+  
+        if (insertError) {
+          console.error('Error posting charge:', insertError);
+        } else {
+          postedCount++;
+        }
       }
-
-      // If not posted, post the charge!
-      const { error: insertError } = await supabase
-        .from('ledger_transactions')
-        .insert({
-          staff_name: simulatedDate ? 'SYSTEM (Simulated)' : 'SYSTEM (Night Audit)',
-          room_id: booking.room_id,
-          booking_id: booking.id,
-          transaction_type: 'revenue',
-          category: 'ค่าห้องพัก',
-          amount: chargeAmount
-        });
-
-      if (insertError) {
-        console.error('Error posting charge:', insertError);
-      } else {
-        postedCount++;
+      
+      // --- [NEW] Post Daily Extras for today ---
+      const targetDateStr = todayStr;
+      const { data: extras } = await supabase
+        .from('booking_daily_extras')
+        .select('*')
+        .eq('booking_id', booking.id)
+        .eq('target_date', targetDateStr);
+        
+      if (extras && extras.length > 0) {
+        for (const ext of extras) {
+          // Check if this extra was already posted today (match category)
+          const alreadyPosted = existingCharges?.some(tx => tx.category === ext.category);
+          if (!alreadyPosted && Number(ext.amount) !== 0) {
+            await supabase.from('ledger_transactions').insert({
+              staff_name: simulatedDate ? 'SYSTEM (Simulated)' : 'SYSTEM (Night Audit)',
+              room_id: booking.room_id,
+              booking_id: booking.id,
+              transaction_type: 'revenue',
+              category: ext.category,
+              notes: ext.description,
+              amount: Number(ext.amount)
+            });
+          }
+        }
       }
     }
 
