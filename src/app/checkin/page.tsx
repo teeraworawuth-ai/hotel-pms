@@ -256,7 +256,19 @@ export default function CheckinPage() {
         }
       }
   
-      const mergedRooms = allRooms.map(room => {
+      const getDailyPrice = (booking: any) => {
+      if (!booking) return null;
+      if (dailyRatesMap[booking.id] !== undefined) return dailyRatesMap[booking.id];
+      if (booking.actual_price === null || booking.actual_price === undefined) return booking.actual_price;
+      if (booking.stay_type !== 'overnight') return booking.actual_price;
+      
+      const cin = new Date(booking.check_in_time).getTime();
+      const cout = new Date(booking.check_out_time).getTime();
+      const nights = Math.max(1, Math.round((cout - cin) / (1000 * 60 * 60 * 24)));
+      return Math.round(booking.actual_price / nights);
+    };
+
+    const mergedRooms = allRooms.map(room => {
       const roomBookings = allTargetBookings?.filter(b => b.room_id === room.id) || [];
       
       // หาคิวสำหรับหน้าปัจจุบัน (Target Date) โดยใช้จุดตัดที่ 14:00 น. (เวลา Check-in มาตรฐาน)
@@ -321,7 +333,7 @@ export default function CheckinPage() {
                 guest_count: incomingBookingToday.guest_count,
                 guest_name: incomingBookingToday.guest_name,
                 guest_phone: incomingBookingToday.guest_phone,
-                actual_price: incomingBookingToday.actual_price,
+                actual_price: getDailyPrice(incomingBookingToday),
                 staff_name: incomingBookingToday.staff_name,
                 booking_id: incomingBookingToday.id,
                 booking_created_at: incomingBookingToday.created_at,
@@ -349,9 +361,7 @@ export default function CheckinPage() {
               finalRoom.total_payments = financialSummary[activeBooking.id]?.payments || 0;
               finalRoom.c_all = financialSummary[activeBooking.id]?.c_all || 0;
               finalRoom.c_today = financialSummary[activeBooking.id]?.c_today || 0;
-              if (dailyRatesMap[activeBooking.id] !== undefined) {
-                finalRoom.actual_price = dailyRatesMap[activeBooking.id];
-              }
+              finalRoom.actual_price = getDailyPrice(activeBooking);
             }
           }
         
@@ -368,7 +378,7 @@ export default function CheckinPage() {
             guest_count: targetDayBooking.guest_count,
             guest_name: targetDayBooking.guest_name,
             guest_phone: targetDayBooking.guest_phone,
-            actual_price: dailyRatesMap[targetDayBooking.id] !== undefined ? dailyRatesMap[targetDayBooking.id] : targetDayBooking.actual_price,
+            actual_price: getDailyPrice(targetDayBooking),
             staff_name: targetDayBooking.staff_name,
             booking_id: targetDayBooking.id,
             booking_created_at: targetDayBooking.created_at,
