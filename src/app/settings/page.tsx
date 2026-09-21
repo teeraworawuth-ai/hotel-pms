@@ -14,6 +14,7 @@ type Room = {
   room_type: string;
   price_night: number;
   price_temp: number;
+  key_deposit: number;
   tuya_device_id: string | null;
   tuya_local_key: string | null;
   tuya_ip: string | null;
@@ -50,6 +51,7 @@ export default function SettingsPage() {
     room_type: "เดี่ยว",
     price_night: 750,
     price_temp: 350,
+      key_deposit: 200,
     location: "สถานที่หลัก",
     tuya_device_id: "",
     tuya_local_key: "",
@@ -148,6 +150,7 @@ export default function SettingsPage() {
         room_type: room.room_type,
         price_night: room.price_night,
         price_temp: room.price_temp,
+          key_deposit: room.key_deposit || 200,
         location: room.location || "สถานที่หลัก",
         tuya_device_id: room.tuya_device_id || "",
         tuya_local_key: room.tuya_local_key || "",
@@ -163,6 +166,7 @@ export default function SettingsPage() {
         room_type: "เดี่ยว",
         price_night: 750,
         price_temp: 350,
+      key_deposit: 200,
         location: "สถานที่หลัก",
         tuya_device_id: "",
         tuya_local_key: "",
