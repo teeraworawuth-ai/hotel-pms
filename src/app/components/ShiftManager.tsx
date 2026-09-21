@@ -196,7 +196,7 @@ export default function ShiftManager() {
       if (now.getHours() < 6 || (now.getHours() === 6 && now.getMinutes() < 45)) {
         now.setDate(now.getDate() - 1);
       }
-      const shiftDateStr = now.toISOString().split('T')[0];
+      const shiftDateStr = now.toLocaleDateString('en-CA');
       const eodKey = `eod_shift_${shiftDateStr}`;
 
       const { data: existing } = await supabase.from('system_settings').select('id').eq('key', eodKey).maybeSingle();

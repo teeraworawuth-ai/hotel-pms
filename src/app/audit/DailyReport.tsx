@@ -95,7 +95,7 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
       }
 
       // ตรวจสอบว่ากะสุดท้ายของวันถูกปิดไปแล้วหรือยัง
-      const shiftDateStr = start.toISOString().split('T')[0];
+      const shiftDateStr = start.toLocaleDateString('en-CA');
       const eodKey = `eod_shift_${shiftDateStr}`;
       const { data: eodData } = await supabase.from('system_settings').select('id').eq('key', eodKey).maybeSingle();
       setIsDayClosed(!!eodData);

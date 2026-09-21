@@ -88,8 +88,8 @@ export default function SmartPricingPage() {
     const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
     const end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
     
-    const startStr = start.toISOString().split('T')[0];
-    const endStr = end.toISOString().split('T')[0];
+    const startStr = start.toLocaleDateString('en-CA');
+    const endStr = end.toLocaleDateString('en-CA');
 
     const { data: dailyData } = await supabase
       .from('daily_pricing_settings')
