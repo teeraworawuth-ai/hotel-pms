@@ -192,7 +192,6 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
             isOverride: false
           });
         }
-        
         setDailyBreakdown(breakdown);
       };
       
@@ -219,6 +218,18 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [actualPrice, setActualPrice] = useState<number | ''>(room.actual_price || room.price_night || '');
   const [paymentMethod, setPaymentMethod] = useState<'unpaid' | 'cash' | 'transfer' | 'credit_card'>('unpaid');
   const [staffName, setStaffName] = useState<string>(room.staff_name || '');
+  
+  // States for Key Deposit & Daily Extras
+  const [keyDepositEnabled, setKeyDepositEnabled] = useState<boolean>(true);
+  const [keyDepositAmount, setKeyDepositAmount] = useState<number | ''>(room.key_deposit !== undefined && room.key_deposit !== null ? room.key_deposit : 200);
+  
+  const [dailyExtras, setDailyExtras] = useState<any[]>([]);
+  const [isExtraModalOpen, setIsExtraModalOpen] = useState(false);
+  const [extraForm, setExtraForm] = useState({ category: 'เตียงเสริม/อุปกรณ์', description: '', amount: 0, applyToAll: false, targetDate: '' });
+  const [paymentTime, setPaymentTime] = useState<string>('');
+  
+  const getTotalExtrasAmount = () => dailyExtras.reduce((sum, ext) => sum + Number(ext.amount || 0), 0);
+  const totalToPay = Number(actualPrice || 0) + (keyDepositEnabled ? Number(keyDepositAmount || 0) : 0) + getTotalExtrasAmount();
   
   // สถานะสำหรับการย้ายห้อง
   const [isChangingRoom, setIsChangingRoom] = useState(false);
@@ -478,10 +489,24 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       .select('id')
       .single();
 
-    // 1.5 บันทึกรายได้ค่าห้อง (Revenue) อัตโนมัติ (เฉพาะครั้งแรก)
+    // 1.5 บันทึกรายได้และรายการต่างๆ (Revenue & Extras)
     if (insertedBooking) {
+        // --- 1. บันทึกมัดจำกุญแจ (ถ้ามี) ---
+        if (keyDepositEnabled && Number(keyDepositAmount) > 0) {
+          await supabase.from('ledger_transactions').insert({
+            shift_id: activeShift.id,
+            staff_name: activeShift.staff_name,
+            room_id: room.id,
+            booking_id: insertedBooking.id,
+            transaction_type: 'revenue',
+            category: 'ค่ามัดจำกุญแจ',
+            amount: Number(keyDepositAmount)
+          });
+        }
+
         if (type === 'overnight') {
           if (dailyBreakdown.length > 0) {
+              // --- 2. บันทึกราคาห้องพักรายวัน (Booking Daily Rates) ---
               const inserts = dailyBreakdown.map(d => ({
                 booking_id: insertedBooking.id,
                 target_date: d.date,
@@ -491,7 +516,22 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
               }));
               await supabase.from('booking_daily_rates').insert(inserts);
 
+              // --- 3. บันทึกรายการเพิ่ม/ส่วนลด (Booking Daily Extras) ---
+              if (dailyExtras.length > 0) {
+                const extraInserts = dailyExtras.map(ext => ({
+                  booking_id: insertedBooking.id,
+                  target_date: ext.target_date,
+                  category: ext.category,
+                  description: ext.description,
+                  amount: ext.amount
+                }));
+                await supabase.from('booking_daily_extras').insert(extraInserts);
+              }
+
+              // --- 4. บันทึกบัญชี (Ledger) สำหรับ "คืนแรก" ทันที ---
+              const firstNightDate = dailyBreakdown[0].date;
               const firstNightPrice = dailyBreakdown[0].actualPrice === '' ? 0 : dailyBreakdown[0].actualPrice;
+              
               if (firstNightPrice > 0) {
                 await supabase.from('ledger_transactions').insert({
                   shift_id: activeShift.id,
@@ -502,21 +542,27 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                   category: 'room_charge',
                   amount: Number(firstNightPrice)
                 });
-                
-                if (paymentMethod !== 'unpaid') {
+              }
+
+              // นำ Extras ของคืนแรกมาบันทึกบัญชีทันที (ไม่ต้องรอ Night Audit)
+              const firstNightExtras = dailyExtras.filter(e => e.target_date === firstNightDate);
+              for (const ext of firstNightExtras) {
+                if (Number(ext.amount) !== 0) {
                   await supabase.from('ledger_transactions').insert({
                     shift_id: activeShift.id,
                     staff_name: activeShift.staff_name,
                     room_id: room.id,
                     booking_id: insertedBooking.id,
-                    transaction_type: 'payment',
-                    category: paymentMethod,
-                    amount: -Number(firstNightPrice)
+                    transaction_type: 'revenue',
+                    category: ext.category,
+                    notes: ext.description,
+                    amount: Number(ext.amount)
                   });
                 }
               }
-            }
+          }
         } else {
+          // --- กรณี Short Stay ---
           if (actualPrice !== '') {
             await supabase.from('ledger_transactions').insert({
               shift_id: activeShift.id,
@@ -527,19 +573,21 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
               category: 'room_charge',
               amount: Number(actualPrice)
             });
-
-            if (paymentMethod !== 'unpaid' && Number(actualPrice) > 0) {
-              await supabase.from('ledger_transactions').insert({
-                shift_id: activeShift.id,
-                staff_name: activeShift.staff_name,
-                room_id: room.id,
-                booking_id: insertedBooking.id,
-                transaction_type: 'payment',
-                category: paymentMethod,
-                amount: -Number(actualPrice)
-              });
-            }
           }
+        }
+
+        // --- 5. บันทึกการรับชำระเงิน (Payment) ยอดรวมทั้งหมด ---
+        if (paymentMethod !== 'unpaid' && totalToPay > 0) {
+          await supabase.from('ledger_transactions').insert({
+            shift_id: activeShift.id,
+            staff_name: activeShift.staff_name,
+            room_id: room.id,
+            booking_id: insertedBooking.id,
+            transaction_type: 'payment',
+            category: paymentMethod,
+            amount: -Number(totalToPay),
+            notes: paymentTime ? `โอนเวลา: ${paymentTime.replace('T', ' ')}` : undefined
+          });
         }
     }
 
