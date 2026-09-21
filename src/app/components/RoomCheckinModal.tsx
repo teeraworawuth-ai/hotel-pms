@@ -216,6 +216,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
 
   const [actualPrice, setActualPrice] = useState<number | ''>(room.actual_price || room.price_night || '');
+  const [paymentMethod, setPaymentMethod] = useState<'unpaid' | 'cash' | 'transfer' | 'credit_card'>('unpaid');
   const [staffName, setStaffName] = useState<string>(room.staff_name || '');
   
   // สถานะสำหรับการย้ายห้อง
@@ -500,6 +501,18 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                   category: 'room_charge',
                   amount: Number(firstNightPrice)
                 });
+                
+                if (paymentMethod !== 'unpaid') {
+                  await supabase.from('ledger_transactions').insert({
+                    shift_id: activeShift.id,
+                    staff_name: activeShift.staff_name,
+                    room_id: room.id,
+                    booking_id: insertedBooking.id,
+                    transaction_type: 'payment',
+                    category: paymentMethod,
+                    amount: -Number(firstNightPrice)
+                  });
+                }
               }
             }
         } else {
@@ -513,6 +526,18 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
               category: 'room_charge',
               amount: Number(actualPrice)
             });
+
+            if (paymentMethod !== 'unpaid' && Number(actualPrice) > 0) {
+              await supabase.from('ledger_transactions').insert({
+                shift_id: activeShift.id,
+                staff_name: activeShift.staff_name,
+                room_id: room.id,
+                booking_id: insertedBooking.id,
+                transaction_type: 'payment',
+                category: paymentMethod,
+                amount: -Number(actualPrice)
+              });
+            }
           }
         }
     }
@@ -1222,6 +1247,22 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     placeholder="ใส่ชื่อพนักงาน"
                     className="w-full border-slate-200 rounded-xl px-4 py-3 font-medium focus:ring-blue-500 focus:border-blue-500 bg-slate-50"
                   />
+                </div>
+
+                <div className="pt-2 border-t border-slate-100">
+                  <label className="block text-sm font-medium text-slate-700 mb-2">ช่องทางการชำระเงิน (Payment Method)</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {(['unpaid', 'cash', 'transfer', 'credit_card'] as const).map(m => (
+                      <button 
+                        key={m}
+                        type="button"
+                        onClick={() => setPaymentMethod(m)}
+                        className={`py-2 px-1 text-xs font-bold rounded-lg border-2 transition-colors ${paymentMethod === m ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'bg-white border-slate-200 text-slate-500 hover:border-emerald-300'}`}
+                      >
+                        {m === 'unpaid' ? '⏳ ค้างชำระ' : m === 'cash' ? '💵 เงินสด' : m === 'transfer' ? '📱 เงินโอน' : '💳 เครดิต'}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 
                 {activeTab === 'overnight' ? (
