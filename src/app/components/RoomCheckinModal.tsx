@@ -94,9 +94,6 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
         const startDate = new Date(displayDateStr);
         if (dateOffset > 0) startDate.setHours(14, 0, 0, 0);
-
-        // 1. Fetch Daily Settings for the duration
-        const targetDates: string[] = [];
         for (let i = 0; i < numNights; i++) {
           const d = new Date(startDate);
           d.setDate(startDate.getDate() + i);
@@ -216,7 +213,9 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
 
   const [actualPrice, setActualPrice] = useState<number | ''>(room.actual_price || room.price_night || '');
-  const [paymentMethod, setPaymentMethod] = useState<'unpaid' | 'cash' | 'transfer' | 'credit_card'>('unpaid');
+  const [payCash, setPayCash] = useState<number | ''>('');
+  const [payTransfer, setPayTransfer] = useState<number | ''>('');
+  const [payCredit, setPayCredit] = useState<number | ''>('');
   const [staffName, setStaffName] = useState<string>(room.staff_name || '');
   
   // States for Key Deposit & Daily Extras
@@ -576,21 +575,21 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           }
         }
 
-        // --- 5. บันทึกการรับชำระเงิน (Payment) ยอดรวมทั้งหมด ---
-        if (paymentMethod !== 'unpaid' && totalToPay > 0) {
-          await supabase.from('ledger_transactions').insert({
-            shift_id: activeShift.id,
-            staff_name: activeShift.staff_name,
-            room_id: room.id,
-            booking_id: insertedBooking.id,
-            transaction_type: 'payment',
-            category: paymentMethod,
-            amount: -Number(totalToPay),
-            notes: paymentTime ? `โอนเวลา: ${paymentTime.replace('T', ' ')}` : undefined
-          });
+        // --- 5. บันทึกการรับชำระเงิน (Payment) แยกช่องทาง ---
+        const cash = Number(payCash) || 0;
+        const transfer = Number(payTransfer) || 0;
+        const credit = Number(payCredit) || 0;
+        
+        const paymentInserts = [];
+        if (cash > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'cash', amount: -cash });
+        if (transfer > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: paymentTime ? `โอนเวลา: ${paymentTime.replace('T', ' ')}` : undefined });
+        if (credit > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'credit_card', amount: -credit });
+        
+        if (paymentInserts.length > 0) {
+          await supabase.from('ledger_transactions').insert(paymentInserts);
         }
-    }
 
+    }
     // 2. ถ้าเป็นการ Check-in จริงๆ ใน "วันนี้" (ไม่ใช่แค่จอง) ให้บันทึกลงตาราง Rooms ด้วย
     if (dateOffset === 0 && !isReservationForToday && !bookingError) {
       await supabase
@@ -1298,22 +1297,87 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                   />
                 </div>
 
+                {/* --- Key Deposit UI --- */}
                 <div className="pt-2 border-t border-slate-100">
-                  <label className="block text-sm font-medium text-slate-700 mb-2">ช่องทางการชำระเงิน (Payment Method)</label>
-                  <div className="grid grid-cols-4 gap-2">
-                    {(['unpaid', 'cash', 'transfer', 'credit_card'] as const).map(m => (
-                      <button 
-                        key={m}
-                        type="button"
-                        onClick={() => setPaymentMethod(m)}
-                        className={`py-2 px-1 text-xs font-bold rounded-lg border-2 transition-colors ${paymentMethod === m ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'bg-white border-slate-200 text-slate-500 hover:border-emerald-300'}`}
-                      >
-                        {m === 'unpaid' ? '⏳ ค้างชำระ' : m === 'cash' ? '💵 เงินสด' : m === 'transfer' ? '📱 เงินโอน' : '💳 เครดิต'}
-                      </button>
-                    ))}
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={keyDepositEnabled}
+                        onChange={e => setKeyDepositEnabled(e.target.checked)}
+                        className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
+                      />
+                      <span className="text-sm font-bold text-slate-700">รับมัดจำกุญแจ</span>
+                    </label>
+                  </div>
+                  {keyDepositEnabled && (
+                    <div className="flex gap-2">
+                      <input 
+                        type="number"
+                        value={keyDepositAmount}
+                        onChange={e => setKeyDepositAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                        className="flex-1 border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:ring-emerald-500 focus:border-emerald-500 bg-emerald-50"
+                        placeholder="จำนวนเงินมัดจำ..."
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* --- Split Payment UI --- */}
+                <div className="pt-2 border-t border-slate-100">
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-sm font-bold text-slate-700">รับชำระเงิน (บาท)</label>
+                    <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded">จ่ายแยกช่องทางได้</span>
+                  </div>
+                  
+                  <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-xs font-bold text-slate-500">ยอดที่ต้องชำระทั้งหมด:</span>
+                      <span className="text-sm font-black text-rose-600">฿{totalToPay.toLocaleString()}</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="w-16 text-xs font-bold text-slate-600">💵 เงินสด:</div>
+                      <input 
+                        type="number" 
+                        value={payCash} 
+                        onChange={e => setPayCash(e.target.value === '' ? '' : Number(e.target.value))}
+                        className="flex-1 border-slate-200 rounded-lg p-2 text-sm font-bold focus:ring-emerald-500 focus:border-emerald-500" 
+                        placeholder="0"
+                      />
+                      <button type="button" onClick={() => setPayCash(totalToPay)} className="text-[10px] bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded font-bold">เต็มยอด</button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-16 text-xs font-bold text-slate-600">📱 โอนเงิน:</div>
+                      <input 
+                        type="number" 
+                        value={payTransfer} 
+                        onChange={e => setPayTransfer(e.target.value === '' ? '' : Number(e.target.value))}
+                        className="flex-1 border-slate-200 rounded-lg p-2 text-sm font-bold focus:ring-emerald-500 focus:border-emerald-500" 
+                        placeholder="0"
+                      />
+                      <button type="button" onClick={() => setPayTransfer(totalToPay)} className="text-[10px] bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded font-bold">เต็มยอด</button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-16 text-xs font-bold text-slate-600">💳 เครดิต:</div>
+                      <input 
+                        type="number" 
+                        value={payCredit} 
+                        onChange={e => setPayCredit(e.target.value === '' ? '' : Number(e.target.value))}
+                        className="flex-1 border-slate-200 rounded-lg p-2 text-sm font-bold focus:ring-emerald-500 focus:border-emerald-500" 
+                        placeholder="0"
+                      />
+                    </div>
+                    
+                    {Number(payTransfer) > 0 && (
+                      <div className="pt-2 border-t border-slate-200 mt-2">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">เวลาที่โอน (ตามสลิป)</label>
+                        <input type="datetime-local" value={paymentTime} onChange={e => setPaymentTime(e.target.value)} className="w-full border-slate-200 rounded-lg p-2 text-xs focus:ring-blue-500 bg-white" />
+                      </div>
+                    )}
                   </div>
                 </div>
-                
+
                 {activeTab === 'overnight' ? (
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">จำนวนคืน 🌙</label>
