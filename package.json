@@ -9,6 +9,7 @@
     "lint:skip": "echo skipping lint"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.110.1",
     "@tuya/tuya-connector-nodejs": "^2.1.2",
     "next": "16.2.10",
@@ -28,4 +29,3 @@
     "typescript": "^5"
   }
 }
-
