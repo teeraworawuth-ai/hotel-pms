@@ -82,16 +82,16 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     return true;
   });
   
-  const displayTransactions = filteredTransactions;
+  const displayTransactions = filteredTransactions.filter(tx => !tx.category.includes('มัดจำกุญแจ'));
 
 
-  const balanceForward = pastTransactions.reduce((acc, tx) => acc + (tx.category.includes('(Voided)') ? 0 : Number(tx.amount)), 0);
-  const balance = transactions.reduce((acc, tx) => acc + (tx.category.includes('(Voided)') ? 0 : Number(tx.amount)), 0);
+  const balanceForward = pastTransactions.reduce((acc, tx) => acc + (tx.category.includes('(Voided)') || tx.category.includes('มัดจำกุญแจ') ? 0 : Number(tx.amount)), 0);
+  const balance = transactions.reduce((acc, tx) => acc + (tx.category.includes('(Voided)') || tx.category.includes('มัดจำกุญแจ') ? 0 : Number(tx.amount)), 0);
 
   // --- PROJECTED TOTAL CALCULATION ---
   const validTxs = transactions.filter(t => !t.category.includes('Voided'));
   const totalPaid = validTxs.filter(t => t.amount < 0).reduce((sum, t) => sum + Math.abs(t.amount), 0);
-  const totalPostedCharges = validTxs.filter(t => t.amount > 0).reduce((sum, t) => sum + Number(t.amount), 0);
+  const totalPostedCharges = validTxs.filter(t => t.amount > 0 && !t.category.includes('มัดจำกุญแจ')).reduce((sum, t) => sum + Number(t.amount), 0);
   const totalKeyDeposit = validTxs.filter(t => t.category.includes('มัดจำกุญแจ')).reduce((sum, t) => sum + Number(t.amount), 0);
 
   // Date in YYYY-MM-DD for Asia/Bangkok
