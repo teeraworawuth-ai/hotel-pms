@@ -6,6 +6,7 @@ import { AVAILABLE_ICONS, renderIcon } from "../components/RoomIcons";
 import PosSettings from "@/app/components/PosSettings";
 import TuyaApiSettings from "@/app/components/TuyaApiSettings";
 import RatePlanSettings from "@/app/components/RatePlanSettings";
+import ExtraChargesSettings from "@/app/components/ExtraChargesSettings";
 
 type Room = {
   id: string;
@@ -25,7 +26,7 @@ type Room = {
 };
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'rooms' | 'pos' | 'tuya' | 'rate-plans'>('rate-plans');
+  const [activeTab, setActiveTab] = useState<'rooms' | 'pos' | 'tuya' | 'rate-plans' | 'extras'>('rate-plans');
   
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);

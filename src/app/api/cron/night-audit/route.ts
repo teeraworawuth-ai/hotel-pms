@@ -87,36 +87,10 @@ export async function POST(req: Request) {
             amount: chargeAmount
           });
   
-        if (insertError) {
+                if (insertError) {
           console.error('Error posting charge:', insertError);
         } else {
           postedCount++;
-        }
-      }
-      
-      // --- [NEW] Post Daily Extras for today ---
-      const targetDateStr = todayStr;
-      const { data: extras } = await supabase
-        .from('booking_daily_extras')
-        .select('*')
-        .eq('booking_id', booking.id)
-        .eq('target_date', targetDateStr);
-        
-      if (extras && extras.length > 0) {
-        for (const ext of extras) {
-          // Check if this extra was already posted today (match category)
-          const alreadyPosted = existingCharges?.some(tx => tx.category === ext.category);
-          if (!alreadyPosted && Number(ext.amount) !== 0) {
-            await supabase.from('ledger_transactions').insert({
-              staff_name: simulatedDate ? 'SYSTEM (Simulated)' : 'SYSTEM (Night Audit)',
-              room_id: booking.room_id,
-              booking_id: booking.id,
-              transaction_type: 'revenue',
-              category: ext.category,
-              notes: ext.description,
-              amount: Number(ext.amount)
-            });
-          }
         }
       }
     }

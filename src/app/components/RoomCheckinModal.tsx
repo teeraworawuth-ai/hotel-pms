@@ -233,15 +233,43 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [staffName, setStaffName] = useState<string>(room.staff_name || '');
   
   // States for Key Deposit & Daily Extras
-  const [keyDepositEnabled, setKeyDepositEnabled] = useState<boolean>(true);\n  const [initialKeyDepositStatus, setInitialKeyDepositStatus] = useState<boolean>(true);
+  const [keyDepositEnabled, setKeyDepositEnabled] = useState<boolean>(true);
+  const [initialKeyDepositStatus, setInitialKeyDepositStatus] = useState<boolean>(true);
   const [keyDepositAmount, setKeyDepositAmount] = useState<number | ''>(room.key_deposit !== undefined && room.key_deposit !== null ? room.key_deposit : 200);
   
+    const [extraSettings, setExtraSettings] = useState<any[]>([]);
+  useEffect(() => {
+    supabase.from('extra_charge_settings').select('*').eq('is_active', true).order('created_at', { ascending: true })
+      .then(({ data }) => { if (data) setExtraSettings(data); });
+  }, []);
   const [dailyExtras, setDailyExtras] = useState<any[]>([]);
   const [isExtraModalOpen, setIsExtraModalOpen] = useState(false);
   const [extraForm, setExtraForm] = useState({ category: 'เตียงเสริม/อุปกรณ์', description: '', amount: 0, applyToAll: false, targetDate: '' });
   const [paymentTime, setPaymentTime] = useState<string>('');
   
-  const getTotalExtrasAmount = () => dailyExtras.reduce((sum, ext) => sum + Number(ext.amount || 0), 0);
+    const handleAddExtra = (setting: any) => {
+    const qty = 1;
+    const n = Number(nights) || 1;
+    const isPerNight = setting.charge_type === 'per_night';
+    const total = isPerNight ? setting.price * qty * n : setting.price * qty;
+    
+    setDailyExtras([...dailyExtras, {
+      id: Date.now().toString(),
+      name: setting.name,
+      price: setting.price,
+      qty,
+      isPerNight,
+      amount: total
+    }]);
+  };
+  
+  const handleRemoveExtra = (id: string) => {
+    setDailyExtras(dailyExtras.filter(e => e.id !== id));
+  };
+
+    const getTotalExtrasAmount = () => dailyExtras.reduce((sum, ext) => {
+    return sum + (ext.isPerNight ? (ext.price * ext.qty * (Number(nights) || 1)) : (ext.price * ext.qty));
+  }, 0);
   const totalToPay = Number(actualPrice || 0) + (keyDepositEnabled ? Number(keyDepositAmount || 0) : 0) + getTotalExtrasAmount();
   const totalPaid = pastPayments.reduce((sum, p) => sum + Math.abs(p.amount), 0);
   const remainingBalance = totalToPay - totalPaid;
@@ -487,7 +515,9 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       if (data.date && data.time) {
         setPaymentTime(`${data.date}T${data.time}`);
       }
-      alert(`AI ดึงข้อมูลสำเร็จ!\nธนาคาร: ${data.sender_bank || '-'}\nยอดเงิน: ${data.amount || '-'}`);
+      alert(`AI ดึงข้อมูลสำเร็จ!
+ธนาคาร: ${data.sender_bank || '-'}
+ยอดเงิน: ${data.amount || '-'}`);
     } catch (err) {
       alert('AI ไม่สามารถอ่านข้อมูลสลิปนี้ได้ หรือ API Error');
     } finally {
@@ -553,6 +583,21 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
         if (type === 'overnight') {
           if (dailyBreakdown.length > 0) {
+                      // --- 1.6 บันทึก Extra Charges (ถ้ามี) ---
+        if (dailyExtras.length > 0) {
+          const ledgerExtras = dailyExtras.map(ext => ({
+            shift_id: activeShift.id,
+            staff_name: activeShift.staff_name,
+            room_id: room.id,
+            booking_id: insertedBooking.id,
+            transaction_type: 'revenue',
+            category: ext.name,
+            notes: ext.isPerNight ? `(${nights || 1} คืน)` : null,
+            amount: ext.isPerNight ? (ext.price * ext.qty * (Number(nights) || 1)) : (ext.price * ext.qty)
+          }));
+          await supabase.from('ledger_transactions').insert(ledgerExtras);
+        }
+
               // --- 2. บันทึกราคาห้องพักรายวัน (Booking Daily Rates) ---
               const inserts = dailyBreakdown.map(d => ({
                 booking_id: insertedBooking.id,
@@ -563,17 +608,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
               }));
               await supabase.from('booking_daily_rates').insert(inserts);
 
-              // --- 3. บันทึกรายการเพิ่ม/ส่วนลด (Booking Daily Extras) ---
-              if (dailyExtras.length > 0) {
-                const extraInserts = dailyExtras.map(ext => ({
-                  booking_id: insertedBooking.id,
-                  target_date: ext.target_date,
-                  category: ext.category,
-                  description: ext.description,
-                  amount: ext.amount
-                }));
-                await supabase.from('booking_daily_extras').insert(extraInserts);
-              }
+              
 
               // --- 4. บันทึกบัญชี (Ledger) สำหรับ "คืนแรก" ทันที ---
               const firstNightDate = dailyBreakdown[0].date;
@@ -591,21 +626,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                 });
               }
 
-              // นำ Extras ของคืนแรกมาบันทึกบัญชีทันที (ไม่ต้องรอ Night Audit)
-              const firstNightExtras = dailyExtras.filter(e => e.target_date === firstNightDate);
-              for (const ext of firstNightExtras) {
-                if (Number(ext.amount) !== 0) {
-                  await supabase.from('ledger_transactions').insert({
-                    shift_id: activeShift.id,
-                    staff_name: activeShift.staff_name,
-                    room_id: room.id,
-                    booking_id: insertedBooking.id,
-                    transaction_type: 'revenue',
-                    category: ext.category,
-                    notes: ext.description,
-                    amount: Number(ext.amount)
-                  });
-                }
+              
               }
           }
         } else {
@@ -629,6 +650,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         const credit = Number(payCredit) || 0;
         
         
+    
     // [NEW] Sync Key Deposit Charge for existing bookings
     if (keyDepositEnabled !== initialKeyDepositStatus) {
       if (keyDepositEnabled && Number(keyDepositAmount) > 0) {
@@ -642,6 +664,18 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       }
       setInitialKeyDepositStatus(keyDepositEnabled);
     }
+    
+    // [NEW] Sync Extra Charges for existing bookings
+    if (dailyExtras.length > 0) {
+      const ledgerExtras = dailyExtras.map(ext => ({
+        shift_id: activeShift.id, staff_name: activeShift.staff_name,
+        room_id: room.id, booking_id: room.booking_id,
+        transaction_type: 'revenue', category: ext.name, 
+        notes: ext.isPerNight ? `(${nights || 1} คืน)` : null, amount: ext.isPerNight ? (ext.price * ext.qty * (Number(nights) || 1)) : (ext.price * ext.qty)
+      }));
+      await supabase.from('ledger_transactions').insert(ledgerExtras);
+    }
+
 
     const paymentInserts = [];
         if (cash > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'cash', amount: -cash });
@@ -707,11 +741,14 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       }
     }
     
+    
     setPayCash('');
     setPayTransfer('');
     setPayCredit('');
     setPaymentTime('');
+    setDailyExtras([]); // clear extras after save
     setLoading(false);
+
     onUpdate();
   };
 
@@ -1443,7 +1480,13 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                       <span className="text-sm font-bold text-slate-700">รับมัดจำกุญแจ</span>
                     </label>
                   </div>
-                  {keyDepositEnabled && (
+                                        {dailyExtras.length > 0 && dailyExtras.map((ext, idx) => (
+                        <div key={idx} className="flex justify-between items-center text-sm text-slate-600">
+                          <span>{ext.name} {ext.qty > 1 ? `x${ext.qty}` : ''} {ext.isPerNight ? `(${nights || 1} คืน)` : ''} <button onClick={() => handleRemoveExtra(ext.id)} className="text-[10px] text-rose-500 ml-1 hover:underline">ลบ</button></span>
+                          <span>฿{(ext.isPerNight ? (ext.price * ext.qty * (Number(nights) || 1)) : (ext.price * ext.qty)).toLocaleString()}</span>
+                        </div>
+                      ))}
+                      {keyDepositEnabled && (
                     <div className="flex gap-2">
                       <input 
                         type="number"
@@ -1455,6 +1498,43 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     </div>
                   )}
                 </div>
+
+                                {/* --- Extra Charges UI --- */}
+                {extraSettings.length > 0 && (
+                <div className="pt-3 border-t border-slate-100 mb-4">
+                  <label className="block text-sm font-bold text-slate-700 mb-2">เพิ่มค่าใช้จ่าย (Add Extras)</label>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {extraSettings.filter(e => e.ui_type === 'quick_button').map(e => (
+                      <button 
+                        key={e.id}
+                        type="button"
+                        onClick={() => handleAddExtra(e)}
+                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm transition-colors"
+                      >
+                        + {e.name} (฿{e.price})
+                      </button>
+                    ))}
+                  </div>
+                  {extraSettings.filter(e => e.ui_type === 'dropdown').length > 0 && (
+                    <select 
+                      onChange={(e) => {
+                        const setting = extraSettings.find(s => s.id === e.target.value);
+                        if (setting) {
+                          handleAddExtra(setting);
+                          e.target.value = ""; // reset
+                        }
+                      }}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:ring-emerald-500 focus:border-emerald-500 bg-slate-50"
+                      defaultValue=""
+                    >
+                      <option value="" disabled>-- เลือกรายการอื่นๆ --</option>
+                      {extraSettings.filter(e => e.ui_type === 'dropdown').map(e => (
+                        <option key={e.id} value={e.id}>{e.name} (฿{e.price})</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                )}
 
                 {/* --- Past Payments History --- */}
                 {pastPayments.length > 0 && (
