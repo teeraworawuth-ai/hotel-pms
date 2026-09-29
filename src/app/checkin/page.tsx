@@ -34,6 +34,7 @@ export type RoomStatus = {
   total_payments?: number;
     c_all?: number;
     c_today?: number;
+  has_key_deposit?: boolean;
   map_x?: number;
   map_y?: number;
   map_width?: number;
@@ -170,7 +171,7 @@ export default function CheckinPage() {
 
     // [NEW] Fetch ledger transactions for active bookings to calculate unpaid balances
     const activeBookingIds = allTargetBookings?.map(b => b.id) || [];
-    const financialSummary: Record<string, { charges: number, payments: number, balance: number, c_all: number, c_today: number }> = {};
+    const financialSummary: Record<string, { charges: number, payments: number, balance: number, c_all: number, c_today: number, has_key_deposit?: boolean }> = {};
       
       const dailyRatesMap: Record<string, number> = {};
       const targetDateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth()+1).padStart(2,'0')}-${String(targetDate.getDate()).padStart(2,'0')}`;
@@ -236,7 +237,7 @@ export default function CheckinPage() {
           ledgers.forEach(tx => {
             if (tx.booking_id) {
               if (!financialSummary[tx.booking_id]) {
-                financialSummary[tx.booking_id] = { charges: 0, payments: 0, balance: 0, c_all: 0, c_today: 0 };
+                financialSummary[tx.booking_id] = { charges: 0, payments: 0, balance: 0, c_all: 0, c_today: 0, has_key_deposit: false };
               }
               const amt = Number(tx.amount);
               financialSummary[tx.booking_id].balance += amt;
@@ -246,6 +247,9 @@ export default function CheckinPage() {
                 financialSummary[tx.booking_id].c_today += amt; // C_today = all posted charges
                 
                 // If it's not a room charge, it's an extra fee, so add it to C_all
+                if (tx.category === 'key_deposit' || tx.category === 'ค่ามัดจำกุญแจ' || tx.category.includes('มัดจำกุญแจ')) {
+                  financialSummary[tx.booking_id].has_key_deposit = true;
+                }
                 if (tx.category !== 'ค่าห้องพัก' && tx.category !== 'room_charge') {
                   financialSummary[tx.booking_id].c_all += amt;
                 }
@@ -349,6 +353,7 @@ export default function CheckinPage() {
             finalRoom.total_payments = financialSummary[incomingBookingToday.id]?.payments || 0;
                 finalRoom.c_all = financialSummary[incomingBookingToday.id]?.c_all || 0;
                 finalRoom.c_today = financialSummary[incomingBookingToday.id]?.c_today || 0;
+                finalRoom.has_key_deposit = financialSummary[incomingBookingToday.id]?.has_key_deposit;
           }
         }
         
@@ -362,6 +367,7 @@ export default function CheckinPage() {
               finalRoom.total_payments = financialSummary[activeBooking.id]?.payments || 0;
               finalRoom.c_all = financialSummary[activeBooking.id]?.c_all || 0;
               finalRoom.c_today = financialSummary[activeBooking.id]?.c_today || 0;
+              finalRoom.has_key_deposit = financialSummary[activeBooking.id]?.has_key_deposit;
               finalRoom.actual_price = getDailyPrice(activeBooking);
             }
           }
@@ -383,7 +389,8 @@ export default function CheckinPage() {
             staff_name: targetDayBooking.staff_name,
             booking_id: targetDayBooking.id,
             booking_created_at: targetDayBooking.created_at,
-            unpaid_balance: financialSummary[targetDayBooking.id]?.balance || 0
+            unpaid_balance: financialSummary[targetDayBooking.id]?.balance || 0,
+            has_key_deposit: financialSummary[targetDayBooking.id]?.has_key_deposit
           };
         } else {
           finalRoom = {
@@ -930,7 +937,15 @@ export default function CheckinPage() {
                           </div>
                         )}
                       
-                                                {/* Financial Summary for Occupied Rooms */}
+                                                
+                        {/* Key Deposit Indicator */}
+                        {room.has_key_deposit && (
+                          <div className={`absolute left-1 ${room.status === 'occupied' ? 'bottom-[16px] sm:bottom-[20px]' : 'bottom-1'} text-[12px] sm:text-[14px] drop-shadow-sm z-20`} title="รับมัดจำกุญแจแล้ว">
+                            🔑<span className="absolute -bottom-1 -right-1 text-[8px] sm:text-[10px]">✅</span>
+                          </div>
+                        )}
+                        
+                        {/* Financial Summary for Occupied Rooms */}
                         {room.status === 'occupied' && (
                           <div className="absolute bottom-0 left-0 right-0 w-full h-[14px] sm:h-[18px] flex items-center justify-center gap-0.5 sm:gap-1 text-[7px] sm:text-[9.5px] font-bold z-30 whitespace-nowrap bg-white/60 backdrop-blur-[1px] border-t border-slate-300/40 text-slate-500 tracking-tight overflow-hidden px-0.5">
                             <span>{room.total_charges || 0}</span>

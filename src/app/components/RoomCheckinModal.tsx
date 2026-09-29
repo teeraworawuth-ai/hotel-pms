@@ -233,7 +233,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [staffName, setStaffName] = useState<string>(room.staff_name || '');
   
   // States for Key Deposit & Daily Extras
-  const [keyDepositEnabled, setKeyDepositEnabled] = useState<boolean>(true);
+  const [keyDepositEnabled, setKeyDepositEnabled] = useState<boolean>(true);\n  const [initialKeyDepositStatus, setInitialKeyDepositStatus] = useState<boolean>(true);
   const [keyDepositAmount, setKeyDepositAmount] = useState<number | ''>(room.key_deposit !== undefined && room.key_deposit !== null ? room.key_deposit : 200);
   
   const [dailyExtras, setDailyExtras] = useState<any[]>([]);
@@ -628,7 +628,22 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         const transfer = Number(payTransfer) || 0;
         const credit = Number(payCredit) || 0;
         
-        const paymentInserts = [];
+        
+    // [NEW] Sync Key Deposit Charge for existing bookings
+    if (keyDepositEnabled !== initialKeyDepositStatus) {
+      if (keyDepositEnabled && Number(keyDepositAmount) > 0) {
+        await supabase.from('ledger_transactions').insert({
+          shift_id: activeShift.id, staff_name: activeShift.staff_name,
+          room_id: room.id, booking_id: room.booking_id,
+          transaction_type: 'revenue', category: 'ค่ามัดจำกุญแจ', amount: Number(keyDepositAmount)
+        });
+      } else if (!keyDepositEnabled) {
+        await supabase.from('ledger_transactions').delete().eq('booking_id', room.booking_id).in('category', ['ค่ามัดจำกุญแจ', 'key_deposit']).gt('amount', 0);
+      }
+      setInitialKeyDepositStatus(keyDepositEnabled);
+    }
+
+    const paymentInserts = [];
         if (cash > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'cash', amount: -cash });
         if (transfer > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: paymentTime ? `โอนเวลา: ${paymentTime.replace('T', ' ')}` : undefined });
         if (credit > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'credit_card', amount: -credit });
@@ -698,18 +713,29 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     setPaymentTime('');
     setLoading(false);
     onUpdate();
-    alert('กรุณาเปิดกะก่อนทำรายการ');
   };
 
   useEffect(() => {
     if (room.booking_id) {
       supabase.from('ledger_transactions')
-        .select('id, category, amount, created_at, notes')
+        .select('id, category, amount, created_at, notes, transaction_type')
         .eq('booking_id', room.booking_id)
-        .eq('transaction_type', 'payment')
         .then(({ data }) => {
-          if (data) setPastPayments(data);
+          if (data) {
+            const payments = data.filter(d => d.transaction_type === 'payment');
+            setPastPayments(payments);
+            
+            // Check if key deposit charge exists
+            const keyDepositTx = data.find(d => d.category === 'ค่ามัดจำกุญแจ' || d.category === 'key_deposit');
+            if (keyDepositTx) {
+              setKeyDepositEnabled(true); setInitialKeyDepositStatus(true);
+            } else {
+              setKeyDepositEnabled(false); setInitialKeyDepositStatus(false);
+            }
+          }
         });
+    } else {
+      setKeyDepositEnabled(true); setInitialKeyDepositStatus(true);
     }
   }, [room.booking_id]);
 
@@ -719,7 +745,17 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       return;
     }
     setLoading(true);
+
+
+    const cash = Number(payCash) || 0;
+    const transfer = Number(payTransfer) || 0;
+    const credit = Number(payCredit) || 0;
     
+    if (cash > 0 || transfer > 0 || credit > 0 || keyDepositEnabled !== initialKeyDepositStatus) {
+      await handleAdditionalPayment();
+    }
+
+
     // 1. Update Booking Status
     const { error: bookingError } = await supabase
       .from('bookings')
