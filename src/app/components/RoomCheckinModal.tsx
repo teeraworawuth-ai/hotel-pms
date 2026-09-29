@@ -234,6 +234,8 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   
   const getTotalExtrasAmount = () => dailyExtras.reduce((sum, ext) => sum + Number(ext.amount || 0), 0);
   const totalToPay = Number(actualPrice || 0) + (keyDepositEnabled ? Number(keyDepositAmount || 0) : 0) + getTotalExtrasAmount();
+  const totalPaid = pastPayments.reduce((sum, p) => sum + Math.abs(p.amount), 0);
+  const remainingBalance = totalToPay - totalPaid;
   
   // สถานะสำหรับการย้ายห้อง
   const [isChangingRoom, setIsChangingRoom] = useState(false);
