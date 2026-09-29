@@ -535,7 +535,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       return;
     }
     setLoading(true);
-    const startDate = new Date(displayDateStr);
+    const startDate = (dateOffset === 0 && !isReservationForToday) ? getNow() : new Date(displayDateStr);
     if (dateOffset > 0 || isReservationForToday) {
       // ถ้าจองล่วงหน้า หรือจองของวันนี้ที่ยังไม่มาถึง ให้เวลาเริ่มคือ 14:00 น. ของวันนั้น
       startDate.setHours(14, 0, 0, 0);
