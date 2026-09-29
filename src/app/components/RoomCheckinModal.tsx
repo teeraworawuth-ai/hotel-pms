@@ -1414,12 +1414,12 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                 {/* --- Past Payments History --- */}
                 {pastPayments.length > 0 && (
                   <div className="pt-2 border-t border-slate-100 mb-4">
-                    <label className="block text-sm font-bold text-slate-700 mb-2">����ѵԡ�ê����Թ (Past Payments)</label>
+                    <label className="block text-sm font-bold text-slate-700 mb-2">ประวัติการรับชำระเงิน (Past Payments)</label>
                     <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
                       {pastPayments.map(p => (
                         <div key={p.id} className="flex justify-between text-sm">
-                          <span className="text-slate-600">{new Date(p.created_at).toLocaleString('th-TH')} - {p.category}</span>
-                          <span className="font-bold text-emerald-600">�฿{Math.abs(p.amount).toLocaleString()}</span>
+                          <span className="text-slate-600">{p.category === 'transfer' && p.notes && p.notes.includes('โอนเวลา:') ? p.notes.split('โอนเวลา:')[1].trim() : new Date(p.created_at).toLocaleString('th-TH')} - {p.category}</span>
+                          <span className="font-bold text-emerald-600">฿{Math.abs(p.amount).toLocaleString()}</span>
                         </div>
                       ))}
                     </div>
