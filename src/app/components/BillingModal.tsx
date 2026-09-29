@@ -34,6 +34,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   const [customItemPrice, setCustomItemPrice] = useState<number | ''>('');
   const [selectedDate, setSelectedDate] = useState<string>('ALL');
   const [showPayments, setShowPayments] = useState<boolean>(true);
+  const [includeKeyDeposit, setIncludeKeyDeposit] = useState<boolean>(true);
   const { getNow } = useSimulatedTime();
 
   useEffect(() => {
@@ -101,9 +102,9 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   const futureRates = dailyRates.filter(r => r.target_date > todayStr).reduce((sum, r) => sum + Number(r.amount), 0);
   const futureExtras = dailyExtras.filter(e => e.target_date > todayStr).reduce((sum, e) => sum + Number(e.amount), 0);
   
-  // To avoid duplicate counting if someone clicks POS repeatedly, 
+    // To avoid duplicate counting if someone clicks POS repeatedly, 
   // we count all past/today posted charges from ledger, plus ONLY future unposted from daily tables.
-  const totalExpectedCharges = totalPostedCharges + futureRates + futureExtras;
+  const totalExpectedCharges = totalPostedCharges + futureRates + futureExtras + (includeKeyDeposit ? totalKeyDeposit : 0);
   const netRemaining = totalExpectedCharges - totalPaid;
 
   useEffect(() => {

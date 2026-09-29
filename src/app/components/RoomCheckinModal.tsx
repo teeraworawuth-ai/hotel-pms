@@ -603,7 +603,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                 booking_id: insertedBooking.id,
                 target_date: d.date,
                 amount: d.actualPrice === '' ? 0 : d.actualPrice,
-                original_rate_plan_id: selectedRatePlanId,
+                original_rate_plan_id: selectedRatePlanId || null,
                 is_manual_override: d.isOverride
               }));
               await supabase.from('booking_daily_rates').insert(inserts);
