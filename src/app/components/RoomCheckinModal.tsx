@@ -582,52 +582,46 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         }
 
         if (type === 'overnight') {
+          // --- 1.6 บันทึก Extra Charges (ถ้ามี) ---
+          if (dailyExtras.length > 0) {
+            const ledgerExtras = dailyExtras.map(ext => ({
+              shift_id: activeShift.id,
+              staff_name: activeShift.staff_name,
+              room_id: room.id,
+              booking_id: insertedBooking.id,
+              transaction_type: 'revenue',
+              category: ext.name,
+              notes: ext.isPerNight ? '(' + (nights || 1) + ' คืน)' : null,
+              amount: ext.isPerNight ? (ext.price * ext.qty * (Number(nights) || 1)) : (ext.price * ext.qty)
+            }));
+            await supabase.from('ledger_transactions').insert(ledgerExtras);
+          }
+
           if (dailyBreakdown.length > 0) {
-                      // --- 1.6 บันทึก Extra Charges (ถ้ามี) ---
-        if (dailyExtras.length > 0) {
-          const ledgerExtras = dailyExtras.map(ext => ({
-            shift_id: activeShift.id,
-            staff_name: activeShift.staff_name,
-            room_id: room.id,
-            booking_id: insertedBooking.id,
-            transaction_type: 'revenue',
-            category: ext.name,
-            notes: ext.isPerNight ? `(${nights || 1} คืน)` : null,
-            amount: ext.isPerNight ? (ext.price * ext.qty * (Number(nights) || 1)) : (ext.price * ext.qty)
-          }));
-          await supabase.from('ledger_transactions').insert(ledgerExtras);
-        }
+            // --- 2. บันทึกราคาห้องพักรายวัน (Booking Daily Rates) ---
+            const inserts = dailyBreakdown.map(d => ({
+              booking_id: insertedBooking.id,
+              target_date: d.date,
+              amount: d.actualPrice === '' ? 0 : d.actualPrice,
+              original_rate_plan_id: selectedRatePlanId || null,
+              is_manual_override: d.isOverride
+            }));
+            const { error: ratesError } = await supabase.from('booking_daily_rates').insert(inserts);
+            if (ratesError) console.error('booking_daily_rates insert error:', ratesError);
 
-              // --- 2. บันทึกราคาห้องพักรายวัน (Booking Daily Rates) ---
-              const inserts = dailyBreakdown.map(d => ({
+            // --- 4. บันทึกบัญชี (Ledger) สำหรับ "คืนแรก" ทันที ---
+            const firstNightPrice = dailyBreakdown[0].actualPrice === '' ? 0 : dailyBreakdown[0].actualPrice;
+            if (firstNightPrice > 0) {
+              await supabase.from('ledger_transactions').insert({
+                shift_id: activeShift.id,
+                staff_name: activeShift.staff_name,
+                room_id: room.id,
                 booking_id: insertedBooking.id,
-                target_date: d.date,
-                amount: d.actualPrice === '' ? 0 : d.actualPrice,
-                original_rate_plan_id: selectedRatePlanId || null,
-                is_manual_override: d.isOverride
-              }));
-              await supabase.from('booking_daily_rates').insert(inserts);
-
-              
-
-              // --- 4. บันทึกบัญชี (Ledger) สำหรับ "คืนแรก" ทันที ---
-              const firstNightDate = dailyBreakdown[0].date;
-              const firstNightPrice = dailyBreakdown[0].actualPrice === '' ? 0 : dailyBreakdown[0].actualPrice;
-              
-              if (firstNightPrice > 0) {
-                await supabase.from('ledger_transactions').insert({
-                  shift_id: activeShift.id,
-                  staff_name: activeShift.staff_name,
-                  room_id: room.id,
-                  booking_id: insertedBooking.id,
-                  transaction_type: 'revenue',
-                  category: 'room_charge',
-                  amount: Number(firstNightPrice)
-                });
-              }
-
-              
-              }
+                transaction_type: 'revenue',
+                category: 'room_charge',
+                amount: Number(firstNightPrice)
+              });
+            }
           }
         } else {
           // --- กรณี Short Stay ---
@@ -707,7 +701,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     setLoading(false);
     if (!bookingError && insertedBooking) {
       setNewBookingId(insertedBooking.id);
-      setShowBilling(true);
+      onClose();
     } else {
       onUpdate();
     }
@@ -817,7 +811,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     }
     
     setLoading(false);
-    setShowBilling(true);
+    onClose();
   };
 
   
@@ -1346,7 +1340,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     <label className="block text-sm font-medium text-slate-700 mb-1">ชื่อลูกค้า</label>
                     <input 
                       type="text" 
-                      value={guestName} onChange={(e) => setGuestName(e.target.value)}
+                      value={guestName} onChange={(e) => setGuestName(e.target.value)} disabled={room.status === 'occupied'}
                       placeholder="ชื่อ-นามสกุล"
                       className="w-full border-slate-200 rounded-xl px-4 py-3 font-medium focus:ring-blue-500 focus:border-blue-500 bg-slate-50 disabled:opacity-50"
                     />
@@ -1355,20 +1349,43 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     <label className="block text-sm font-medium text-slate-700 mb-1">เบอร์โทรศัพท์ <span className="text-red-500">*</span></label>
                     <input 
                       type="tel" maxLength={10}
-                      value={guestPhone} onChange={(e) => setGuestPhone(e.target.value.replace(/\D/g, ''))}
+                      value={guestPhone} onChange={(e) => setGuestPhone(e.target.value.replace(/\D/g, ''))} disabled={room.status === 'occupied'}
                       placeholder="ตัวเลข 10 หลัก"
                       className="w-full border-slate-200 rounded-xl px-4 py-3 font-medium focus:ring-blue-500 focus:border-blue-500 bg-slate-50 disabled:opacity-50"
                     />
                   </div>
                 </div>
-                <div>
+                <div className="grid grid-cols-2 gap-4">
+<div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">จำนวนผู้เข้าพัก (คน)</label>
                   <input 
                     type="number" min="1" 
-                    value={guestCount} onChange={(e) => setGuestCount(e.target.value === '' ? '' : Number(e.target.value))}
+                    value={guestCount} onChange={(e) => setGuestCount(e.target.value === '' ? '' : Number(e.target.value))} disabled={room.status === 'occupied'}
                     className="w-full border-slate-200 rounded-xl px-4 py-3 text-lg font-bold focus:ring-blue-500 focus:border-blue-500 bg-slate-50 disabled:opacity-50"
                   />
                 </div>
+{activeTab === 'overnight' ? (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">จำนวนคืน 🌙</label>
+                    <input 
+                      type="number" min="0" disabled={room.status === 'occupied'} value={nights} onChange={(e) => setNights(e.target.value === '' ? '' : Number(e.target.value))}
+                      className="w-full border-slate-200 rounded-xl px-4 py-3 text-lg font-bold focus:ring-blue-500 focus:border-blue-500 bg-slate-50 disabled:opacity-50"
+                    />
+                    <p className="text-xs text-slate-500 mt-2">
+                      ออกวันที่: {getNextNoon(displayDate, Number(nights) || 0).toLocaleString('th-TH')}
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">จำนวนชั่วโมง ⏳</label>
+                    <input 
+                      type="number" min="1" 
+                      value={hours} onChange={(e) => setHours(e.target.value === '' ? '' : Number(e.target.value))}
+                      className="w-full border-slate-200 rounded-xl px-4 py-3 text-lg font-bold focus:ring-amber-500 focus:border-amber-500 bg-slate-50 disabled:opacity-50"
+                    />
+                  </div>
+                )}
+</div>
                 {dynamicPricingDetails && (dynamicPricingDetails.weekendSurcharge > 0 || dynamicPricingDetails.holidaySurcharge > 0 || dynamicPricingDetails.lowOccupancySurcharge > 0 || dynamicPricingDetails.isSurgeDisabled) && (
                   <div className="bg-slate-100 rounded-xl p-3 text-sm flex flex-col gap-1 border border-slate-200">
                     <p className="font-bold text-slate-700">⚡ การคำนวณราคาอัตโนมัติ:</p>
@@ -1406,11 +1423,11 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                               let bgClass = "bg-white";
                               
                               if (day.isOverride) {
-                                if (day.actualPrice < day.targetPrice) {
+                                if (Number(day.actualPrice) < Number(day.targetPrice)) {
                                   colorClass = "text-red-600 focus:border-red-500 border-red-300";
                                   bgClass = "bg-red-50";
                                   icon = "🔻";
-                                } else if (day.actualPrice > day.targetPrice) {
+                                } else if (Number(day.actualPrice) > Number(day.targetPrice)) {
                                   colorClass = "text-emerald-600 focus:border-emerald-500 border-emerald-300";
                                   bgClass = "bg-emerald-50";
                                   icon = "🔺";
@@ -1451,7 +1468,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                       <label className="block text-sm font-medium text-slate-700 mb-1">ราคาห้อง (Price)</label>
                       <input 
                         type="number" min="0" 
-                        value={actualPrice} onChange={(e) => setActualPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                        value={actualPrice} onChange={(e) => setActualPrice(e.target.value === '' ? '' : Number(e.target.value))} disabled={room.status === 'occupied'}
                         className="w-full border-slate-200 rounded-xl px-4 py-3 text-lg font-bold focus:ring-emerald-500 focus:border-emerald-500 bg-emerald-50 text-emerald-700"
                       />
                     </div>
@@ -1461,7 +1478,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                   <label className="block text-sm font-medium text-slate-700 mb-1">พนักงานที่รับเช็คอิน</label>
                   <input 
                     type="text" 
-                    value={staffName} onChange={(e) => setStaffName(e.target.value)}
+                    value={staffName} onChange={(e) => setStaffName(e.target.value)} disabled={room.status === 'occupied'}
                     placeholder="ใส่ชื่อพนักงาน"
                     className="w-full border-slate-200 rounded-xl px-4 py-3 font-medium focus:ring-blue-500 focus:border-blue-500 bg-slate-50 disabled:opacity-50"
                   />
@@ -1474,7 +1491,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                       <input 
                         type="checkbox" 
                         checked={keyDepositEnabled}
-                        onChange={e => setKeyDepositEnabled(e.target.checked)}
+                        onChange={e => setKeyDepositEnabled(e.target.checked)} disabled={room.status === 'occupied'}
                         className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
                       />
                       <span className="text-sm font-bold text-slate-700">รับมัดจำกุญแจ</span>
@@ -1482,7 +1499,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                   </div>
                                         {dailyExtras.length > 0 && dailyExtras.map((ext, idx) => (
                         <div key={idx} className="flex justify-between items-center text-sm text-slate-600">
-                          <span>{ext.name} {ext.qty > 1 ? `x${ext.qty}` : ''} {ext.isPerNight ? `(${nights || 1} คืน)` : ''} <button onClick={() => handleRemoveExtra(ext.id)} className="text-[10px] text-rose-500 ml-1 hover:underline">ลบ</button></span>
+                          <span>{ext.name} {ext.qty > 1 ? `x${ext.qty}` : ''} {ext.isPerNight ? `(${nights || 1} คืน)` : ''} {room.status !== 'occupied' && (<button onClick={() => handleRemoveExtra(ext.id)} className="text-[10px] text-rose-500 ml-1 hover:underline">ลบ</button>)}</span>
                           <span>฿{(ext.isPerNight ? (ext.price * ext.qty * (Number(nights) || 1)) : (ext.price * ext.qty)).toLocaleString()}</span>
                         </div>
                       ))}
@@ -1491,7 +1508,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                       <input 
                         type="number"
                         value={keyDepositAmount}
-                        onChange={e => setKeyDepositAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                        onChange={e => setKeyDepositAmount(e.target.value === '' ? '' : Number(e.target.value))} disabled={room.status === 'occupied'}
                         className="flex-1 border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:ring-emerald-500 focus:border-emerald-500 bg-emerald-50"
                         placeholder="จำนวนเงินมัดจำ..."
                       />
@@ -1503,7 +1520,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                 {extraSettings.length > 0 && (
                 <div className="pt-3 border-t border-slate-100 mb-4">
                   <label className="block text-sm font-bold text-slate-700 mb-2">เพิ่มค่าใช้จ่าย (Add Extras)</label>
-                  <div className="flex flex-wrap gap-2 mb-2">
+                  {room.status !== 'occupied' && ( <div className="flex flex-wrap gap-2 mb-2">
                     {extraSettings.filter(e => e.ui_type === 'quick_button').map(e => (
                       <button 
                         key={e.id}
@@ -1514,7 +1531,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                         + {e.name} (฿{e.price})
                       </button>
                     ))}
-                  </div>
+                  </div> )}
                   {extraSettings.filter(e => e.ui_type === 'dropdown').length > 0 && (
                     <select 
                       onChange={(e) => {
@@ -1543,7 +1560,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
                       {pastPayments.map(p => (
                         <div key={p.id} className="flex justify-between text-sm">
-                          <span className="text-slate-600">{p.category === 'transfer' && p.notes && p.notes.includes('โอนเวลา:') ? p.notes.split('โอนเวลา:')[1].trim() : new Date(p.created_at).toLocaleString('th-TH')} - {p.category}</span>
+                          <span className="text-slate-600">{p.category === 'transfer' && p.notes && p.notes.includes('โอนเวลา:') ? p.notes.split('โอนเวลา:')[1].trim() : new Date(p.created_at).toLocaleString('sv-SE')} - {p.category}</span>
                           <span className="font-bold text-emerald-600">฿{Math.abs(p.amount).toLocaleString()}</span>
                         </div>
                       ))}
@@ -1635,27 +1652,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                 </div>
                 )}
 
-                {activeTab === 'overnight' ? (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">จำนวนคืน 🌙</label>
-                    <input 
-                      type="number" min="0" disabled={room.status === 'occupied'} value={nights} onChange={(e) => setNights(e.target.value === '' ? '' : Number(e.target.value))}
-                      className="w-full border-slate-200 rounded-xl px-4 py-3 text-lg font-bold focus:ring-blue-500 focus:border-blue-500 bg-slate-50 disabled:opacity-50"
-                    />
-                    <p className="text-xs text-slate-500 mt-2">
-                      ออกวันที่: {getNextNoon(displayDate, Number(nights) || 0).toLocaleString('th-TH')}
-                    </p>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">จำนวนชั่วโมง ⏳</label>
-                    <input 
-                      type="number" min="1" 
-                      value={hours} onChange={(e) => setHours(e.target.value === '' ? '' : Number(e.target.value))}
-                      className="w-full border-slate-200 rounded-xl px-4 py-3 text-lg font-bold focus:ring-amber-500 focus:border-amber-500 bg-slate-50 disabled:opacity-50"
-                    />
-                  </div>
-                )}
+                
               </div>
                             {room.status !== 'occupied' && (
                 <div className="flex gap-2 w-full mt-6">
@@ -1980,6 +1977,8 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       )}
     </div>
   );
+
+
+
+
 }
-
-

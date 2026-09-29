@@ -9,6 +9,9 @@
     "lint:skip": "echo skipping lint"
   },
   "dependencies": {
+    "@babel/core": "^8.0.6",
+    "@babel/preset-react": "^8.0.1",
+    "@babel/preset-typescript": "^8.0.1",
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.110.1",
     "@tuya/tuya-connector-nodejs": "^2.1.2",
