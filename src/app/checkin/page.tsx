@@ -938,12 +938,7 @@ export default function CheckinPage() {
                         )}
                       
                                                 
-                        {/* Key Deposit Indicator */}
-                        {room.has_key_deposit && (
-                          <div className={`absolute left-1 ${room.status === 'occupied' ? 'bottom-[16px] sm:bottom-[20px]' : 'bottom-1'} text-[12px] sm:text-[14px] drop-shadow-sm z-20`} title="รับมัดจำกุญแจแล้ว">
-                            🔑<span className="absolute -bottom-1 -right-1 text-[8px] sm:text-[10px]">✅</span>
-                          </div>
-                        )}
+
                         
                         {/* Financial Summary for Occupied Rooms */}
                         {room.status === 'occupied' && (

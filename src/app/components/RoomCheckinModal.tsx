@@ -1484,6 +1484,22 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                   />
                 </div>
 
+
+                {/* --- Past Payments History --- */}
+                {pastPayments.length > 0 && (
+                  <div className="pt-2 border-t border-slate-100 mb-4">
+                    <label className="block text-sm font-bold text-slate-700 mb-2">ประวัติการรับชำระเงิน (Past Payments)</label>
+                    <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                      {pastPayments.map(p => (
+                        <div key={p.id} className="flex justify-between text-sm">
+                          <span className="text-slate-600">{p.category === 'transfer' && p.notes && p.notes.includes('โอนเวลา:') ? p.notes.split('โอนเวลา:')[1].trim() : new Date(p.created_at).toLocaleString('sv-SE')} - {p.category}</span>
+                          <span className="font-bold text-emerald-600">฿{Math.abs(p.amount).toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* --- Key Deposit UI --- */}
                 <div className="pt-2 border-t border-slate-100">
                   <div className="flex items-center justify-between mb-2">
@@ -1497,13 +1513,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                       <span className="text-sm font-bold text-slate-700">รับมัดจำกุญแจ</span>
                     </label>
                   </div>
-                                        {dailyExtras.length > 0 && dailyExtras.map((ext, idx) => (
-                        <div key={idx} className="flex justify-between items-center text-sm text-slate-600">
-                          <span>{ext.name} {ext.qty > 1 ? `x${ext.qty}` : ''} {ext.isPerNight ? `(${nights || 1} คืน)` : ''} {room.status !== 'occupied' && (<button onClick={() => handleRemoveExtra(ext.id)} className="text-[10px] text-rose-500 ml-1 hover:underline">ลบ</button>)}</span>
-                          <span>฿{(ext.isPerNight ? (ext.price * ext.qty * (Number(nights) || 1)) : (ext.price * ext.qty)).toLocaleString()}</span>
-                        </div>
-                      ))}
-                      {keyDepositEnabled && (
+                  {keyDepositEnabled && (
                     <div className="flex gap-2">
                       <input 
                         type="number"
@@ -1553,20 +1563,6 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                 </div>
                 )}
 
-                {/* --- Past Payments History --- */}
-                {pastPayments.length > 0 && (
-                  <div className="pt-2 border-t border-slate-100 mb-4">
-                    <label className="block text-sm font-bold text-slate-700 mb-2">ประวัติการรับชำระเงิน (Past Payments)</label>
-                    <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                      {pastPayments.map(p => (
-                        <div key={p.id} className="flex justify-between text-sm">
-                          <span className="text-slate-600">{p.category === 'transfer' && p.notes && p.notes.includes('โอนเวลา:') ? p.notes.split('โอนเวลา:')[1].trim() : new Date(p.created_at).toLocaleString('sv-SE')} - {p.category}</span>
-                          <span className="font-bold text-emerald-600">฿{Math.abs(p.amount).toLocaleString()}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
                 {/* --- Split Payment UI --- */}
                 {room.status !== 'occupied' && (
                 <div className="pt-2 border-t border-slate-100">
@@ -1977,6 +1973,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       )}
     </div>
   );
+
 
 
 

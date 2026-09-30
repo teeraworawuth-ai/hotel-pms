@@ -465,17 +465,37 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                     <span className="text-slate-400 font-bold pr-2">฿</span>
                   </div>
                   {(Number(payTransfer) > 0 || isScanningSlip) && (
-                    <div className="flex items-center gap-2 pl-2 pr-2 pt-2 border-t border-slate-200 mt-1">
-                      <input 
-                        type="datetime-local" 
-                        value={paymentTime} 
-                        onChange={e => setPaymentTime(e.target.value)} 
-                        className="flex-1 border border-slate-200 rounded-lg p-1.5 text-xs focus:ring-blue-500 bg-white" 
-                      />
-                      <label className="flex items-center gap-1 bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-colors border border-blue-200">
-                        {isScanningSlip ? '⏳ สแกน...' : '📷 สแกนสลิป'}
-                        <input type="file" accept="image/*" className="hidden" onChange={handleScanSlip} disabled={isScanningSlip} />
-                      </label>
+                    <div className="flex flex-col gap-2 pl-2 pr-2 pt-2 border-t border-slate-200 mt-1">
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="datetime-local" 
+                          value={paymentTime} 
+                          onChange={e => setPaymentTime(e.target.value)} 
+                          className="flex-1 border border-slate-200 rounded-lg p-1.5 text-xs focus:ring-blue-500 bg-white" 
+                        />
+                        <label className="flex items-center gap-1 bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-colors border border-blue-200">
+                          {isScanningSlip ? '⏳ สแกน...' : '📷 สแกนสลิป'}
+                          <input type="file" accept="image/*" className="hidden" onChange={handleScanSlip} disabled={isScanningSlip} />
+                        </label>
+                      </div>
+                      {paymentTime && (
+                        <div className="flex gap-2 justify-end">
+                          <button
+                            type="button"
+                            onClick={() => setPaymentTime('')}
+                            className="px-3 py-1 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors"
+                          >
+                            ✕ ยกเลิก/ล้างเวลา
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { /* time is already set, just visual confirmation */ }}
+                            className="px-3 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
+                          >
+                            ✓ ยืนยันเวลา
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
