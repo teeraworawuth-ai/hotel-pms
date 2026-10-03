@@ -1445,6 +1445,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                                         type="number" min="0" 
                                         value={day.actualPrice} 
                                         onChange={(e) => updateDailyActualPrice(day.date, e.target.value)}
+                                        disabled={room.status === 'occupied' || room.status === 'reserved'}
                                         className={`w-full border rounded-lg pl-7 pr-2 py-1.5 font-bold ${colorClass} ${bgClass} transition-colors`}
                                       />
                                     </div>
@@ -1633,7 +1634,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     </div>
                     
                     {(Number(payTransfer) > 0 || isScanningSlip) && (
-                      <div className="pt-2 border-t border-slate-200 mt-2">
+                      <div className="pt-2 border-t border-slate-200 mt-2 flex flex-col gap-2">
                         <label className="block text-xs font-medium text-slate-500 mb-1">เวลาที่โอน (ตามสลิป)</label>
                         <div className="flex gap-2">
                           <input type="datetime-local" value={paymentTime} onChange={e => setPaymentTime(e.target.value)} className="flex-1 border-slate-200 rounded-lg p-2 text-xs focus:ring-blue-500 bg-white" />
@@ -1642,6 +1643,24 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                             <input type="file" accept="image/*" className="hidden" onChange={handleScanSlip} disabled={isScanningSlip} />
                           </label>
                         </div>
+                        {paymentTime && (
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              type="button"
+                              onClick={() => setPaymentTime('')}
+                              className="px-3 py-1 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors"
+                            >
+                              ✕ ยกเลิก/ล้างเวลา
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { /* time is already set, just visual confirmation */ }}
+                              className="px-3 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
+                            >
+                              ✓ ยืนยันเวลา
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1664,7 +1683,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                         onClick={handleCheckInReserved} disabled={loading}
                         className="w-1/2 py-4 text-white font-bold rounded-xl text-lg transition-all active:scale-95 bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 shadow-lg"
                       >
-                        🚪 Check-in ทันที
+                        {timeBand === 'early_in' ? '🚪 Early Check-in' : '🚪 Check-in ทันที'}
                       </button>
                     </>
                   ) : (
@@ -1712,14 +1731,6 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     className="w-full mt-2 py-2 text-purple-600 bg-white border border-purple-200 rounded-lg text-sm font-bold shadow-sm hover:bg-purple-50 transition-colors"
                   >
                     📅 เลื่อนวัน / ย้ายห้อง
-                  </button>
-                )}
-                {room.status === 'reserved' && dateOffset === 0 && !isReschedulingBooking && (
-                  <button 
-                    onClick={handleCheckInReserved} disabled={loading}
-                    className="w-full py-4 mt-4 text-white font-bold rounded-xl text-lg bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
-                  >
-                    {timeBand === 'early_in' ? '🚪 Early Check-in (เข้าพักก่อนเวลา)' : '🚪 Check-in (เข้าพักเลย)'}
                   </button>
                 )}
               </div>
