@@ -362,6 +362,8 @@ export default function CheckinPage() {
             const activeBooking = roomBookings.find(b => b.status === 'checked_in');
             if (activeBooking) {
               finalRoom.booking_id = activeBooking.id;
+              finalRoom.guest_name = activeBooking.guest_name;
+              finalRoom.guest_phone = activeBooking.guest_phone;
               finalRoom.unpaid_balance = financialSummary[activeBooking.id]?.balance || 0;
               finalRoom.total_charges = financialSummary[activeBooking.id]?.charges || 0;
               finalRoom.total_payments = financialSummary[activeBooking.id]?.payments || 0;
