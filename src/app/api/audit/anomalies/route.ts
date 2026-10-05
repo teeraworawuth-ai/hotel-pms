@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
 export async function GET(request: Request) {
@@ -207,7 +207,7 @@ export async function GET(request: Request) {
     
     return NextResponse.json({ anomalies }, {
       headers: {
-        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+        'Cache-Control': 'no-store, max-age=0',
       },
     });
   }

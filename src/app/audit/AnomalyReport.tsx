@@ -20,7 +20,12 @@ export default function AnomalyReport({ dateOffset }: AnomalyReportProps) {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/audit/anomalies?dateOffset=${dateOffset}`);
+      const res = await fetch(`/api/audit/anomalies?dateOffset=${dateOffset}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache'
+        }
+      });
       if (!res.ok) {
         console.error("Failed to fetch anomalies");
         return;
