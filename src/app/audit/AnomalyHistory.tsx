@@ -39,7 +39,18 @@ export default function AnomalyHistory({ dateOffset }: AnomalyHistoryProps) {
       .order("created_at", { ascending: false });
 
     if (reviewsData) {
-      setData(reviewsData);
+      // เรียงลำดับ: ทุจริต (fraud) ขึ้นก่อน, ถ้าสถานะเหมือนกันให้เรียงตามเวลาเกิดเหตุ (session_start_time) จากเช้าไปดึก
+      const sortedData = [...reviewsData].sort((a, b) => {
+        // 1. เรียงตามสถานะ
+        if (a.status === 'fraud' && b.status !== 'fraud') return -1;
+        if (a.status !== 'fraud' && b.status === 'fraud') return 1;
+        
+        // 2. เรียงตามเวลาเกิดเหตุ (session_start_time) แบบน้อยไปมาก (เช้าไปดึก)
+        const timeA = new Date(a.session_start_time).getTime();
+        const timeB = new Date(b.session_start_time).getTime();
+        return timeA - timeB;
+      });
+      setData(sortedData);
     }
     setLoading(false);
   };
