@@ -247,7 +247,39 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [extraForm, setExtraForm] = useState({ category: 'เตียงเสริม/อุปกรณ์', description: '', amount: 0, applyToAll: false, targetDate: '' });
   const [paymentTime, setPaymentTime] = useState<string>('');
   
-    const handleAddExtra = (setting: any) => {
+    const extraLineTotal = (ext: any) => {
+    if (ext.isSaved && ext.savedAmount !== undefined && !ext.isModified) return ext.savedAmount;
+    const q = ext.qty || 1;
+    return ext.isPerNight ? (ext.price * q * (Number(nights) || 1)) : (ext.price * q);
+  };
+
+  const handleChangeExtraQty = (id: string, delta: number) => {
+    setDailyExtras(prev => prev.map(e => {
+      if (e.id === id) {
+        const newQty = Math.max(1, (e.qty || 1) + delta);
+        return { ...e, qty: newQty, isModified: e.isSaved ? true : undefined };
+      }
+      return e;
+    }));
+  };
+
+  const handleVerifyExtrasPin = async () => {
+    if (!extrasPin) return;
+    setLoading(true);
+    setExtrasPinError('');
+    const { data: staffData, error } = await supabase.from('staff').select('role, name').eq('pin', extrasPin).single();
+    setLoading(false);
+    if (error || !staffData || (staffData.role !== 'admin' && staffData.role !== 'manager')) {
+      setExtrasPinError('รหัส PIN ไม่ถูกต้อง หรือไม่มีสิทธิ์ (ต้องเป็น Admin/Manager)');
+      return;
+    }
+    setShowExtrasPinPrompt(false);
+    setExtrasPin('');
+    setExtrasManagerUnlocked(true);
+    setExtrasManagerName(staffData.name || staffData.role);
+  };
+
+  const handleAddExtra = (setting: any) => {
     const qty = 1;
     const n = Number(nights) || 1;
     const isPerNight = setting.charge_type === 'per_night';
@@ -278,6 +310,12 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [isChangingRoom, setIsChangingRoom] = useState(false);
   const [showVoidPinPrompt, setShowVoidPinPrompt] = useState(false);
   const [voidPin, setVoidPin] = useState('');
+  const [extrasManagerUnlocked, setExtrasManagerUnlocked] = useState(false);
+  const [extrasManagerName, setExtrasManagerName] = useState('');
+  const [extrasEditNote, setExtrasEditNote] = useState('');
+  const [showExtrasPinPrompt, setShowExtrasPinPrompt] = useState(false);
+  const [extrasPin, setExtrasPin] = useState('');
+  const [extrasPinError, setExtrasPinError] = useState('');
   const [showVoidPanel, setShowVoidPanel] = useState(false);
   const [voidRefundAmount, setVoidRefundAmount] = useState<number | ''>('');
   const [voidReason, setVoidReason] = useState('');
@@ -592,7 +630,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
               transaction_type: 'revenue',
               category: ext.name,
               notes: ext.isPerNight ? '(' + (nights || 1) + ' คืน)' : null,
-              amount: ext.isPerNight ? (ext.price * ext.qty * (Number(nights) || 1)) : (ext.price * ext.qty)
+              amount: extraLineTotal(ext)
             }));
             await supabase.from('ledger_transactions').insert(ledgerExtras);
           }
@@ -645,32 +683,6 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         
         
     
-    // [NEW] Sync Key Deposit Charge for existing bookings
-    if (keyDepositEnabled !== initialKeyDepositStatus) {
-      if (keyDepositEnabled && Number(keyDepositAmount) > 0) {
-        await supabase.from('ledger_transactions').insert({
-          shift_id: activeShift.id, staff_name: activeShift.staff_name,
-          room_id: room.id, booking_id: room.booking_id,
-          transaction_type: 'revenue', category: 'ค่ามัดจำกุญแจ', amount: Number(keyDepositAmount)
-        });
-      } else if (!keyDepositEnabled) {
-        await supabase.from('ledger_transactions').delete().eq('booking_id', room.booking_id).in('category', ['ค่ามัดจำกุญแจ', 'key_deposit']).gt('amount', 0);
-      }
-      setInitialKeyDepositStatus(keyDepositEnabled);
-    }
-    
-    // [NEW] Sync Extra Charges for existing bookings
-    if (dailyExtras.length > 0) {
-      const ledgerExtras = dailyExtras.map(ext => ({
-        shift_id: activeShift.id, staff_name: activeShift.staff_name,
-        room_id: room.id, booking_id: room.booking_id,
-        transaction_type: 'revenue', category: ext.name, 
-        notes: ext.isPerNight ? `(${nights || 1} คืน)` : null, amount: ext.isPerNight ? (ext.price * ext.qty * (Number(nights) || 1)) : (ext.price * ext.qty)
-      }));
-      await supabase.from('ledger_transactions').insert(ledgerExtras);
-    }
-
-
     const paymentInserts = [];
         if (cash > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'cash', amount: -cash });
         if (transfer > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: paymentTime ? `โอนเวลา: ${paymentTime.replace('T', ' ')}` : undefined });
@@ -719,8 +731,24 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     const transfer = Number(payTransfer) || 0;
     const credit = Number(payCredit) || 0;
     
+
+    // Sync Key Deposit Charge for existing bookings
+    if (keyDepositEnabled !== initialKeyDepositStatus) {
+      if (keyDepositEnabled && Number(keyDepositAmount) > 0) {
+        await supabase.from('ledger_transactions').insert({
+          shift_id: activeShift.id, staff_name: activeShift.staff_name,
+          room_id: room.id, booking_id: room.booking_id,
+          transaction_type: 'revenue', category: 'ค่ามัดจำกุญแจ', amount: Number(keyDepositAmount)
+        });
+      } else if (!keyDepositEnabled) {
+        await supabase.from('ledger_transactions').delete().eq('booking_id', room.booking_id).in('category', ['ค่ามัดจำกุญแจ', 'key_deposit']).gt('amount', 0);
+      }
+      setInitialKeyDepositStatus(keyDepositEnabled);
+    }
     const paymentInserts = [];
     let newExtrasTotal = 0;
+    
+    // Process new extras
     const newExtras = dailyExtras.filter(e => !e.isSaved);
     if (newExtras.length > 0) {
       newExtras.forEach(ext => {
@@ -732,10 +760,35 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           transaction_type: 'revenue',
           category: ext.name,
           notes: ext.isPerNight ? '(' + (nights || 1) + ' คืน)' : null,
-          amount: ext.amount
+          amount: extraLineTotal(ext)
         });
-        newExtrasTotal += ext.amount;
+        newExtrasTotal += extraLineTotal(ext);
       });
+    }
+
+    // Process manager modified saved extras
+    if (extrasManagerUnlocked && extrasEditNote.trim()) {
+      const modifiedExtras = dailyExtras.filter(e => e.isSaved && e.isModified);
+      for (const ext of modifiedExtras) {
+        const oldAmount = ext.savedAmount || 0;
+        const newAmount = extraLineTotal(ext);
+        if (oldAmount !== newAmount) {
+          // 1. Void old ledger entry
+          await supabase.from('ledger_transactions').update({ category: ext.name + ' (Voided)' }).eq('id', ext.id);
+          // 2. Insert new entry
+          paymentInserts.push({
+            shift_id: activeShift.id,
+            staff_name: activeShift.staff_name,
+            room_id: room.id,
+            booking_id: room.booking_id,
+            transaction_type: 'revenue',
+            category: ext.name,
+            notes: (ext.isPerNight ? '(' + (nights || 1) + ' คืน) ' : '') + 'แก้โดย ' + extrasManagerName + ': ' + extrasEditNote,
+            amount: newAmount
+          });
+          newExtrasTotal += (newAmount - oldAmount);
+        }
+      }
     }
     if (cash > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'cash', amount: -cash });
     if (transfer > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: paymentTime ? `โอนเวลา: ${paymentTime.replace('T', ' ')}` : undefined });
@@ -782,18 +835,19 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
               setKeyDepositEnabled(false); setInitialKeyDepositStatus(false);
             }
             
-            // Load existing extra charges
+            // Load existing extra charges using whitelist
+            const allowedExtraNames = extraSettings.map(s => s.name);
             const existingExtras = data.filter(d => 
               d.transaction_type === 'revenue' && 
-              !['ค่าห้องพัก', 'ค่ามัดจำกุญแจ', 'key_deposit', 'early_in_fee', 'late_out_fee'].includes(d.category) &&
-              !d.category.includes('ค่าห้องพัก')
+              !d.category.includes('(Voided)') &&
+              (allowedExtraNames.includes(d.category) || (!['ค่าห้องพัก', 'ค่ามัดจำกุญแจ', 'key_deposit', 'early_in_fee', 'late_out_fee'].includes(d.category) && !d.category.includes('ค่าห้องพัก')))
             ).map(d => ({
               id: d.id,
               name: d.category,
-              price: d.amount,
-              qty: 1,
-              isPerNight: d.notes?.includes('คืน'),
-              amount: d.amount,
+              price: d.amount, // Approximate unit price
+              qty: 1, // We don't parse qty from notes easily, so treat it as 1 bundle
+              isPerNight: !!d.notes?.includes('คืน'),
+              savedAmount: d.amount,
               isSaved: true
             }));
             if (existingExtras.length > 0) {
@@ -1566,35 +1620,31 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                                 {/* --- Extra Charges UI --- */}
                 {extraSettings.length > 0 && (
                 <div className="pt-3 border-t border-slate-100 mb-4">
-                  <label className="block text-sm font-bold text-slate-700 mb-2">เพิ่มค่าใช้จ่าย (Add Extras)</label>
-                  {room.status !== 'occupied' && ( <div className="flex flex-wrap gap-2 mb-2">
-                    {extraSettings.filter(e => e.ui_type === 'quick_button').map(e => (
-                      <button 
-                        key={e.id}
-                        type="button"
-                        onClick={() => handleAddExtra(e)}
-                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm transition-colors"
-                      >
-                        + {e.name} (฿{e.price})
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-sm font-bold text-slate-700">เพิ่มค่าใช้จ่าย (Add Extras)</label>
+                    {(room.status === 'reserved' || room.status === 'occupied') && !extrasManagerUnlocked && (
+                      <button type="button" onClick={() => setShowExtrasPinPrompt(true)} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded font-medium flex items-center gap-1">
+                        🔒 ปลดล็อกแก้ไข (Manager)
                       </button>
-                    ))}
-                  {dailyExtras.length > 0 && (
-                    <div className="mb-3 space-y-1 mt-2">
-                      {dailyExtras.map(ext => (
-                        <div key={ext.id} className="flex justify-between items-center bg-white p-2 rounded-lg border border-slate-200 text-sm shadow-sm">
-                          <span className="font-medium text-slate-700">{ext.name} {ext.isPerNight ? '(รายวัน)' : '(ครั้งเดียว)'}</span>
-                          <div className="flex items-center gap-3">
-                            <span className="font-bold text-slate-900">฿{ext.amount}</span>
-                            {room.status !== 'occupied' && !ext.isSaved && (
-                              <button type="button" onClick={() => handleRemoveExtra(ext.id)} className="text-red-500 hover:text-red-700 font-bold px-2 bg-red-50 rounded">✕</button>
-                            )}
-                          </div>
-                        </div>
+                    )}
+                  </div>
+                  
+                  {room.status !== 'occupied' && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {extraSettings.filter(e => e.ui_type === 'quick_button').map(e => (
+                        <button 
+                          key={e.id}
+                          type="button"
+                          onClick={() => handleAddExtra(e)}
+                          className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm transition-colors"
+                        >
+                          + {e.name} (฿{e.price})
+                        </button>
                       ))}
                     </div>
                   )}
-                  </div> )}
-                  {extraSettings.filter(e => e.ui_type === 'dropdown').length > 0 && (
+                  
+                  {extraSettings.filter(e => e.ui_type === 'dropdown').length > 0 && room.status !== 'occupied' && (
                     <select 
                       onChange={(e) => {
                         const setting = extraSettings.find(s => s.id === e.target.value);
@@ -1603,7 +1653,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                           e.target.value = ""; // reset
                         }
                       }}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:ring-emerald-500 focus:border-emerald-500 bg-slate-50"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:ring-emerald-500 focus:border-emerald-500 bg-slate-50 mb-3"
                       defaultValue=""
                     >
                       <option value="" disabled>-- เลือกรายการอื่นๆ --</option>
@@ -1612,7 +1662,96 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                       ))}
                     </select>
                   )}
+
+                  {dailyExtras.length > 0 && (
+                    <div className="mt-3 bg-slate-50 border border-slate-200 rounded-lg overflow-hidden">
+                      <div className="bg-slate-100 px-3 py-2 border-b border-slate-200 flex justify-between items-center">
+                        <span className="text-xs font-bold text-slate-600">รายการที่เลือก</span>
+                        {extrasManagerUnlocked && <span className="text-xs font-bold text-rose-600">🔓 โหมดผู้จัดการ: {extrasManagerName}</span>}
+                      </div>
+                      <div className="p-2 space-y-2">
+                        {dailyExtras.map(ext => {
+                          const isLocked = ext.isSaved && !extrasManagerUnlocked;
+                          const showControls = !isLocked && room.status !== 'occupied';
+                          return (
+                            <div key={ext.id} className="flex justify-between items-center bg-white p-2 rounded border border-slate-200 text-sm shadow-sm">
+                              <div className="flex flex-col">
+                                <span className="font-medium text-slate-700 flex items-center gap-1">
+                                  {ext.isSaved && <span title="บันทึกแล้ว" className="text-xs">🔒</span>} 
+                                  {ext.name} {ext.isPerNight ? '(ต่อคืน)' : ''}
+                                </span>
+                                {showControls && (
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <span className="text-xs text-slate-500">฿{ext.price} ×</span>
+                                    <button type="button" onClick={() => handleChangeExtraQty(ext.id, -1)} className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 font-bold flex items-center justify-center">-</button>
+                                    <span className="font-bold w-4 text-center">{ext.qty || 1}</span>
+                                    <button type="button" onClick={() => handleChangeExtraQty(ext.id, 1)} className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 font-bold flex items-center justify-center">+</button>
+                                  </div>
+                                )}
+                                {isLocked && (ext.qty || 1) > 1 && (
+                                  <span className="text-xs text-slate-500 mt-0.5">จำนวน: {ext.qty}</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="font-bold text-slate-900">฿{extraLineTotal(ext).toLocaleString()}</span>
+                                {showControls && (
+                                  <button type="button" onClick={() => handleRemoveExtra(ext.id)} className="text-rose-500 hover:text-rose-700 font-bold px-2 py-1 bg-rose-50 hover:bg-rose-100 rounded">✕</button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        
+                        {extrasManagerUnlocked && dailyExtras.some(e => e.isSaved && e.isModified) && (
+                          <div className="mt-2 pt-2 border-t border-slate-200">
+                            <input 
+                              type="text" 
+                              placeholder="หมายเหตุการแก้ไข (บังคับกรอก)..." 
+                              value={extrasEditNote}
+                              onChange={e => setExtrasEditNote(e.target.value)}
+                              className="w-full border border-rose-200 rounded px-2 py-1.5 text-sm focus:ring-rose-500 focus:border-rose-500 bg-rose-50"
+                            />
+                            {!extrasEditNote.trim() && <p className="text-xs text-rose-500 mt-1">* กรุณาระบุหมายเหตุการแก้ไข</p>}
+                          </div>
+                        )}
+                        <div className="pt-2 border-t border-slate-200 flex justify-between items-center text-sm">
+                          <span className="font-bold text-slate-600">รวมค่าใช้จ่ายเพิ่ม</span>
+                          <span className="font-bold text-emerald-600">฿{getTotalExtrasAmount().toLocaleString()}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
+                )}
+
+                {/* --- Extras PIN Prompt Modal --- */}
+                {showExtrasPinPrompt && (
+                  <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-[70] backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
+                      <div className="bg-slate-800 p-4 text-white">
+                        <h3 className="font-bold text-lg">ปลดล็อกแก้ไขรายการ (Manager)</h3>
+                      </div>
+                      <div className="p-4 space-y-4">
+                        <div>
+                          <label className="block text-sm font-bold text-slate-700 mb-1">รหัส PIN ผู้จัดการ/Admin</label>
+                          <input 
+                            type="password" 
+                            value={extrasPin}
+                            onChange={(e) => setExtrasPin(e.target.value)}
+                            className="w-full border border-slate-300 rounded-lg p-3 text-center text-xl font-mono tracking-widest focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="****"
+                            autoFocus
+                            maxLength={6}
+                          />
+                        </div>
+                        {extrasPinError && <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100 font-medium">{extrasPinError}</div>}
+                        <div className="flex gap-2 pt-2">
+                          <button type="button" onClick={() => { setShowExtrasPinPrompt(false); setExtrasPinError(''); setExtrasPin(''); }} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl transition-colors">ยกเลิก</button>
+                          <button type="button" onClick={handleVerifyExtrasPin} disabled={loading || !extrasPin} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-sm shadow-blue-200">ยืนยัน</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 )}
 
                 {/* --- Split Payment UI --- */}
@@ -1635,9 +1774,15 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                           <span>฿{Number(keyDepositAmount || 0).toLocaleString()}</span>
                         </div>
                       )}
+                      
+                      {dailyExtras.length > 0 && dailyExtras.map(ext => (
+                        <div key={'sum-'+ext.id} className="flex justify-between items-center text-sm text-slate-600">
+                          <span>{ext.name} {(ext.qty || 1) > 1 ? '× ' + ext.qty : ''}:</span>
+                          <span>฿{extraLineTotal(ext).toLocaleString()}</span>
+                        </div>
+                      ))}
                       <div className="flex justify-between items-center mt-1 pt-1 border-t border-slate-100">
-                        <span className="text-xs font-bold text-slate-500">ยอดรวมทั้งหมด:</span>
-                        <span className="text-sm font-bold text-slate-700">฿{totalToPay.toLocaleString()}</span>
+                        <span className="text-xs font-bold text-slate-500">ยอดรวมทั้งหมด:</span>                      <span className="text-sm font-bold text-slate-700">฿{totalToPay.toLocaleString()}</span>
                       </div>
                       {totalPaid > 0 && (
                         <div className="flex justify-between items-center">

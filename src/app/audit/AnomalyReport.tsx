@@ -132,8 +132,24 @@ export default function AnomalyReport({ dateOffset }: AnomalyReportProps) {
           session={selectedReview.session}
           onClose={() => setSelectedReview(null)}
           onSuccess={() => {
+            const reviewedRoomId = selectedReview.room.roomId;
+            const reviewedSessionId = selectedReview.session.id;
+            
+            setData(prev => {
+              const newData = prev.map(r => {
+                if (r.roomId === reviewedRoomId) {
+                  return {
+                    ...r,
+                    sessions: r.sessions.filter((s: any) => s.id !== reviewedSessionId)
+                  };
+                }
+                return r;
+              }).filter(r => r.sessions.length > 0);
+              return newData;
+            });
+            
             setSelectedReview(null);
-            fetchData(); // โหลดข้อมูลใหม่เพื่อให้รายการที่ตรวจสอบแล้วหายไป
+            // fetchData(); // Optional: skip refetching due to 5min cache, relying on optimistic update
           }}
         />
       )}

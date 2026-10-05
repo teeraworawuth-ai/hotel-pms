@@ -46,6 +46,7 @@ export default function CheckinPage() {
   const [rooms, setRooms] = useState<RoomStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [locationsOrder, setLocationsOrder] = useState<string[]>([]);
+  const [selectedLocationFilter, setSelectedLocationFilter] = useState<string | null>(null);
   const [selectedRoom, setSelectedRoom] = useState<RoomStatus | null>(null);
   
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
@@ -347,6 +348,11 @@ export default function CheckinPage() {
                 total_payments: financialSummary[incomingBookingToday.id]?.payments || 0
               };
           } else if (finalRoom.status === 'reserved') {
+            finalRoom.booking_id = incomingBookingToday.id;
+            finalRoom.guest_name = incomingBookingToday.guest_name;
+            finalRoom.guest_phone = incomingBookingToday.guest_phone;
+            finalRoom.actual_price = getDailyPrice(incomingBookingToday);
+            finalRoom.staff_name = incomingBookingToday.staff_name;
             finalRoom.booking_created_at = incomingBookingToday.created_at;
             finalRoom.unpaid_balance = financialSummary[incomingBookingToday.id]?.balance || 0;
             finalRoom.total_charges = financialSummary[incomingBookingToday.id]?.charges || 0;
