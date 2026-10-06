@@ -282,6 +282,12 @@ export default function SettingsPage() {
           >
             ตั้งค่าคีย์ Tuya
           </button>
+            <button 
+              onClick={() => setActiveTab('staff')} 
+              className={`whitespace-nowrap px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${activeTab === 'staff' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+            >
+              จัดการผู้ใช้งาน (Staff)
+            </button>
         </div>
       </header>
 
