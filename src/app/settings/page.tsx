@@ -297,7 +297,9 @@ export default function SettingsPage() {
         <TuyaApiSettings />
       ) : activeTab === 'rate-plans' ? (
         <RatePlanSettings />
-      ) : (
+        ) : activeTab === 'staff' ? (
+          <StaffSettings />
+        ) : (
         <>
           <div className="flex flex-col sm:flex-row gap-4 mb-4">
             <button
