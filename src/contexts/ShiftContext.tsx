@@ -39,6 +39,35 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
 
   const refreshShift = async () => {
     setLoading(true);
+
+    // Check AuthUser for Dummy Shift
+    const saved = localStorage.getItem('auth_user');
+    if (saved) {
+      try {
+        const user = JSON.parse(saved);
+        if (user.role === 'staff') {
+          // Dummy shift for staff
+          setActiveShift({
+            id: 'dummy-shift-id',
+            staff_id: user.id,
+            staff_name: user.name,
+            staff_role: 'staff',
+            locations: user.locations || [],
+            start_time: new Date().toISOString(),
+            end_time: null,
+            initial_cash: 0,
+            expected_cash: 0,
+            final_cash: null,
+            discrepancy: null,
+            status: 'open',
+            signature_data: null
+          });
+          setLoading(false);
+          return;
+        }
+      } catch (e) {}
+    }
+
     // หา shift ที่กำลังเปิดอยู่ (ล่าสุด)
     const { data, error } = await supabase
       .from('shifts')
