@@ -1,4 +1,5 @@
 "use client";
+import StaffSettings from '@/app/components/StaffSettings';
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
@@ -26,7 +27,7 @@ type Room = {
 };
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'rooms' | 'pos' | 'tuya' | 'rate-plans' | 'extras'>('rate-plans');
+  const [activeTab, setActiveTab] = useState<'rooms' | 'pos' | 'tuya' | 'rate-plans' | 'extras' | 'staff'>('rate-plans');
   
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);

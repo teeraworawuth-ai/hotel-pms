@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { renderIcon } from "../components/RoomIcons";
 import RoomCheckinModal from "@/app/components/RoomCheckinModal";
 import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
+import { useShift } from "@/contexts/ShiftContext";
 
 export type RoomStatus = {
   id: string;
@@ -43,6 +44,7 @@ export type RoomStatus = {
 
 export default function CheckinPage() {
   const { getNow, simulatedTime } = useSimulatedTime();
+  const { activeShift } = useShift();
   const [rooms, setRooms] = useState<RoomStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [locationsOrder, setLocationsOrder] = useState<string[]>([]);
@@ -693,11 +695,33 @@ export default function CheckinPage() {
         </div>
       </div>
 
+
+      {/* Location Filter */}
+      {!loading && sortedLocations.length > 0 && activeShift?.staff_role !== 'staff' && (
+        <div className="flex flex-wrap gap-2 mb-4">
+          <button 
+            onClick={() => setSelectedLocationFilter(null)}
+            className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${selectedLocationFilter === null ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+          >
+            ทั้งหมด
+          </button>
+          {sortedLocations.map(loc => (
+            <button
+              key={loc}
+              onClick={() => setSelectedLocationFilter(loc)}
+              className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${selectedLocationFilter === loc ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+            >
+              {loc}
+            </button>
+          ))}
+        </div>
+      )}
+
       {loading ? (
         <div className="text-center py-20 text-slate-500">กำลังโหลดข้อมูล...</div>
       ) : (
         <div className="space-y-8">
-          {sortedLocations.map(loc => {
+          {sortedLocations.filter(loc => { if (activeShift?.staff_role === 'staff') { return activeShift.locations?.includes(loc) ?? false; } return !selectedLocationFilter || loc === selectedLocationFilter; }).map(loc => {
             const locRooms = groupedRooms[loc].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
             return (
               <div key={loc} className="bg-slate-50/50 p-2 sm:p-6 rounded-2xl border border-slate-100">

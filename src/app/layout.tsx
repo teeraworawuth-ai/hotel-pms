@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Navbar from "./components/Navbar";
+import AuthGuard from "./components/AuthGuard";
 import { SimulatedTimeProvider } from "@/contexts/SimulatedTimeContext";
 import { ShiftProvider } from "@/contexts/ShiftContext";
 import TimeSimulatorOverlay from "./components/TimeSimulatorOverlay";
@@ -29,6 +30,7 @@ export default function RootLayout({
   return (
     <html lang="th" className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
       <body className="flex flex-col min-h-screen">
+        <AuthGuard>
         <SimulatedTimeProvider>
           <ShiftProvider>
             {/* Top Navbar - รองรับมือถือแล้ว */}
@@ -42,6 +44,7 @@ export default function RootLayout({
             <TimeSimulatorOverlay />
           </ShiftProvider>
         </SimulatedTimeProvider>
+              </AuthGuard>
       </body>
     </html>
   );

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ShiftManager from "./ShiftManager";
 
 const navLinks = [
@@ -19,6 +19,21 @@ const navLinks = [
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
+
+  const [userRole, setUserRole] = useState<string | null>(null);
+  
+  useEffect(() => {
+    const saved = localStorage.getItem('auth_user');
+    if (saved) {
+      setUserRole(JSON.parse(saved).role);
+    }
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem('auth_user');
+    window.location.href = '/';
+  };
+
 
   return (
     <header className="sticky top-0 z-50 glass border-b border-white/20">
@@ -37,7 +52,7 @@ export default function Navbar() {
 
           {/* Desktop Menu */}
           <nav className="hidden md:flex space-x-6">
-            {navLinks.map((link) => {
+            {navLinks.filter(link => userRole !== "staff" || link.href === "/checkin").map((link) => {
               const isActive =
                 link.href === "/"
                   ? pathname === "/"
@@ -59,7 +74,10 @@ export default function Navbar() {
           </nav>
           
           <div className="hidden md:flex items-center ml-auto">
-            <ShiftManager />
+            
+            {userRole !== "staff" && <ShiftManager />}
+            <button onClick={handleLogout} className="text-red-500 font-bold text-sm ml-4 px-3 py-1.5 rounded-lg border border-red-200 hover:bg-red-50">Logout</button>
+
           </div>
 
           {/* Mobile Menu Button */}
@@ -89,7 +107,7 @@ export default function Navbar() {
       {isOpen && (
         <div className="md:hidden border-t border-white/20 bg-white/95 backdrop-blur-sm shadow-lg">
           <nav className="flex flex-col px-4 py-3 space-y-1">
-            {navLinks.map((link) => {
+            {navLinks.filter(link => userRole !== "staff" || link.href === "/checkin").map((link) => {
               const isActive =
                 link.href === "/"
                   ? pathname === "/"

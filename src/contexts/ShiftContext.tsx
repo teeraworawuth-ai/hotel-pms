@@ -7,6 +7,8 @@ export interface Shift {
   id: string;
   staff_id: string;
   staff_name: string;
+  staff_role?: string;
+  locations?: string[];
   start_time: string;
   end_time: string | null;
   initial_cash: number;
@@ -49,7 +51,20 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
     if (error || !data) {
       setActiveShift(null);
     } else {
+      
       const shiftData = data as Shift;
+
+      // ดึง Role ของพนักงาน
+      const { data: staffData } = await supabase
+        .from('staff')
+        .select('role')
+        .eq('id', shiftData.staff_id)
+        .single();
+      
+      if (staffData) {
+        shiftData.staff_role = staffData.role;
+      }
+
             // คำนวณยอดเงินสดจาก Ledger
         const { data: ledgers } = await supabase
           .from('ledger_transactions')
