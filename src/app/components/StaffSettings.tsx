@@ -102,15 +102,19 @@ export default function StaffSettings() {
 
     // Save Locations for staff
     if (formData.role === 'staff') {
-      const newStaffLocations = { ...staffLocations, [savedStaffId]: selectedLocations };
-      setStaffLocations(newStaffLocations);
-      
-      const { data: existing } = await supabase.from('system_settings').select('id').eq('key', 'staff_locations').maybeSingle();
-      if (existing) {
-        await supabase.from('system_settings').update({ value: newStaffLocations }).eq('key', 'staff_locations');
-      } else {
-        await supabase.from('system_settings').insert({ key: 'staff_locations', value: newStaffLocations });
+      // อ่านค่าล่าสุดจากฐานข้อมูลก่อน เพื่อไม่ให้ทับข้อมูลของคนอื่น
+      const { data: current } = await supabase.from('system_settings').select('value').eq('key', 'staff_locations').maybeSingle();
+      const base = (current?.value as Record<string, string[]>) || {};
+      const newStaffLocations = { ...base, [savedStaffId]: selectedLocations };
+
+      const { error: locErr } = await supabase
+        .from('system_settings')
+        .upsert({ key: 'staff_locations', value: newStaffLocations }, { onConflict: 'key' });
+      if (locErr) {
+        setFormError('บันทึกสถานที่ไม่สำเร็จ: ' + locErr.message);
+        return;
       }
+      setStaffLocations(newStaffLocations);
     }
 
     setIsModalOpen(false);
