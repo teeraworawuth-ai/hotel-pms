@@ -20,7 +20,13 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const saved = localStorage.getItem('auth_user');
     if (saved) {
-      setUser(JSON.parse(saved));
+      const parsed = JSON.parse(saved);
+      // ผู้ทดสอบเข้าได้เฉพาะหน้า Check-in
+      if (parsed.role === 'staff' && window.location.pathname !== '/checkin') {
+        window.location.replace('/checkin');
+        return;
+      }
+      setUser(parsed);
     }
     setLoading(false);
   }, []);
@@ -61,6 +67,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
       const authUser: AuthUser = { ...data, locations };
       localStorage.setItem('auth_user', JSON.stringify(authUser));
+      if (authUser.role === 'staff') {
+        window.location.replace('/checkin');
+        return;
+      }
       setUser(authUser);
       setLoading(false);
     }
