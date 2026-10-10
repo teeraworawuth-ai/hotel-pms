@@ -248,12 +248,10 @@ export default function StaffSettings() {
 
               {formData.role === 'staff' && (
                 <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
-                  <label className="block text-sm font-bold text-amber-800 mb-2">สถานที่ที่อนุญาตให้ผู้ทดสอบมองเห็น</label>
+                  <label className="block text-sm font-bold text-amber-800 mb-2">📍 กรุณาคลิกเลือกสถานที่ด้านล่าง เพื่ออนุญาตให้ผู้ทดสอบมองเห็น (คลิกเพื่อให้เป็นสีส้ม)</label>
                   <div className="flex flex-wrap gap-2">
                     {locations.map(loc => (
-                      <button
-                        key={loc}
-                        onClick={() => handleToggleLocation(loc)}
+                      <button type="button" key={loc} onClick={() => handleToggleLocation(loc)}
                         className={`px-3 py-1.5 rounded-lg text-sm font-bold border transition-colors ${
                           selectedLocations.includes(loc)
                             ? 'bg-amber-500 text-white border-amber-600'
@@ -272,8 +270,7 @@ export default function StaffSettings() {
             </div>
 
             <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
-              <button 
-                onClick={() => setIsModalOpen(false)}
+              <button type="button" onClick={() => setIsModalOpen(false)}
                 className="px-5 py-2.5 rounded-xl font-bold text-slate-600 hover:bg-slate-200 transition-colors"
               >
                 ยกเลิก
