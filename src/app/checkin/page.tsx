@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
@@ -261,18 +261,20 @@ export default function CheckinPage() {
                 financialSummary[tx.booking_id] = { charges: 0, payments: 0, balance: 0, c_all: 0, c_today: 0, has_key_deposit: false };
               }
               const amt = Number(tx.amount);
-              financialSummary[tx.booking_id].balance += amt;
+              const isDepositRow = amt > 0 && (tx.category === 'key_deposit' || (tx.category || '').includes('มัดจำกุญแจ'));
+              if (!isDepositRow) financialSummary[tx.booking_id].balance += amt; // ยอดมัดจำกุญแจไม่ใช่ค่าใช้จ่าย จึงไม่นับเป็นหนี้ค้างชำระ
               
               if (amt > 0) {
-                financialSummary[tx.booking_id].charges += amt;
-                financialSummary[tx.booking_id].c_today += amt; // C_today = all posted charges
-                
-                // If it's not a room charge, it's an extra fee, so add it to C_all
-                if (tx.category === 'key_deposit' || tx.category === 'ค่ามัดจำกุญแจ' || tx.category.includes('มัดจำกุญแจ')) {
+                // ค่ามัดจำกุญแจไม่ใช่ค่าใช้จ่าย: ไม่รวมในยอดค่าใช้จ่าย
+                const isKeyDeposit = tx.category === 'key_deposit' || (tx.category || '').includes('มัดจำกุญแจ');
+                if (isKeyDeposit) {
                   financialSummary[tx.booking_id].has_key_deposit = true;
-                }
-                if (tx.category !== 'ค่าห้องพัก' && tx.category !== 'room_charge') {
-                  financialSummary[tx.booking_id].c_all += amt;
+                } else {
+                  financialSummary[tx.booking_id].charges += amt;
+                  financialSummary[tx.booking_id].c_today += amt; // C_today = all posted charges
+                  if (tx.category !== 'ค่าห้องพัก' && tx.category !== 'room_charge') {
+                    financialSummary[tx.booking_id].c_all += amt;
+                  }
                 }
               } else {
                 financialSummary[tx.booking_id].payments += Math.abs(amt);
