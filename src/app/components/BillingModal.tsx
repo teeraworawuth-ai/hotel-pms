@@ -36,6 +36,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   const [showPayments, setShowPayments] = useState<boolean>(true);
   const [includeKeyDeposit, setIncludeKeyDeposit] = useState<boolean>(true);
   const [depositInput, setDepositInput] = useState<number | ''>(200);
+  const [depositChecked, setDepositChecked] = useState<boolean>(false);
   const { getNow } = useSimulatedTime();
 
   useEffect(() => {
@@ -435,24 +436,42 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                   <span className="text-xl font-black text-amber-700">฿{depositHeldNow.toLocaleString()}</span>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  <p className="text-xs text-slate-500">ห้องนี้ยังไม่ได้รับมัดจำกุญแจ (ลืมเก็บ/ลูกค้าเพิ่งขอเพิ่ม) กดเพิ่มได้ที่นี่</p>
-                  <div className="flex gap-2">
+                <div className="space-y-3">
+                  <label className="flex items-center gap-3 cursor-pointer select-none">
                     <input
-                      type="number" min={1}
-                      value={depositInput}
-                      onChange={e => setDepositInput(e.target.value === '' ? '' : Number(e.target.value))}
-                      className="flex-1 border-2 border-amber-200 rounded-lg p-2 text-right font-bold focus:border-amber-500 outline-none"
+                      type="checkbox"
+                      checked={depositChecked}
+                      onChange={e => setDepositChecked(e.target.checked)}
+                      className="w-5 h-5 rounded border-amber-300 text-amber-500 focus:ring-amber-500"
                     />
-                    <button
-                      onClick={handleAddDeposit}
-                      disabled={!depositInput || Number(depositInput) <= 0 || loading}
-                      className="bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-white font-bold px-4 rounded-lg text-sm"
-                    >
-                      + รับมัดจำกุญแจ
-                    </button>
-                  </div>
+                    <span className="text-sm font-bold text-slate-700">รับมัดจำกุญแจ</span>
+                    <span className="text-xs text-slate-400">(ห้องนี้ยังไม่ได้เก็บ)</span>
+                  </label>
+
+                  {depositChecked && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-slate-600 whitespace-nowrap">จำนวนเงิน:</span>
+                        <input
+                          type="number" min={1}
+                          value={depositInput}
+                          onChange={e => setDepositInput(e.target.value === '' ? '' : Number(e.target.value))}
+                          className="flex-1 border-2 border-amber-200 rounded-lg p-2 text-right font-bold focus:border-amber-500 outline-none bg-white"
+                        />
+                        <span className="font-bold text-slate-500">฿</span>
+                      </div>
+                      <button
+                        onClick={handleAddDeposit}
+                        disabled={!depositInput || Number(depositInput) <= 0 || loading}
+                        className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-white font-bold py-2.5 rounded-lg text-sm"
+                      >
+                        ยืนยันรับมัดจำ ฿{Number(depositInput || 0).toLocaleString()}
+                      </button>
+                      <p className="text-[11px] text-amber-700">* กดยืนยันแล้วจะบันทึกเข้าบิล และแก้ไขหรือยกเลิกไม่ได้ (คืนได้ตอนเช็คเอาท์)</p>
+                    </div>
+                  )}
                 </div>
+
               )}
             </div>
 
