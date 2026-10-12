@@ -49,11 +49,13 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
   const valid = txs.filter(t => !t.category.includes('Voided'));
   const isDeposit = (t: Tx) => t.category.includes(DEPOSIT_KEY);
 
+  const isReceivedRow = (t: Tx) =>
+    isDeposit(t) && Number(t.amount) > 0 && (t.transaction_type === 'deposit' || t.category === 'ค่ามัดจำกุญแจ' || t.category === 'key_deposit');
   const charges = valid
     .filter(t => Number(t.amount) > 0 && !isDeposit(t))
     .reduce((s, t) => s + Number(t.amount), 0);
   const depositReceived = valid
-    .filter(t => isDeposit(t) && Number(t.amount) > 0)
+    .filter(isReceivedRow)
     .reduce((s, t) => s + Number(t.amount), 0);
   const depositRefunded = valid
     .filter(t => isDeposit(t) && Number(t.amount) < 0)
@@ -115,18 +117,19 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
       if (refund > 0) {
         rows.push({
           ...base,
-          transaction_type: 'expense',
+          transaction_type: 'deposit',
           category: 'คืนมัดจำกุญแจ',
           amount: -refund,
           notes: deduct > 0 ? `คืนบางส่วน (หัก ${deduct.toLocaleString()} บาท)` : 'คืนเต็มจำนวน',
         });
       }
       if (deduct > 0) {
+        // ส่วนที่หัก/ริบ เป็นรายได้ของโรงแรม (บันทึกเป็นรายได้ ณ ตอนนี้เท่านั้น)
         rows.push({
           ...base,
           transaction_type: 'revenue',
-          category: 'มัดจำกุญแจ (หัก/ริบเป็นรายได้)',
-          amount: 0,
+          category: 'ค่าปรับ/ริบมัดจำกุญแจ',
+          amount: deduct,
           notes: `หัก ${deduct.toLocaleString()} บาท: ${deductReason.trim()}`,
         });
       }

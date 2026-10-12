@@ -615,7 +615,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
             staff_name: activeShift.staff_name,
             room_id: room.id,
             booking_id: insertedBooking.id,
-            transaction_type: 'revenue',
+            transaction_type: 'deposit',
             category: 'ค่ามัดจำกุญแจ',
             amount: Number(keyDepositAmount)
           });
@@ -740,7 +740,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         await supabase.from('ledger_transactions').insert({
           shift_id: activeShift.id, staff_name: activeShift.staff_name,
           room_id: room.id, booking_id: room.booking_id,
-          transaction_type: 'revenue', category: 'ค่ามัดจำกุญแจ', amount: Number(keyDepositAmount)
+          transaction_type: 'deposit', category: 'ค่ามัดจำกุญแจ', amount: Number(keyDepositAmount)
         });
       } else if (!keyDepositEnabled) {
         await supabase.from('ledger_transactions').delete().eq('booking_id', room.booking_id).in('category', ['ค่ามัดจำกุญแจ', 'key_deposit']).gt('amount', 0);

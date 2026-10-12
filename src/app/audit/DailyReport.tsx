@@ -26,6 +26,7 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
   const [totalTransfer, setTotalTransfer] = useState(0);
   const [totalCredit, setTotalCredit] = useState(0);
   const [totalExpense, setTotalExpense] = useState(0);
+  const [totalDepositRefund, setTotalDepositRefund] = useState(0);
 
   useEffect(() => {
     async function fetchDailyData() {
@@ -66,6 +67,7 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
         let transfer = 0;
         let credit = 0;
         let expense = 0;
+        let depositRefund = 0;
 
         ledgerData.forEach((txn: LedgerTransaction) => {
           if (txn.transaction_type === 'revenue') {
@@ -77,6 +79,8 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
             if (txn.category === 'credit_card') credit += absAmount;
           } else if (txn.transaction_type === 'expense') {
             expense += Math.abs(Number(txn.amount));
+          } else if (txn.transaction_type === 'deposit' && Number(txn.amount) < 0) {
+            depositRefund += Math.abs(Number(txn.amount));
           }
         });
 
@@ -85,6 +89,7 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
         setTotalTransfer(transfer);
         setTotalCredit(credit);
         setTotalExpense(expense);
+        setTotalDepositRefund(depositRefund);
       } else {
         setTransactions([]);
         setTotalRevenue(0);
@@ -107,7 +112,7 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
 
   if (loading) return <div className="text-center py-12 text-slate-500 animate-pulse">กำลังโหลดรายงาน...</div>;
 
-  const totalCashDrop = totalCash - totalExpense;
+  const totalCashDrop = totalCash - totalExpense - totalDepositRefund;
 
   return (
     <div className="space-y-6">

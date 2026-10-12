@@ -108,7 +108,7 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
             if (txn.category === 'cash' && txn.transaction_type === 'payment') {
               // การรับชำระเงินถูกบันทึกเป็นค่าลบ (-) เพื่อหักล้างหนี้
               cashReceived += Math.abs(Number(txn.amount));
-            } else if (txn.transaction_type === 'expense') {
+            } else if (txn.transaction_type === 'expense' || (txn.transaction_type === 'deposit' && Number(txn.amount) < 0)) {
               // ค่าใช้จ่ายถูกบันทึกเป็นลบ
               cashExpenses += Math.abs(Number(txn.amount));
             }

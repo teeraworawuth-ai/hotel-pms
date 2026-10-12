@@ -89,12 +89,12 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   const displayTransactions = filteredTransactions.filter(tx => !tx.category.includes('มัดจำกุญแจ'));
 
 
-  const balanceForward = pastTransactions.reduce((acc, tx) => acc + (tx.category.includes('(Voided)') || tx.category.includes('มัดจำกุญแจ') ? 0 : Number(tx.amount)), 0);
-  const balance = transactions.reduce((acc, tx) => acc + (tx.category.includes('(Voided)') || tx.category.includes('มัดจำกุญแจ') ? 0 : Number(tx.amount)), 0);
+  const balanceForward = pastTransactions.reduce((acc, tx) => acc + (tx.category.includes('(Voided)') ? 0 : Number(tx.amount)), 0);
+  const balance = transactions.reduce((acc, tx) => acc + (tx.category.includes('(Voided)') ? 0 : Number(tx.amount)), 0);
 
   // --- PROJECTED TOTAL CALCULATION ---
   const validTxs = transactions.filter(t => !t.category.includes('Voided'));
-  const totalPaid = validTxs.filter(t => t.amount < 0).reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  const totalPaid = validTxs.filter(t => t.amount < 0 && t.transaction_type === 'payment').reduce((sum, t) => sum + Math.abs(t.amount), 0);
   const totalPostedCharges = validTxs.filter(t => t.amount > 0 && !t.category.includes('มัดจำกุญแจ')).reduce((sum, t) => sum + Number(t.amount), 0);
   const totalKeyDeposit = validTxs.filter(t => t.category.includes('มัดจำกุญแจ')).reduce((sum, t) => sum + Number(t.amount), 0);
   const depositReceivedTotal = validTxs.filter(t => t.category.includes('มัดจำกุญแจ') && Number(t.amount) > 0).reduce((sum, t) => sum + Number(t.amount), 0);
@@ -171,7 +171,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
       staff_name: activeShift.staff_name,
       room_id: roomId,
       booking_id: bookingId,
-      transaction_type: 'revenue',
+      transaction_type: 'deposit',
       category: 'ค่ามัดจำกุญแจ',
       amount: amt
     });
@@ -397,7 +397,15 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                 </div>
                 <div className="flex justify-between items-center pt-2 border-t border-slate-700 font-bold">
                   <span>รวมค่าใช้จ่ายทั้งสิ้น</span>
-                  <span className="text-white">{totalExpectedCharges.toLocaleString()}</span>
+                  <span className="text-white">{(totalExpectedCharges - (includeKeyDeposit ? totalKeyDeposit : 0)).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center text-amber-300">
+                  <span>🔑 เงินมัดจำกุญแจ (คืนเมื่อเช็คเอาท์ ไม่นับเป็นค่าใช้จ่าย)</span>
+                  <span>+{(includeKeyDeposit ? totalKeyDeposit : 0).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center font-bold text-slate-200">
+                  <span>รวมที่ต้องชำระ (ค่าใช้จ่าย + มัดจำ)</span>
+                  <span>{totalExpectedCharges.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between items-center text-emerald-400 font-bold">
                   <span>ยอดชำระแล้ว (จ่ายแล้ว)</span>
