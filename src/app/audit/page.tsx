@@ -4,6 +4,7 @@ import { useState } from "react";
 import GuestReport from "./GuestReport";
 import AnomalyReport from "./AnomalyReport";
 import AnomalyHistory from "./AnomalyHistory";
+import HousekeepingOvertime from "./HousekeepingOvertime";
 
 export default function AuditPage() {
   const [activeTab, setActiveTab] = useState<"guest" | "anomaly" | "history">("guest");
@@ -67,6 +68,7 @@ export default function AuditPage() {
       {/* Content */}
       <div className="mt-6">
         {activeTab === "guest" && <GuestReport dateOffset={dateOffset} />}
+        {activeTab === "anomaly" && <HousekeepingOvertime dateOffset={dateOffset} />}
         {activeTab === "anomaly" && <AnomalyReport dateOffset={dateOffset} />}
         {activeTab === "history" && <AnomalyHistory dateOffset={dateOffset} />}
       </div>

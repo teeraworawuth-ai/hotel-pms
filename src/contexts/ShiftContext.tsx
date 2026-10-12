@@ -8,6 +8,7 @@ export interface Shift {
   staff_id: string;
   staff_name: string;
   staff_role?: string;
+  housekeeper_only?: boolean;
   locations?: string[];
   start_time: string;
   end_time: string | null;
@@ -45,13 +46,14 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
     if (saved) {
       try {
         const user = JSON.parse(saved);
-        if (user.role === 'staff') {
+        if (user.role === 'staff' || user.role === 'housekeeper') {
           // Dummy shift for staff
           setActiveShift({
             id: 'dummy-shift-id',
             staff_id: user.id,
             staff_name: user.name,
             staff_role: 'staff',
+            housekeeper_only: user.role === 'housekeeper',
             locations: user.locations || [],
             start_time: new Date().toISOString(),
             end_time: null,

@@ -58,6 +58,20 @@ export default function CheckinPage() {
   const lastTapRef = useRef<{ [key: string]: number }>({});
   const tapTimeoutRef = useRef<{ [key: string]: NodeJS.Timeout }>({});
 
+  // บันทึกประวัติแม่บ้าน (ไม่บล็อกการเปลี่ยนสถานะห้องหากล้มเหลว)
+  const logHousekeeping = async (room: RoomStatus, action: 'start' | 'done' | 'cancel') => {
+    try {
+      if (action === 'start') {
+        await supabase.from('housekeeping_logs').insert({ room_id: room.id, room_no: room.room_no, location: room.location || null, status: 'cleaning' });
+      } else {
+        const { data } = await supabase.from('housekeeping_logs').select('id').eq('room_id', room.id).eq('status', 'cleaning').order('started_at', { ascending: false }).limit(1);
+        if (data && data[0]) {
+          await supabase.from('housekeeping_logs').update({ status: action === 'done' ? 'done' : 'cancelled', finished_at: new Date().toISOString() }).eq('id', data[0].id);
+        }
+      }
+    } catch (e) { console.warn('housekeeping log failed', e); }
+  };
+
   const handleRoomClick = async (room: RoomStatus) => {
     if (room.status === 'dirty' || room.status === 'cleaning') {
       const now = Date.now();
@@ -74,6 +88,7 @@ export default function CheckinPage() {
         
         if (room.status === 'cleaning') {
           // อัปเดต UI ชั่วคราวให้เร็วขึ้น
+          logHousekeeping(room, 'done');
           setRooms(prev => prev.map(r => r.id === room.id ? { ...r, status: 'available', current_status: 'ว่าง' } : r));
           await supabase.from('rooms').update({ status: 'available', current_status: 'ว่าง' }).eq('id', room.id);
         }
@@ -89,20 +104,23 @@ export default function CheckinPage() {
             const location = room.location;
             const concurrentCount = rooms.filter(r => r.location === location && r.status === 'cleaning').length;
             if (concurrentCount >= 3) {
-              alert(`พื้นที่ ${location || 'โซนนี้'} มีแม่บ้านกำลังทำความสะอาดครบ 2 ห้องแล้ว (โปรดกดเสร็จสิ้นห้องที่ทำเสร็จก่อน)`);
+              alert(`พื้นที่ ${location || 'โซนนี้'} มีแม่บ้านกำลังทำความสะอาดครบ 3 ห้องแล้ว (โปรดกดเสร็จสิ้นห้องที่ทำเสร็จก่อน)`);
               return;
             }
             
             setRooms(prev => prev.map(r => r.id === room.id ? { ...r, status: 'cleaning', current_status: 'กำลังทำความสะอาด' } : r));
+            logHousekeeping(room, 'start');
             await supabase.from('rooms').update({ status: 'cleaning', current_status: 'กำลังทำความสะอาด' }).eq('id', room.id);
           } else if (room.status === 'cleaning') {
             setRooms(prev => prev.map(r => r.id === room.id ? { ...r, status: 'dirty', current_status: 'รอทำความสะอาด' } : r));
+            logHousekeeping(room, 'cancel');
             await supabase.from('rooms').update({ status: 'dirty', current_status: 'รอทำความสะอาด' }).eq('id', room.id);
           }
         }, 400);
       }
     } else {
       // สำหรับห้องสถานะอื่นๆ ให้เปิด Modal ปกติ
+      if (activeShift?.housekeeper_only) return; // แม่บ้านเปิดได้เฉพาะห้องรอทำ/กำลังทำความสะอาด
       setSelectedRoom(room);
     }
   };

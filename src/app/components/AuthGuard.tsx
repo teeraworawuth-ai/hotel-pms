@@ -22,7 +22,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     if (saved) {
       const parsed = JSON.parse(saved);
       // ผู้ทดสอบเข้าได้เฉพาะหน้า Check-in
-      if (parsed.role === 'staff' && window.location.pathname !== '/checkin') {
+      if ((parsed.role === 'staff' || parsed.role === 'housekeeper') && window.location.pathname !== '/checkin') {
         window.location.replace('/checkin');
         return;
       }
@@ -58,7 +58,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       setLoading(false);
     } else {
       let locations: string[] = [];
-      if (data.role === 'staff') {
+      if (data.role === 'staff' || data.role === 'housekeeper') {
         const { data: settings } = await supabase.from('system_settings').select('value').eq('key', 'staff_locations').maybeSingle();
         if (settings && settings.value && settings.value[data.id]) {
           locations = settings.value[data.id];
@@ -67,7 +67,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
       const authUser: AuthUser = { ...data, locations };
       localStorage.setItem('auth_user', JSON.stringify(authUser));
-      if (authUser.role === 'staff') {
+      if (authUser.role === 'staff' || authUser.role === 'housekeeper') {
         window.location.replace('/checkin');
         return;
       }

@@ -7,7 +7,7 @@ interface Staff {
   id: string;
   name: string;
   pin: string;
-  role: 'admin' | 'manager' | 'staff';
+  role: 'admin' | 'manager' | 'staff' | 'housekeeper';
   is_active: boolean;
 }
 
@@ -20,7 +20,7 @@ export default function StaffSettings() {
   // Form State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
-  const [formData, setFormData] = useState<{name: string, pin: string, role: 'admin'|'manager'|'staff'}>({
+  const [formData, setFormData] = useState<{name: string, pin: string, role: 'admin'|'manager'|'staff'|'housekeeper'}>({
     name: '', pin: '', role: 'staff'
   });
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
@@ -101,7 +101,7 @@ export default function StaffSettings() {
     }
 
     // Save Locations for staff
-    if (formData.role === 'staff') {
+    if (formData.role === 'staff' || formData.role === 'housekeeper') {
       // อ่านค่าล่าสุดจากฐานข้อมูลก่อน เพื่อไม่ให้ทับข้อมูลของคนอื่น
       const { data: current } = await supabase.from('system_settings').select('value').eq('key', 'staff_locations').maybeSingle();
       const base = (current?.value as Record<string, string[]>) || {};
@@ -162,12 +162,14 @@ export default function StaffSettings() {
                     <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-md text-xs font-bold">แอดมิน / ผู้จัดการ</span>
                   ) : staff.role === 'manager' ? (
                     <span className="bg-indigo-100 text-indigo-800 px-2 py-1 rounded-md text-xs font-bold">ผู้จัดการ</span>
+                  ) : staff.role === 'housekeeper' ? (
+                    <span className="bg-teal-100 text-teal-800 px-2 py-1 rounded-md text-xs font-bold">แม่บ้าน</span>
                   ) : (
                     <span className="bg-amber-100 text-amber-800 px-2 py-1 rounded-md text-xs font-bold">ผู้ทดสอบ (Tester)</span>
                   )}
                 </td>
                 <td className="p-4 text-slate-500 text-sm">
-                  {staff.role === 'staff' ? (
+                  {(staff.role === 'staff' || staff.role === 'housekeeper') ? (
                     (staffLocations[staff.id] || []).length > 0 
                       ? (staffLocations[staff.id] || []).join(', ')
                       : <span className="text-red-400">ยังไม่กำหนด (มองไม่เห็นห้อง)</span>
@@ -247,10 +249,21 @@ export default function StaffSettings() {
                     />
                     <span className="font-medium text-slate-700">ผู้ทดสอบ (Tester)</span>
                   </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="radio" 
+                      name="role" 
+                      value="housekeeper" 
+                      checked={formData.role === 'housekeeper'}
+                      onChange={() => setFormData({...formData, role: 'housekeeper'})}
+                      className="w-4 h-4 text-teal-600"
+                    />
+                    <span className="font-medium text-slate-700">แม่บ้าน</span>
+                  </label>
                 </div>
               </div>
 
-              {formData.role === 'staff' && (
+              {(formData.role === 'staff' || formData.role === 'housekeeper') && (
                 <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
                   <label className="block text-sm font-bold text-amber-800 mb-2">📍 กรุณาคลิกเลือกสถานที่ด้านล่าง เพื่ออนุญาตให้ผู้ทดสอบมองเห็น (คลิกเพื่อให้เป็นสีส้ม)</label>
                   <div className="flex flex-wrap gap-2">
