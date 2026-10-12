@@ -37,6 +37,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   const [includeKeyDeposit, setIncludeKeyDeposit] = useState<boolean>(true);
   const [depositInput, setDepositInput] = useState<number | ''>(200);
   const [depositChecked, setDepositChecked] = useState<boolean>(false);
+  const [payDeposit, setPayDeposit] = useState<number | ''>('');
   const { getNow } = useSimulatedTime();
 
   useEffect(() => {
@@ -99,7 +100,10 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   const totalPostedCharges = validTxs.filter(t => t.amount > 0 && !t.category.includes('มัดจำกุญแจ')).reduce((sum, t) => sum + Number(t.amount), 0);
   const totalKeyDeposit = validTxs.filter(t => t.category.includes('มัดจำกุญแจ')).reduce((sum, t) => sum + Number(t.amount), 0);
   const depositReceivedTotal = validTxs.filter(t => t.category.includes('มัดจำกุญแจ') && Number(t.amount) > 0).reduce((sum, t) => sum + Number(t.amount), 0);
-  const depositHeldNow = Math.max(0, totalKeyDeposit);
+  const APPLIED_CAT = 'หักจากเงินมัดจำ';
+  const depositAppliedTotal = validTxs.filter(t => t.category === APPLIED_CAT).reduce((sum, t) => sum + Math.abs(Number(t.amount)), 0);
+  const depositRefundedTotal = validTxs.filter(t => t.category.includes('คืนมัดจำกุญแจ')).reduce((sum, t) => sum + Math.abs(Number(t.amount)), 0);
+  const depositHeldNow = Math.max(0, depositReceivedTotal - depositAppliedTotal - depositRefundedTotal);
 
   // Date in YYYY-MM-DD for Asia/Bangkok
   const todayStr = getNow().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
@@ -113,21 +117,24 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   const totalExpectedCharges = totalPostedCharges + futureRates + futureExtras + (includeKeyDeposit ? totalKeyDeposit : 0);
   const netRemaining = totalExpectedCharges - totalPaid;
 
-  // ส่วนต่างที่แสดง: จ่ายแล้ว - ค่าใช้จ่ายจริง (ไม่รวมมัดจำ) เป็นบวก = ลูกค้าจ่ายเกิน ซึ่งควรเท่ากับมัดจำที่ถือไว้
-  const dashDeposit = includeKeyDeposit ? depositReceivedTotal : 0;
+  // ส่วนต่างที่แสดง: เงินที่ลูกค้าจ่ายจริง (ไม่รวมที่หักจากมัดจำ) - ค่าใช้จ่ายจริง เป็นบวก = จ่ายเกิน ซึ่งควรเท่ากับมัดจำที่ยังถือไว้
+  const dashDeposit = includeKeyDeposit ? depositHeldNow : 0;
   const dashCharges = totalExpectedCharges - (includeKeyDeposit ? totalKeyDeposit : 0);
-  const dashSurplus = totalPaid - dashCharges;
+  const dashCashPaid = totalPaid - depositAppliedTotal;
+  const dashSurplus = dashCashPaid - dashCharges;
   const dashDelta = dashSurplus - dashDeposit;
   const fmt = (n: number) => '฿' + n.toLocaleString();
   const dashNote: { ok: boolean; text: string } | null =
-    dashDeposit > 0
+    depositReceivedTotal > 0
       ? dashDelta === 0
-        ? { ok: true, text: `✓ ส่วนเกิน ${fmt(dashSurplus)} = เงินมัดจำกุญแจที่ต้องคืน (ตรงกับที่ถือไว้ ${fmt(dashDeposit)})` }
+        ? { ok: true, text: dashDeposit > 0
+            ? '✓ ส่วนเกิน ' + fmt(dashSurplus) + ' = เงินมัดจำกุญแจคงเหลือที่ต้องคืน (ตรงกับที่ถือไว้ ' + fmt(dashDeposit) + ')'
+            : '✓ ใช้เงินมัดจำครบแล้ว ไม่มียอดที่ต้องคืน' }
         : dashDelta < 0
-        ? { ok: false, text: `⚠ มัดจำที่ควรมี ${fmt(dashDeposit)} แต่จ่ายเกินค่าใช้จ่ายเพียง ${fmt(Math.max(dashSurplus, 0))} → ยังขาดอีก ${fmt(Math.abs(dashDelta))}` }
-        : { ok: false, text: `⚠ จ่ายเกินมัดจำอีก ${fmt(dashDelta)} (ต้องคืนเพิ่มจากเงินมัดจำ)` }
+        ? { ok: false, text: '⚠ มัดจำคงเหลือ ' + fmt(dashDeposit) + ' แต่ลูกค้าจ่ายเกินค่าใช้จ่ายเพียง ' + fmt(Math.max(dashSurplus, 0)) + ' → ยังขาดอีก ' + fmt(Math.abs(dashDelta)) + ' (เก็บเพิ่ม หรือกด "หักจากมัดจำ")' }
+        : { ok: false, text: '⚠ ลูกค้าจ่ายเกินมัดจำอีก ' + fmt(dashDelta) + ' (ต้องคืนเพิ่มจากเงินมัดจำ)' }
       : dashSurplus > 0
-      ? { ok: false, text: `ห้องนี้ไม่มีมัดจำ แต่ลูกค้าจ่ายเกินค่าใช้จ่าย ${fmt(dashSurplus)}` }
+      ? { ok: false, text: 'ห้องนี้ไม่มีมัดจำ แต่ลูกค้าจ่ายเกินค่าใช้จ่าย ' + fmt(dashSurplus) }
       : null;
 
   useEffect(() => {
@@ -229,8 +236,9 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     const cash = Number(payCash) || 0;
     const transfer = Number(payTransfer) || 0;
     const credit = Number(payCredit) || 0;
+    const depositUse = Math.min(Number(payDeposit) || 0, depositHeldNow);
     
-    if (cash + transfer + credit <= 0) return;
+    if (cash + transfer + credit + depositUse <= 0) return;
     
     setLoading(true);
     const inserts = [];
@@ -238,14 +246,18 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     if (transfer > 0) inserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: roomId, booking_id: bookingId, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: paymentTime ? `โอนเวลา: ${paymentTime.replace('T', ' ')}` : undefined });
     if (credit > 0) inserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: roomId, booking_id: bookingId, transaction_type: 'payment', category: 'credit_card', amount: -credit });
     
+    // หักจากมัดจำกุญแจ: บันทึกเป็นการชำระ (ไม่กระทบเงินสดในลิ้นชัก เพราะรับเงินมัดจำไว้แล้วตอนเช็คอิน)
+    if (depositUse > 0) inserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: roomId, booking_id: bookingId, transaction_type: 'payment', category: APPLIED_CAT, amount: -depositUse, notes: 'ใช้เงินมัดจำกุญแจชำระ' });
+    
     const { error } = await supabase.from('ledger_transactions').insert(inserts);
     
     if (!error) {
       setPayCash('');
       setPayTransfer('');
       setPayCredit('');
+      setPayDeposit('');
       
-      const currentBalance = netRemaining - (cash + transfer + credit);
+      const currentBalance = netRemaining - (cash + transfer + credit + depositUse);
       refreshShift();
       
       if (currentBalance <= 0) {
@@ -339,7 +351,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                               )}
                             </div>
                             <div className="p-2 space-y-1">
-                              {dailyTxs.map(tx => {
+                              {dailyTxs.filter(tx => !tx.category.includes('ค่ามัดจำกุญแจ') && !tx.category.includes('คืนมัดจำกุญแจ')).map(tx => {
                                 const isVoid = tx.category.includes('Voided');
                                 return (
                                   <div key={tx.id} className="flex justify-between items-start p-2 hover:bg-slate-50 rounded-lg text-sm border-b border-slate-50 last:border-0 group">
@@ -370,6 +382,15 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                   )}
                 </div>
               
+              {depositReceivedTotal > 0 && (
+                <div className="mx-2 mb-2 p-2 text-xs border border-amber-200 bg-amber-50 rounded-lg space-y-0.5">
+                  <p className="font-bold text-amber-800">🔑 สรุปเงินมัดจำกุญแจ (ไม่รวมในค่าใช้จ่าย)</p>
+                  <div className="flex justify-between text-slate-600"><span>รับมัดจำ</span><span>฿{depositReceivedTotal.toLocaleString()}</span></div>
+                  {depositAppliedTotal > 0 && <div className="flex justify-between text-slate-600"><span>หักไปใช้ชำระค่าใช้จ่าย</span><span>-฿{depositAppliedTotal.toLocaleString()}</span></div>}
+                  {depositRefundedTotal > 0 && <div className="flex justify-between text-slate-600"><span>คืนลูกค้าแล้ว</span><span>-฿{depositRefundedTotal.toLocaleString()}</span></div>}
+                  <div className="flex justify-between font-bold text-amber-700 pt-0.5 border-t border-amber-200"><span>คงเหลือ</span><span>฿{depositHeldNow.toLocaleString()}</span></div>
+                </div>
+              )}
               {true && (
                 <div className="p-2 border-t border-slate-100 bg-slate-50">
                   <button 
@@ -418,9 +439,15 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                   <span className="text-white">{(totalExpectedCharges - (includeKeyDeposit ? totalKeyDeposit : 0)).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between items-center text-emerald-400 font-bold">
-                  <span>ยอดชำระแล้ว (จ่ายแล้ว)</span>
-                  <span>-{totalPaid.toLocaleString()}</span>
+                  <span>ยอดชำระแล้ว (เงินสด/โอน/บัตร)</span>
+                  <span>-{(totalPaid - depositAppliedTotal).toLocaleString()}</span>
                 </div>
+                {depositAppliedTotal > 0 && (
+                  <div className="flex justify-between items-center text-amber-300 font-bold">
+                    <span>🔑 หักจากมัดจำกุญแจแล้ว</span>
+                    <span>-{depositAppliedTotal.toLocaleString()}</span>
+                  </div>
+                )}
                 <div className={`flex justify-between items-center pt-2 border-t border-slate-700 font-bold ${dashSurplus < 0 ? 'text-rose-400' : dashSurplus > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>
                   <span>ส่วนต่าง</span>
                   <span>{dashSurplus < 0 ? `${Math.abs(dashSurplus).toLocaleString()} (ค้างชำระ)` : `-${dashSurplus.toLocaleString()}`}</span>
@@ -449,9 +476,13 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                 )}
               </h3>
               {depositReceivedTotal > 0 ? (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-slate-600">ห้องนี้มีเงินมัดจำกุญแจ</span>
-                  <span className="text-xl font-black text-amber-700">฿{depositHeldNow.toLocaleString()}</span>
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between text-slate-600"><span>รับมัดจำ</span><span>฿{depositReceivedTotal.toLocaleString()}</span></div>
+                  {depositAppliedTotal > 0 && <div className="flex justify-between text-slate-600"><span>หักไปใช้ชำระแล้ว</span><span>-฿{depositAppliedTotal.toLocaleString()}</span></div>}
+                  <div className="flex justify-between items-center pt-1 border-t border-amber-200">
+                    <span className="font-bold text-slate-700">เงินมัดจำคงเหลือ</span>
+                    <span className="text-xl font-black text-amber-700">฿{depositHeldNow.toLocaleString()}</span>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -619,15 +650,30 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                 </div>
               </div>
               
+              {depositHeldNow > 0 && (
+                <div className="flex items-center gap-3 bg-amber-50 p-2 rounded-xl border border-amber-200 mb-4">
+                  <div className="w-24 text-xs font-bold text-amber-800">🔑 หักจากมัดจำ<div className="text-[10px] font-medium text-amber-600">คงเหลือ ฿{depositHeldNow.toLocaleString()}</div></div>
+                  <input
+                    type="number" min={0} max={depositHeldNow}
+                    value={payDeposit}
+                    onChange={e => setPayDeposit(e.target.value === '' ? '' : Math.min(Number(e.target.value), depositHeldNow))}
+                    className="flex-1 border-0 bg-transparent p-2 text-right text-base font-black text-amber-700 focus:ring-0 outline-none"
+                    placeholder="0.00"
+                  />
+                  <button type="button" onClick={() => setPayDeposit(Math.min(depositHeldNow, Math.max(0, netRemaining)))} className="text-[10px] font-bold bg-amber-200 text-amber-800 px-2 py-1 rounded">ใช้ตามยอดค้าง</button>
+                  <span className="text-slate-400 font-bold pr-1">฿</span>
+                </div>
+              )}
+
               <button 
                 onClick={handlePayment}
-                disabled={(Number(payCash)||0) + (Number(payTransfer)||0) + (Number(payCredit)||0) <= 0 || loading}
+                disabled={(Number(payCash)||0) + (Number(payTransfer)||0) + (Number(payCredit)||0) + (Number(payDeposit)||0) <= 0 || loading}
                 className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-300 text-white font-black py-4 rounded-xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex justify-between items-center px-5 text-lg"
               >
                 <span>{loading ? 'กำลังบันทึก...' : 'บันทึกรับชำระเงิน'}</span>
-                {!loading && (Number(payCash)||0) + (Number(payTransfer)||0) + (Number(payCredit)||0) > 0 && (
+                {!loading && (Number(payCash)||0) + (Number(payTransfer)||0) + (Number(payCredit)||0) + (Number(payDeposit)||0) > 0 && (
                   <span className="bg-white text-emerald-600 px-3 py-1 rounded-lg text-base">
-                    ฿{((Number(payCash)||0) + (Number(payTransfer)||0) + (Number(payCredit)||0)).toLocaleString()}
+                    ฿{((Number(payCash)||0) + (Number(payTransfer)||0) + (Number(payCredit)||0) + (Number(payDeposit)||0)).toLocaleString()}
                   </span>
                 )}
               </button>
