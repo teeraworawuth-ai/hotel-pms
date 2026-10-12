@@ -7,6 +7,7 @@ import { RoomStatus } from "../checkin/page";
 type LedgerTransaction = { id: string, category: string, amount: number, created_at: string, notes?: string };
 import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
 import BillingModal from "./BillingModal";
+import CheckoutSummaryModal from "./CheckoutSummaryModal";
 import { useShift } from "@/contexts/ShiftContext";
 
 
@@ -36,6 +37,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   displayDate.setDate(displayDate.getDate() + dateOffset);
   const displayDateStr = displayDate.toLocaleDateString('en-CA');
   const [showBilling, setShowBilling] = useState(false);
+  const [showCheckoutSummary, setShowCheckoutSummary] = useState(false);
   const [newBookingId, setNewBookingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [guestCount, setGuestCount] = useState<number | ''>(room.guest_count || 2);
@@ -993,8 +995,8 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   };
 
 
-  const handleCheckOut = async () => {
-    if (room.unpaid_balance && room.unpaid_balance > 0) {
+  const handleCheckOut = async (skipBalanceCheck: boolean = false) => {
+    if (!skipBalanceCheck && room.unpaid_balance && room.unpaid_balance > 0) {
       if (activeShift?.staff_role === 'staff') {
         const confirmBypass = window.confirm(`ลูกค้ามียอดค้างชำระ ${room.unpaid_balance.toLocaleString()} บาท\n\n(โหมดทดลองใช้งาน) ระบบอนุญาตให้ข้ามการชำระเงินชั่วคราว คุณต้องการเช็คเอาต์เลยหรือไม่?`);
         if (!confirmBypass) return;
@@ -2130,7 +2132,13 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                   </button>
 
                   <button 
-                    onClick={handleCheckOut} disabled={loading}
+                    onClick={() => {
+                      if (room.status === 'occupied' && dateOffset === 0 && room.booking_id) {
+                        setShowCheckoutSummary(true);
+                      } else {
+                        handleCheckOut();
+                      }
+                    }} disabled={loading}
                   className="w-full py-4 text-white font-bold rounded-xl text-lg bg-red-500 hover:bg-red-600 shadow-red-500/20 shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
                 >
                   {room.status === 'reserved' ? '❌ ยกเลิกการจอง' : '👋 Check-out ทันที'}
@@ -2181,6 +2189,16 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           bookingId={(newBookingId || room.booking_id) as string}
           onClose={() => { setShowBilling(false); onUpdate(); }}
           onSuccess={() => { setShowBilling(false); onUpdate(); }}
+        />
+      )}
+
+      {showCheckoutSummary && room.booking_id && (
+        <CheckoutSummaryModal
+          roomId={room.id}
+          roomNo={room.room_no}
+          bookingId={room.booking_id}
+          onClose={() => setShowCheckoutSummary(false)}
+          onConfirmed={() => { setShowCheckoutSummary(false); handleCheckOut(true); }}
         />
       )}
     </div>

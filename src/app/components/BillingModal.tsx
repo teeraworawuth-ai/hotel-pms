@@ -35,6 +35,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   const [selectedDate, setSelectedDate] = useState<string>('ALL');
   const [showPayments, setShowPayments] = useState<boolean>(true);
   const [includeKeyDeposit, setIncludeKeyDeposit] = useState<boolean>(true);
+  const [depositInput, setDepositInput] = useState<number | ''>(200);
   const { getNow } = useSimulatedTime();
 
   useEffect(() => {
@@ -54,6 +55,8 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     if (posRes.data) setPosItems(posRes.data);
     if (ratesRes?.data) setDailyRates(ratesRes.data);
     if (extrasRes?.data) setDailyExtras(extrasRes.data);
+    const { data: roomRow } = await supabase.from('rooms').select('key_deposit').eq('id', roomId).maybeSingle();
+    if (roomRow && roomRow.key_deposit && Number(roomRow.key_deposit) > 0) setDepositInput(Number(roomRow.key_deposit));
     setLoading(false);
   };
 
@@ -94,6 +97,8 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   const totalPaid = validTxs.filter(t => t.amount < 0).reduce((sum, t) => sum + Math.abs(t.amount), 0);
   const totalPostedCharges = validTxs.filter(t => t.amount > 0 && !t.category.includes('มัดจำกุญแจ')).reduce((sum, t) => sum + Number(t.amount), 0);
   const totalKeyDeposit = validTxs.filter(t => t.category.includes('มัดจำกุญแจ')).reduce((sum, t) => sum + Number(t.amount), 0);
+  const depositReceivedTotal = validTxs.filter(t => t.category.includes('มัดจำกุญแจ') && Number(t.amount) > 0).reduce((sum, t) => sum + Number(t.amount), 0);
+  const depositHeldNow = Math.max(0, totalKeyDeposit);
 
   // Date in YYYY-MM-DD for Asia/Bangkok
   const todayStr = getNow().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
@@ -153,6 +158,27 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     setLoading(false);
   };
 
+
+  const handleAddDeposit = async () => {
+    if (!activeShift) { alert('กรุณาเปิดกะก่อนทำรายการ'); return; }
+    if (depositReceivedTotal > 0) return; // มีมัดจำแล้ว ห้ามเพิ่มซ้ำ/แก้ไข
+    const amt = Number(depositInput) || 0;
+    if (amt <= 0) return;
+
+    setLoading(true);
+    const { error } = await supabase.from('ledger_transactions').insert({
+      shift_id: activeShift.staff_role === 'staff' ? null : activeShift.id,
+      staff_name: activeShift.staff_name,
+      room_id: roomId,
+      booking_id: bookingId,
+      transaction_type: 'revenue',
+      category: 'ค่ามัดจำกุญแจ',
+      amount: amt
+    });
+    if (error) alert('บันทึกมัดจำกุญแจไม่สำเร็จ: ' + error.message);
+    else await fetchData();
+    setLoading(false);
+  };
 
   const handleScanSlip = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -385,6 +411,41 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                   ฿{netRemaining.toLocaleString()}
                 </span>
               </div>
+            </div>
+
+            {/* 1.5 Key Deposit */}
+            <div className="bg-amber-50 border-2 border-amber-200 p-4 rounded-xl shadow-sm">
+              <h3 className="text-sm font-bold text-amber-800 mb-2 flex justify-between items-center">
+                <span>🔑 มัดจำกุญแจ</span>
+                {depositReceivedTotal > 0 && (
+                  <span className="text-[10px] bg-amber-200 text-amber-800 px-2 py-1 rounded">บันทึกแล้ว (แก้ไม่ได้)</span>
+                )}
+              </h3>
+              {depositReceivedTotal > 0 ? (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-slate-600">ห้องนี้มีเงินมัดจำกุญแจ</span>
+                  <span className="text-xl font-black text-amber-700">฿{depositHeldNow.toLocaleString()}</span>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-500">ห้องนี้ยังไม่ได้รับมัดจำกุญแจ (ลืมเก็บ/ลูกค้าเพิ่งขอเพิ่ม) กดเพิ่มได้ที่นี่</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="number" min={1}
+                      value={depositInput}
+                      onChange={e => setDepositInput(e.target.value === '' ? '' : Number(e.target.value))}
+                      className="flex-1 border-2 border-amber-200 rounded-lg p-2 text-right font-bold focus:border-amber-500 outline-none"
+                    />
+                    <button
+                      onClick={handleAddDeposit}
+                      disabled={!depositInput || Number(depositInput) <= 0 || loading}
+                      className="bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-white font-bold px-4 rounded-lg text-sm"
+                    >
+                      + รับมัดจำกุญแจ
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 2. POS Items */}
