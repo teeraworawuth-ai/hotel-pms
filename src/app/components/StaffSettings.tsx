@@ -14,6 +14,8 @@ interface Staff {
 export default function StaffSettings() {
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [staffLocations, setStaffLocations] = useState<Record<string, string[]>>({});
+  const [cleanFlags, setCleanFlags] = useState<Record<string, boolean>>({});
+  const [canClean, setCanClean] = useState(false);
   const [locations, setLocations] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -48,6 +50,8 @@ export default function StaffSettings() {
     if (settingsData && settingsData.value) {
       setStaffLocations(settingsData.value);
     }
+    const { data: hkData } = await supabase.from('system_settings').select('value').eq('key', 'staff_housekeeping').maybeSingle();
+    if (hkData && hkData.value) setCleanFlags(hkData.value);
     
     setLoading(false);
   };
@@ -58,10 +62,12 @@ export default function StaffSettings() {
       setEditingStaff(staff);
       setFormData({ name: staff.name, pin: staff.pin, role: staff.role });
       setSelectedLocations(staffLocations[staff.id] || []);
+      setCanClean(!!cleanFlags[staff.id]);
     } else {
       setEditingStaff(null);
       setFormData({ name: '', pin: '', role: 'staff' });
       setSelectedLocations([]);
+      setCanClean(false);
     }
     setIsModalOpen(true);
   };
@@ -115,6 +121,15 @@ export default function StaffSettings() {
         return;
       }
       setStaffLocations(newStaffLocations);
+    }
+
+    {
+      const { data: curHk } = await supabase.from('system_settings').select('value').eq('key', 'staff_housekeeping').maybeSingle();
+      const hkBase = (curHk?.value as Record<string, boolean>) || {};
+      const hkNew = { ...hkBase, [savedStaffId]: formData.role === 'staff' && canClean };
+      const { error: hkErr } = await supabase.from('system_settings').upsert({ key: 'staff_housekeeping', value: hkNew }, { onConflict: 'key' });
+      if (hkErr) { setFormError('บันทึกสิทธิ์แม่บ้านไม่สำเร็จ: ' + hkErr.message); return; }
+      setCleanFlags(hkNew);
     }
 
     setIsModalOpen(false);
@@ -281,6 +296,13 @@ export default function StaffSettings() {
                   </div>
                   <p className="text-xs text-amber-600 mt-2">* ผู้ทดสอบจะเห็นและเข้าได้เฉพาะหน้า Check-in ของสถานที่ที่เลือกเท่านั้น</p>
                 </div>
+              )}
+
+              {formData.role === 'staff' && (
+                <label className="flex items-center gap-2 cursor-pointer bg-teal-50 p-3 rounded-xl border border-teal-100">
+                  <input type="checkbox" checked={canClean} onChange={e => setCanClean(e.target.checked)} className="w-4 h-4" />
+                  <span className="text-sm font-bold text-teal-800">🧹 อนุญาตให้ใช้งานส่วนแม่บ้านได้ (กดห้องรอทำ/กำลังทำความสะอาด)</span>
+                </label>
               )}
 
               {formError && <p className="text-red-500 text-sm">{formError}</p>}

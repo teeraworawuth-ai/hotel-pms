@@ -9,6 +9,7 @@ export interface Shift {
   staff_name: string;
   staff_role?: string;
   housekeeper_only?: boolean;
+  can_clean?: boolean;
   locations?: string[];
   start_time: string;
   end_time: string | null;
@@ -54,6 +55,7 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
             staff_name: user.name,
             staff_role: 'staff',
             housekeeper_only: user.role === 'housekeeper',
+            can_clean: !!user.can_clean,
             locations: user.locations || [],
             start_time: new Date().toISOString(),
             end_time: null,

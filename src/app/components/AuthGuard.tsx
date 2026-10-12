@@ -9,6 +9,7 @@ export interface AuthUser {
   role: string;
   pin: string;
   locations?: string[];
+  can_clean?: boolean;
 }
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
@@ -65,7 +66,13 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         }
       }
 
-      const authUser: AuthUser = { ...data, locations };
+      let can_clean = false;
+      if (data.role === 'staff') {
+        const { data: hk } = await supabase.from('system_settings').select('value').eq('key', 'staff_housekeeping').maybeSingle();
+        can_clean = !!(hk && hk.value && hk.value[data.id]);
+      }
+
+      const authUser: AuthUser = { ...data, locations, can_clean };
       localStorage.setItem('auth_user', JSON.stringify(authUser));
       if (authUser.role === 'staff' || authUser.role === 'housekeeper') {
         window.location.replace('/checkin');

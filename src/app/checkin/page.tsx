@@ -1,9 +1,10 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { renderIcon } from "../components/RoomIcons";
 import RoomCheckinModal from "@/app/components/RoomCheckinModal";
+import CleaningNoteModal from "@/app/components/CleaningNoteModal";
 import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
 import { useShift } from "@/contexts/ShiftContext";
 
@@ -50,6 +51,7 @@ export default function CheckinPage() {
   const [locationsOrder, setLocationsOrder] = useState<string[]>([]);
   const [selectedLocationFilter, setSelectedLocationFilter] = useState<string | null>(null);
   const [selectedRoom, setSelectedRoom] = useState<RoomStatus | null>(null);
+  const [noteRoom, setNoteRoom] = useState<{ id: string; room_no: string } | null>(null);
   
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
   const [floorPlans, setFloorPlans] = useState<Record<string, string>>({});
@@ -74,6 +76,10 @@ export default function CheckinPage() {
 
   const handleRoomClick = async (room: RoomStatus) => {
     if (room.status === 'dirty' || room.status === 'cleaning') {
+      if (activeShift?.staff_role === 'staff' && !activeShift.housekeeper_only && !activeShift.can_clean) {
+        alert('ผู้ใช้นี้ไม่มีสิทธิ์ทำความสะอาดห้อง');
+        return;
+      }
       const now = Date.now();
       const lastTap = lastTapRef.current[room.id] || 0;
       const timeSinceLastTap = now - lastTap;
@@ -906,6 +912,14 @@ export default function CheckinPage() {
                               <span className={room.status === 'cleaning' ? 'animate-broom-swing inline-block' : ''}>🧹</span>
                             </div>
                           )}
+                          {room.status === 'cleaning' && (
+                            <span
+                              role="button"
+                              onClick={(e) => { e.stopPropagation(); setNoteRoom({ id: room.id, room_no: room.room_no }); }}
+                              className="absolute bottom-[1px] right-[2px] text-[11px] sm:text-sm z-40 cursor-pointer bg-white/80 rounded px-[2px] leading-none"
+                              title="เพิ่มรูป/หมายเหตุ"
+                            >📷</span>
+                          )}
 
                           <div className="text-[11px] sm:text-xs font-bold text-slate-500 w-full z-20 flex flex-col items-center">
                             {(() => {
@@ -1031,6 +1045,9 @@ export default function CheckinPage() {
             setSelectedRoom(null);
           }}
         />
+      )}
+      {noteRoom && (
+        <CleaningNoteModal roomId={noteRoom.id} roomNo={noteRoom.room_no} onClose={() => setNoteRoom(null)} />
       )}
     </div>
   );
