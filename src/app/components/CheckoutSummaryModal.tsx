@@ -66,7 +66,22 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
     .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
 
   // ยอดที่ลูกค้ายังต้องจ่าย (ค่าห้อง+อื่นๆ+มัดจำที่เก็บ - ที่จ่ายแล้ว)
+  const baht = (n: number) => '฿' + n.toLocaleString();
   const remaining = charges + depositReceived - paid;
+
+  // ส่วนต่างที่แสดง: จ่ายแล้ว - ค่าใช้จ่าย (เป็นบวก = ลูกค้าจ่ายเกิน ซึ่งควรเท่ากับมัดจำที่ถือไว้)
+  const surplus = paid - charges;
+  const diffDelta = surplus - depositReceived;
+  const diffNote: { ok: boolean; text: string } | null =
+    depositReceived > 0
+      ? diffDelta === 0
+        ? { ok: true, text: `✓ ส่วนเกิน ${baht(surplus)} = เงินมัดจำกุญแจที่ต้องคืน (ตรงกับที่ถือไว้ ${baht(depositReceived)})` }
+        : diffDelta < 0
+        ? { ok: false, text: `⚠ มัดจำที่ควรมี ${baht(depositReceived)} แต่ลูกค้าจ่ายเกินค่าใช้จ่ายเพียง ${baht(Math.max(surplus, 0))} → ยังขาดอีก ${baht(Math.abs(diffDelta))}` }
+        : { ok: false, text: `⚠ ลูกค้าจ่ายเกินมัดจำอีก ${baht(diffDelta)} (ต้องคืนเพิ่มจากเงินมัดจำ)` }
+      : surplus > 0
+      ? { ok: false, text: `ห้องนี้ไม่มีมัดจำ แต่ลูกค้าจ่ายเกินค่าใช้จ่าย ${baht(surplus)} (ตรวจสอบก่อนคืนเงิน)` }
+      : null;
 
   const deduct =
     mode === 'full' ? 0 : mode === 'forfeit' ? depositHeld : Math.min(Number(deductAmount) || 0, depositHeld);
@@ -146,8 +161,6 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
     onConfirmed();
   };
 
-  const baht = (n: number) => '฿' + n.toLocaleString();
-
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
@@ -162,12 +175,16 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
           <div className="p-6 space-y-5">
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-slate-600">ค่าใช้จ่ายทั้งหมด (ห้อง + เพิ่มเติม + POS)</span><b>{baht(charges)}</b></div>
-              <div className="flex justify-between"><span className="text-slate-600">มัดจำกุญแจที่รับไว้</span><b>{baht(depositReceived)}</b></div>
               <div className="flex justify-between text-emerald-700"><span>ชำระแล้ว</span><b>-{baht(paid)}</b></div>
-              <div className={`flex justify-between pt-2 border-t border-slate-200 text-base font-black ${remaining > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                <span>{remaining > 0 ? 'ยอดค้างชำระ' : 'ชำระครบแล้ว'}</span>
-                <span>{baht(Math.max(0, remaining))}</span>
+              <div className={`flex justify-between pt-2 border-t border-slate-200 text-base font-black ${surplus < 0 ? 'text-rose-600' : surplus > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                <span>ส่วนต่าง</span>
+                <span>{surplus < 0 ? baht(Math.abs(surplus)) + ' (ค้างชำระ)' : '-' + baht(surplus)}</span>
               </div>
+              {diffNote && (
+                <div className={`text-xs font-bold px-3 py-2 rounded-lg ${diffNote.ok ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                  {diffNote.text}
+                </div>
+              )}
             </div>
 
             {remaining > 0 && (

@@ -113,6 +113,23 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   const totalExpectedCharges = totalPostedCharges + futureRates + futureExtras + (includeKeyDeposit ? totalKeyDeposit : 0);
   const netRemaining = totalExpectedCharges - totalPaid;
 
+  // ส่วนต่างที่แสดง: จ่ายแล้ว - ค่าใช้จ่ายจริง (ไม่รวมมัดจำ) เป็นบวก = ลูกค้าจ่ายเกิน ซึ่งควรเท่ากับมัดจำที่ถือไว้
+  const dashDeposit = includeKeyDeposit ? depositReceivedTotal : 0;
+  const dashCharges = totalExpectedCharges - (includeKeyDeposit ? totalKeyDeposit : 0);
+  const dashSurplus = totalPaid - dashCharges;
+  const dashDelta = dashSurplus - dashDeposit;
+  const fmt = (n: number) => '฿' + n.toLocaleString();
+  const dashNote: { ok: boolean; text: string } | null =
+    dashDeposit > 0
+      ? dashDelta === 0
+        ? { ok: true, text: `✓ ส่วนเกิน ${fmt(dashSurplus)} = เงินมัดจำกุญแจที่ต้องคืน (ตรงกับที่ถือไว้ ${fmt(dashDeposit)})` }
+        : dashDelta < 0
+        ? { ok: false, text: `⚠ มัดจำที่ควรมี ${fmt(dashDeposit)} แต่จ่ายเกินค่าใช้จ่ายเพียง ${fmt(Math.max(dashSurplus, 0))} → ยังขาดอีก ${fmt(Math.abs(dashDelta))}` }
+        : { ok: false, text: `⚠ จ่ายเกินมัดจำอีก ${fmt(dashDelta)} (ต้องคืนเพิ่มจากเงินมัดจำ)` }
+      : dashSurplus > 0
+      ? { ok: false, text: `ห้องนี้ไม่มีมัดจำ แต่ลูกค้าจ่ายเกินค่าใช้จ่าย ${fmt(dashSurplus)}` }
+      : null;
+
   useEffect(() => {
     // Default cash to netRemaining if they haven't typed anything
     if (netRemaining > 0 && payCash === '' && payTransfer === '' && payCredit === '') {
@@ -400,18 +417,19 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                   <span>รวมค่าใช้จ่ายทั้งสิ้น</span>
                   <span className="text-white">{(totalExpectedCharges - (includeKeyDeposit ? totalKeyDeposit : 0)).toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between items-center text-amber-300">
-                  <span>🔑 เงินมัดจำกุญแจ (คืนเมื่อเช็คเอาท์ ไม่นับเป็นค่าใช้จ่าย)</span>
-                  <span>+{(includeKeyDeposit ? totalKeyDeposit : 0).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between items-center font-bold text-slate-200">
-                  <span>รวมที่ต้องชำระ (ค่าใช้จ่าย + มัดจำ)</span>
-                  <span>{totalExpectedCharges.toLocaleString()}</span>
-                </div>
                 <div className="flex justify-between items-center text-emerald-400 font-bold">
                   <span>ยอดชำระแล้ว (จ่ายแล้ว)</span>
                   <span>-{totalPaid.toLocaleString()}</span>
                 </div>
+                <div className={`flex justify-between items-center pt-2 border-t border-slate-700 font-bold ${dashSurplus < 0 ? 'text-rose-400' : dashSurplus > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>
+                  <span>ส่วนต่าง</span>
+                  <span>{dashSurplus < 0 ? `${Math.abs(dashSurplus).toLocaleString()} (ค้างชำระ)` : `-${dashSurplus.toLocaleString()}`}</span>
+                </div>
+                {dashNote && (
+                  <div className={`text-[11px] font-bold px-2 py-1.5 rounded ${dashNote.ok ? 'bg-emerald-900/50 text-emerald-300' : 'bg-rose-900/50 text-rose-300'}`}>
+                    {dashNote.text}
+                  </div>
+                )}
               </div>
               
               <div className="bg-slate-900 rounded-lg p-3 flex justify-between items-center">
