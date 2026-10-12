@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useShift } from '@/contexts/ShiftContext';
+import { computeDeposit } from '@/lib/depositMath';
 
 type Tx = { id: string; transaction_type: string; category: string; amount: number; created_at: string };
 
@@ -9,11 +10,10 @@ interface Props {
   roomNo: string;
   bookingId: string;
   onClose: () => void;
-  /** เรียกหลังบันทึกรายการมัดจำเสร็จ เพื่อให้ฝั่งแม่ทำการเช็คเอาท์ต่อ */
+  /** เรียกหลังบันทึกรายการมัดจำ/เงินทอนเสร็จ เพื่อให้ฝั่งแม่ทำการเช็คเอาท์ต่อ */
   onConfirmed: () => void;
 }
 
-const DEPOSIT_KEY = 'มัดจำกุญแจ';
 type DepositMode = 'full' | 'partial' | 'forfeit';
 
 export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClose, onConfirmed }: Props) {
@@ -45,53 +45,16 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
     })();
   }, [bookingId]);
 
-  // ---- คำนวณยอด (ตรงกับตรรกะของ BillingModal: มัดจำแยกจากยอดบิล) ----
-  const valid = txs.filter(t => !t.category.includes('Voided'));
-  const isDeposit = (t: Tx) => t.category.includes(DEPOSIT_KEY);
-
-  const isReceivedRow = (t: Tx) =>
-    isDeposit(t) && Number(t.amount) > 0 && (t.transaction_type === 'deposit' || t.category === 'ค่ามัดจำกุญแจ' || t.category === 'key_deposit');
-  const charges = valid
-    .filter(t => Number(t.amount) > 0 && !isDeposit(t))
-    .reduce((s, t) => s + Number(t.amount), 0);
-  const depositReceived = valid
-    .filter(isReceivedRow)
-    .reduce((s, t) => s + Number(t.amount), 0);
-  const depositRefunded = valid
-    .filter(t => isDeposit(t) && Number(t.amount) < 0)
-    .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
-  const depositApplied = valid
-    .filter(t => t.category === 'หักจากเงินมัดจำ')
-    .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
-  const depositHeld = Math.max(0, depositReceived - depositRefunded - depositApplied);
-  const paid = valid
-    .filter(t => t.transaction_type === 'payment' && Number(t.amount) < 0)
-    .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
-
-  // ยอดที่ลูกค้ายังต้องจ่าย (ค่าห้อง+อื่นๆ+มัดจำที่เก็บ - ที่จ่ายแล้ว)
   const baht = (n: number) => '฿' + n.toLocaleString();
-  const remaining = charges + depositReceived - paid;
 
-  // ส่วนต่างที่แสดง: เงินที่ลูกค้าจ่ายจริง (ไม่รวมที่หักจากมัดจำ) - ค่าใช้จ่าย เป็นบวก = จ่ายเกิน ซึ่งควรเท่ากับมัดจำที่ยังถือไว้
-  const cashPaid = paid - depositApplied;
-  const surplus = cashPaid - charges;
-  const diffDelta = surplus - depositHeld;
-  const diffNote: { ok: boolean; text: string } | null =
-    depositReceived > 0
-      ? diffDelta === 0
-        ? { ok: true, text: depositHeld > 0
-            ? '✓ ส่วนเกิน ' + baht(surplus) + ' = เงินมัดจำกุญแจคงเหลือที่ต้องคืน (ตรงกับที่ถือไว้ ' + baht(depositHeld) + ')'
-            : '✓ ใช้เงินมัดจำครบแล้ว ไม่มียอดที่ต้องคืน' }
-        : diffDelta < 0
-        ? { ok: false, text: '⚠ มัดจำคงเหลือ ' + baht(depositHeld) + ' แต่ลูกค้าจ่ายเกินค่าใช้จ่ายเพียง ' + baht(Math.max(surplus, 0)) + ' → ยังขาดอีก ' + baht(Math.abs(diffDelta)) }
-        : { ok: false, text: '⚠ ลูกค้าจ่ายเกินมัดจำอีก ' + baht(diffDelta) + ' (ต้องคืนเพิ่มจากเงินมัดจำ)' }
-      : surplus > 0
-      ? { ok: false, text: 'ห้องนี้ไม่มีมัดจำ แต่ลูกค้าจ่ายเกินค่าใช้จ่าย ' + baht(surplus) + ' (ตรวจสอบก่อนคืนเงิน)' }
-      : null;
+  // ---- สูตรกลาง: ค่าใช้จ่ายต้องชำระครบก่อน ที่เหลือจึงนับเป็นมัดจำ ----
+  const d = computeDeposit(txs);
+  const { charges, cash, target, unpaid, held, shortfall, excess } = d;
 
   const deduct =
-    mode === 'full' ? 0 : mode === 'forfeit' ? depositHeld : Math.min(Number(deductAmount) || 0, depositHeld);
-  const refund = Math.max(0, depositHeld - deduct);
+    mode === 'full' ? 0 : mode === 'forfeit' ? held : Math.min(Number(deductAmount) || 0, held);
+  const depositRefund = Math.max(0, held - deduct);
+  const totalToReturn = depositRefund + excess; // มัดจำที่คืน + เงินทอนที่ต้องคืน
   const needPin = deduct > 0 && !isManager && !pinOk;
 
   const verifyPin = async () => {
@@ -108,9 +71,9 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
 
   const canConfirm = () => {
     if (saving || loading) return false;
-    if (remaining > 0 && !isTester) return false;
-    if (depositHeld > 0) {
-      if (mode === 'partial' && !(Number(deductAmount) > 0 && Number(deductAmount) < depositHeld)) return false;
+    if (unpaid > 0 && !isTester) return false; // ค่าใช้จ่ายต้องชำระครบก่อนเช็คเอาท์
+    if (held > 0) {
+      if (mode === 'partial' && !(Number(deductAmount) > 0 && Number(deductAmount) < held)) return false;
       if (deduct > 0 && !deductReason.trim()) return false;
       if (needPin) return false;
     }
@@ -122,9 +85,10 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
     setSaving(true);
     setError('');
 
-    if (depositHeld > 0) {
+    const needsLedger = held > 0 || excess > 0;
+    if (needsLedger) {
       if (!activeShift) {
-        setError('กรุณาเปิดกะก่อนทำรายการคืนมัดจำ');
+        setError('กรุณาเปิดกะก่อนทำรายการคืนเงิน');
         setSaving(false);
         return;
       }
@@ -135,17 +99,29 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
         booking_id: bookingId,
       };
       const rows: any[] = [];
-      if (refund > 0) {
+
+      // เงินทอนที่ต้องคืน (ลูกค้าจ่ายเกินยอดที่ตกลงเก็บ)
+      if (excess > 0) {
+        rows.push({
+          ...base,
+          transaction_type: 'deposit',
+          category: 'คืนเงินทอน',
+          amount: -excess,
+          notes: 'คืนเงินที่ลูกค้าจ่ายเกิน',
+        });
+      }
+      // คืนมัดจำ (ส่วนที่ไม่ถูกหัก)
+      if (depositRefund > 0) {
         rows.push({
           ...base,
           transaction_type: 'deposit',
           category: 'คืนมัดจำกุญแจ',
-          amount: -refund,
+          amount: -depositRefund,
           notes: deduct > 0 ? `คืนบางส่วน (หัก ${deduct.toLocaleString()} บาท)` : 'คืนเต็มจำนวน',
         });
       }
+      // ส่วนที่หัก/ริบ เป็นรายได้ของโรงแรม (บันทึกเป็นรายได้ ณ ตอนนี้เท่านั้น)
       if (deduct > 0) {
-        // ส่วนที่หัก/ริบ เป็นรายได้ของโรงแรม (บันทึกเป็นรายได้ ณ ตอนนี้เท่านั้น)
         rows.push({
           ...base,
           transaction_type: 'revenue',
@@ -154,13 +130,15 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
           notes: `หัก ${deduct.toLocaleString()} บาท: ${deductReason.trim()}`,
         });
       }
-      const { error: insErr } = await supabase.from('ledger_transactions').insert(rows);
-      if (insErr) {
-        setError('บันทึกการคืนมัดจำไม่สำเร็จ: ' + insErr.message);
-        setSaving(false);
-        return;
+      if (rows.length > 0) {
+        const { error: insErr } = await supabase.from('ledger_transactions').insert(rows);
+        if (insErr) {
+          setError('บันทึกการคืนเงินไม่สำเร็จ: ' + insErr.message);
+          setSaving(false);
+          return;
+        }
+        refreshShift();
       }
-      refreshShift();
     }
 
     setSaving(false);
@@ -181,43 +159,47 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
           <div className="p-6 space-y-5">
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-slate-600">ค่าใช้จ่ายทั้งหมด (ห้อง + เพิ่มเติม + POS)</span><b>{baht(charges)}</b></div>
-              <div className="flex justify-between text-emerald-700"><span>ชำระแล้ว (เงินสด/โอน/บัตร)</span><b>-{baht(cashPaid)}</b></div>
-              {depositApplied > 0 && (
-                <div className="flex justify-between text-amber-600"><span>🔑 หักจากมัดจำกุญแจแล้ว</span><b>-{baht(depositApplied)}</b></div>
-              )}
-              <div className={`flex justify-between pt-2 border-t border-slate-200 text-base font-black ${surplus < 0 ? 'text-rose-600' : surplus > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                <span>ส่วนต่าง</span>
-                <span>{surplus < 0 ? baht(Math.abs(surplus)) + ' (ค้างชำระ)' : '-' + baht(surplus)}</span>
+              <div className="flex justify-between text-emerald-700"><span>ชำระแล้ว (เงินสด/โอน/บัตร)</span><b>-{baht(cash)}</b></div>
+              <div className={'flex justify-between pt-2 border-t border-slate-200 text-base font-black ' + (unpaid > 0 ? 'text-rose-600' : 'text-emerald-600')}>
+                <span>{unpaid > 0 ? 'ค่าใช้จ่ายค้างชำระ' : 'ค่าใช้จ่ายชำระครบแล้ว'}</span>
+                <span>{baht(unpaid)}</span>
               </div>
-              {diffNote && (
-                <div className={`text-xs font-bold px-3 py-2 rounded-lg ${diffNote.ok ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
-                  {diffNote.text}
-                </div>
-              )}
             </div>
 
-            {remaining > 0 && (
+            {unpaid > 0 && (
               <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm font-medium">
                 {isTester
                   ? 'มียอดค้างชำระ (โหมดทดลองใช้งานข้ามได้)'
-                  : 'ยังมียอดค้างชำระ กรุณากลับไปกด "จัดการบิล / ชำระเงิน" เพื่อรับชำระให้ครบก่อนเช็คเอาท์'}
+                  : 'ค่าใช้จ่ายยังชำระไม่ครบ กรุณากลับไปกด "จัดการบิล / ชำระเงิน" เพื่อรับชำระให้ครบก่อนเช็คเอาท์ (ค่าใช้จ่ายต้องครบก่อน เงินที่เหลือจึงนับเป็นมัดจำ)'}
               </div>
             )}
 
             <div className="p-4 rounded-xl border-2 border-amber-200 bg-amber-50 space-y-3">
               <div className="flex justify-between items-center">
                 <span className="font-bold text-amber-800">🔑 เงินมัดจำกุญแจที่ถือไว้</span>
-                <span className="text-xl font-black text-amber-700">{baht(depositHeld)}</span>
+                <span className="text-xl font-black text-amber-700">{baht(held)}</span>
               </div>
 
-              {depositHeld <= 0 ? (
-                <p className="text-sm text-slate-500">ห้องนี้ไม่มีเงินมัดจำกุญแจ (ไม่ต้องคืนอะไร)</p>
+              {target > 0 && (
+                <div className="text-xs text-slate-600 space-y-0.5">
+                  <div className="flex justify-between"><span>ตกลงเก็บ</span><span>{baht(target)}</span></div>
+                  <div className="flex justify-between"><span>เก็บได้จริง (เงินที่เหลือหลังชำระค่าใช้จ่าย)</span><span>{baht(held)}</span></div>
+                  {shortfall > 0 && (
+                    <div className="flex justify-between font-bold text-rose-600"><span>⚠ เก็บไม่ครบ ขาดอีก</span><span>{baht(shortfall)}</span></div>
+                  )}
+                </div>
+              )}
+
+              {held <= 0 ? (
+                <p className="text-sm text-slate-500">
+                  {target > 0 ? 'ไม่มีเงินมัดจำเหลือให้คืน (ถูกใช้ไปกับค่าใช้จ่าย หรือเก็บไม่ได้)' : 'ห้องนี้ไม่มีเงินมัดจำกุญแจ (ไม่ต้องคืนอะไร)'}
+                </p>
               ) : (
                 <>
                   <div className="space-y-2 text-sm">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="radio" checked={mode === 'full'} onChange={() => setMode('full')} />
-                      <span className="font-medium text-slate-700">คืนเต็มจำนวน ({baht(depositHeld)})</span>
+                      <span className="font-medium text-slate-700">คืนเต็มจำนวน ({baht(held)})</span>
                     </label>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="radio" checked={mode === 'partial'} onChange={() => setMode('partial')} />
@@ -233,7 +215,7 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-slate-600 whitespace-nowrap">หักออก:</span>
                       <input
-                        type="number" min={1} max={depositHeld - 1}
+                        type="number" min={1} max={held - 1}
                         value={deductAmount}
                         onChange={e => setDeductAmount(e.target.value === '' ? '' : Number(e.target.value))}
                         className="flex-1 border border-slate-300 rounded-lg p-2 text-right font-bold"
@@ -254,8 +236,8 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
                   )}
 
                   <div className="flex justify-between text-sm pt-2 border-t border-amber-200">
-                    <span className="font-bold text-slate-700">คืนเงินให้ลูกค้า</span>
-                    <span className="font-black text-emerald-700">{baht(refund)}</span>
+                    <span className="font-bold text-slate-700">คืนมัดจำให้ลูกค้า</span>
+                    <span className="font-black text-emerald-700">{baht(depositRefund)}</span>
                   </div>
                   {deduct > 0 && (
                     <div className="flex justify-between text-sm">
@@ -284,6 +266,20 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
                 </>
               )}
             </div>
+
+            {excess > 0 && (
+              <div className="p-3 rounded-xl bg-sky-50 border border-sky-200 text-sky-800 text-sm font-bold flex justify-between">
+                <span>💵 เงินทอนที่ต้องคืนลูกค้า (จ่ายเกินยอดที่ตกลง)</span>
+                <span>{baht(excess)}</span>
+              </div>
+            )}
+
+            {totalToReturn > 0 && (
+              <div className="flex justify-between items-center p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                <span className="font-bold text-emerald-800">รวมเงินที่ต้องคืนลูกค้าตอนนี้</span>
+                <span className="text-xl font-black text-emerald-700">{baht(totalToReturn)}</span>
+              </div>
+            )}
 
             {error && <p className="text-sm font-medium text-rose-600">{error}</p>}
 

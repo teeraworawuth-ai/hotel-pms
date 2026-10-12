@@ -79,7 +79,7 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
             if (txn.category === 'credit_card') credit += absAmount;
           } else if (txn.transaction_type === 'expense') {
             expense += Math.abs(Number(txn.amount));
-          } else if (txn.transaction_type === 'deposit' && Number(txn.amount) < 0 && txn.category.includes('คืนมัดจำ')) {
+          } else if (txn.transaction_type === 'deposit' && Number(txn.amount) < 0 && (txn.category.includes('คืนมัดจำ') || txn.category.includes('คืนเงินทอน'))) {
             depositRefund += Math.abs(Number(txn.amount));
           }
         });
