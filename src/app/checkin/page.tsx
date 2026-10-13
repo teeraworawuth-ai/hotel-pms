@@ -503,7 +503,7 @@ export default function CheckinPage() {
     // อัปเดตตาราง bookings ให้เป็น checked_out ด้วย จะได้ไม่เด้งกลับมาเป็น reserved อีก
     await supabase
       .from('bookings')
-      .update({ status: 'checked_out' })
+      .update({ status: 'checked_out', actual_check_out_time: new Date().toISOString() })
       .in('room_id', occupiedRooms.map(r => r.id))
       .eq('status', 'checked_in');
 

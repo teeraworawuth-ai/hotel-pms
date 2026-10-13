@@ -166,10 +166,19 @@ export default function GuestReport({ dateOffset }: GuestReportProps) {
                         </div>
                       </div>
                       <div className="text-[11px] sm:text-xs font-bold text-slate-500 w-full z-20 flex flex-col items-center">
-                        <div className="h-[11px] sm:h-[14px] flex items-center justify-center">
-                          {c.price !== null && c.price !== undefined && (
-                            <span className="opacity-40 text-[10px] sm:text-[13px] leading-none">{c.price}</span>
-                          )}
+                        <div className="w-full flex flex-col items-center gap-0.5 sm:gap-1">
+                          {/* Line 1: Base Price */}
+                          <div className="h-[11px] sm:h-[14px] flex items-center justify-center">
+                            {c.basePriceText !== null && c.basePriceText !== undefined && (
+                              <span className="opacity-40 text-[10px] sm:text-[13px] leading-none">{c.basePriceText}</span>
+                            )}
+                          </div>
+                          {/* Line 2: Difference */}
+                          <div className="h-[8px] sm:h-[10px] sm:h-[12px] flex items-center justify-center">
+                            {c.diffText && (
+                              <span className={`${c.diffColor} text-[7.5px] sm:text-[10px] leading-none font-bold`}>({c.diffText})</span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -270,6 +279,17 @@ export default function GuestReport({ dateOffset }: GuestReportProps) {
                     <span className="font-bold text-blue-700">
                       รอบคืนนี้: {fmtDt(selected.segStart)} - {fmtDt(selected.segEnd)} ({selected.kwh} kWh / {selected.cost}฿)
                     </span>
+                    {selected.price !== null && selected.price !== undefined && (
+                      <>
+                        <span className="text-slate-300">|</span>
+                        <span className="font-bold text-slate-700">
+                          ราคาห้อง: {selected.price}฿
+                          {selected.diffText && (
+                            <span className={`ml-1 font-bold ${selected.diffColor}`}>({selected.diffText})</span>
+                          )}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
                 <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>

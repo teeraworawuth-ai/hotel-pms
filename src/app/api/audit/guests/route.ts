@@ -44,7 +44,7 @@ export async function GET(request: Request) {
 
   const { data: bookingsData, error: bErr } = await supabase
     .from('bookings')
-    .select('*, rooms ( room_no, location, sort_order )')
+    .select('*, rooms ( room_no, room_type, location, sort_order, price_night, price_temp )')
     .in('status', STAY_STATUSES)
     .lte('check_in_time', new Date(endOfDay.getTime() + DAY).toISOString())
     .or('status.eq.checked_in,check_out_time.gte.' + startOfDay.toISOString());
@@ -98,6 +98,14 @@ export async function GET(request: Request) {
   const rateMap: Record<string, number> = {};
   (rates || []).forEach((r: any) => { rateMap[r.booking_id] = Number(r.amount); });
 
+  // ราคาตั้งไว้ตามประเภทห้อง (Smart Pricing ของวันนั้น)
+  const { data: smartPrices } = await supabase
+    .from('smart_prices')
+    .select('room_type, price')
+    .eq('target_date', dateStr);
+  const smartPricesMap: Record<string, number> = {};
+  (smartPrices || []).forEach((sp: any) => { smartPricesMap[sp.room_type] = Number(sp.price); });
+
   // ข้อมูลไฟของห้องที่เกี่ยวข้อง ครอบคลุมทุกคืนที่จะแสดง
   const roomIds = Array.from(new Set(items.map(it => it.b.room_id)));
   const minStart = Math.min(...items.map(it => it.seg.start));
@@ -135,11 +143,36 @@ export async function GET(request: Request) {
     }
 
     const schedMs = w.scheduledOut.getTime() - w.checkIn.getTime();
+
+    // คำนวณราคาตั้งต้นและส่วนต่าง เหมือนหน้า Check-in
+    const defPrice = b.stay_type === 'short_stay'
+      ? (room?.price_temp ?? null)
+      : (smartPricesMap[room?.room_type] !== undefined ? smartPricesMap[room?.room_type] : (room?.price_night ?? null));
+    const actualPrice = rateMap[b.id] !== undefined ? rateMap[b.id] : (b.actual_price ?? null);
+
+    let basePriceText: number | null = null;
+    let diffText: string | null = null;
+    let diffColor = '';
+
+    if (actualPrice !== null && actualPrice !== undefined) {
+      if (defPrice !== null && defPrice !== undefined && actualPrice !== defPrice) {
+        basePriceText = defPrice;
+        const diff = actualPrice - defPrice;
+        diffText = diff > 0 ? `+${diff}` : `${diff}`;
+        diffColor = diff > 0 ? 'text-emerald-500' : 'text-red-500';
+      } else {
+        basePriceText = actualPrice;
+      }
+    } else if (defPrice !== null && defPrice !== undefined) {
+      basePriceText = defPrice;
+    }
+
     return {
       bookingId: b.id,
       cardKey: `${b.id}_${nightNo}`,
       roomId: b.room_id,
       roomNo: room?.room_no,
+      roomType: room?.room_type,
       location: room?.location || 'ไม่มีสถานที่',
       sortOrder: room?.sort_order || 0,
       guestName: b.guest_name,
@@ -155,7 +188,10 @@ export async function GET(request: Request) {
       totalNights,
       segStart: new Date(seg.start).toISOString(),
       segEnd: new Date(seg.end).toISOString(),
-      price: rateMap[b.id] !== undefined ? rateMap[b.id] : (b.actual_price ?? null),
+      price: actualPrice,
+      basePriceText,
+      diffText,
+      diffColor,
       kwh: Number(kwh.toFixed(2)),
       cost: Math.round(kwh * COST_PER_KWH),
     };

@@ -599,18 +599,13 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         check_in_time: startDate.toISOString(),
         check_out_time: checkoutDate.toISOString(),
         status: (dateOffset === 0 && !isReservationForToday) ? 'checked_in' : 'reserved',
+        actual_check_in_time: (dateOffset === 0 && !isReservationForToday) ? startDate.toISOString() : null,
         guest_count: Number(guestCount) || 1,
         actual_price: actualPrice === '' ? null : Number(actualPrice),
         staff_name: staffName || null
       })
       .select('id')
       .single();
-
-    if (insertedBooking && dateOffset === 0 && !isReservationForToday) {
-      try {
-        await supabase.from('bookings').update({ actual_check_in_time: startDate.toISOString() }).eq('id', insertedBooking.id);
-      } catch (e) { console.warn('actual_check_in_time failed', e); }
-    }
 
     // 1.5 บันทึกรายได้และรายการต่างๆ (Revenue & Extras)
     if (insertedBooking) {
@@ -888,14 +883,8 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     // 1. Update Booking Status
     const { error: bookingError } = await supabase
       .from('bookings')
-      .update({ status: 'checked_in' })
+      .update({ status: 'checked_in', actual_check_in_time: getNow().toISOString() })
       .eq('id', room.booking_id);
-
-    if (!bookingError) {
-      try {
-        await supabase.from('bookings').update({ actual_check_in_time: getNow().toISOString() }).eq('id', room.booking_id);
-      } catch (e) { console.warn('actual_check_in_time failed', e); }
-    }
 
     // 2. Update Rooms Table (To activate IoT)
     if (!bookingError) {
@@ -1043,20 +1032,25 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     const startOfDay = new Date(displayDate.getFullYear(), displayDate.getMonth(), displayDate.getDate(), 0, 0, 0);
     const endOfDay = new Date(displayDate.getFullYear(), displayDate.getMonth(), displayDate.getDate(), 23, 59, 59);
     
+    const isCheckout = !isCancelling && dateOffset <= 0;
+    const nowIso = getNow().toISOString();
+    const bookingUpdate: any = {
+      status: isCheckout ? 'checked_out' : 'cancelled',
+    };
+    if (isCheckout) {
+      bookingUpdate.actual_check_out_time = nowIso;
+    }
+
+    if (room.booking_id) {
+      await supabase.from('bookings').update(bookingUpdate).eq('id', room.booking_id);
+    }
     await supabase
       .from('bookings')
-      .update({ status: dateOffset > 0 || isCancelling ? 'cancelled' : 'checked_out' })
+      .update(bookingUpdate)
       .eq('room_id', room.id)
-      .eq('status', dateOffset > 0 || isCancelling ? 'reserved' : 'checked_in')
+      .eq('status', isCheckout ? 'checked_in' : 'reserved')
       .lte('check_in_time', endOfDay.toISOString())
       .gt('check_out_time', startOfDay.toISOString());
-
-    // บันทึกเวลาเช็คเอาท์จริง (ไม่บล็อกการเช็คเอาท์หากคอลัมน์ยังไม่ถูกสร้าง)
-    if (!isCancelling && dateOffset === 0 && room.booking_id) {
-      try {
-        await supabase.from('bookings').update({ actual_check_out_time: getNow().toISOString() }).eq('id', room.booking_id);
-      } catch (e) { console.warn('actual_check_out_time failed', e); }
-    }
 
     setLoading(false);
     onUpdate();
