@@ -606,6 +606,12 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       .select('id')
       .single();
 
+    if (insertedBooking && dateOffset === 0 && !isReservationForToday) {
+      try {
+        await supabase.from('bookings').update({ actual_check_in_time: startDate.toISOString() }).eq('id', insertedBooking.id);
+      } catch (e) { console.warn('actual_check_in_time failed', e); }
+    }
+
     // 1.5 บันทึกรายได้และรายการต่างๆ (Revenue & Extras)
     if (insertedBooking) {
         // --- 1. บันทึกมัดจำกุญแจ (ถ้ามี) ---
@@ -885,6 +891,12 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       .update({ status: 'checked_in' })
       .eq('id', room.booking_id);
 
+    if (!bookingError) {
+      try {
+        await supabase.from('bookings').update({ actual_check_in_time: getNow().toISOString() }).eq('id', room.booking_id);
+      } catch (e) { console.warn('actual_check_in_time failed', e); }
+    }
+
     // 2. Update Rooms Table (To activate IoT)
     if (!bookingError) {
       await supabase
@@ -1038,7 +1050,14 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       .eq('status', dateOffset > 0 || isCancelling ? 'reserved' : 'checked_in')
       .lte('check_in_time', endOfDay.toISOString())
       .gt('check_out_time', startOfDay.toISOString());
-    
+
+    // บันทึกเวลาเช็คเอาท์จริง (ไม่บล็อกการเช็คเอาท์หากคอลัมน์ยังไม่ถูกสร้าง)
+    if (!isCancelling && dateOffset === 0 && room.booking_id) {
+      try {
+        await supabase.from('bookings').update({ actual_check_out_time: getNow().toISOString() }).eq('id', room.booking_id);
+      } catch (e) { console.warn('actual_check_out_time failed', e); }
+    }
+
     setLoading(false);
     onUpdate();
   };

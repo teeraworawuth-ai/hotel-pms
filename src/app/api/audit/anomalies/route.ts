@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { getStayWindow, STAY_STATUSES, businessWindow } from '@/lib/stayWindow';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -15,7 +16,7 @@ export async function GET(request: Request) {
   const { data: settingsData } = await supabase
     .from("system_settings")
     .select("value")
-    .eq("key", "location_order")
+    .eq("key", "locations_order")
     .maybeSingle();
 
   let locationsOrder: string[] = [];
@@ -24,22 +25,17 @@ export async function GET(request: Request) {
   }
 
   const targetDate = new Date();
-  targetDate.setDate(targetDate.getDate() + dateOffset);
-  const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 6, 45, 0);
-  
-  const nextDate = new Date(targetDate);
-  nextDate.setDate(nextDate.getDate() + 1);
-  const endOfDay = new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate(), 6, 44, 59);
+  const { start: startOfDay, end: endOfDay } = businessWindow(dateOffset);
   const now = new Date();
 
   const { data: roomsData } = await supabase.from("rooms").select("id, room_no, location, sort_order");
 
   const { data: bookingsData } = await supabase
     .from("bookings")
-    .select("room_id, check_in_time, check_out_time")
-    .lte("check_in_time", endOfDay.toISOString())
-    .gte("check_out_time", startOfDay.toISOString())
-    .neq("status", "cancelled");
+    .select("*")
+    .in("status", STAY_STATUSES)
+    .lte("check_in_time", new Date(endOfDay.getTime() + 86400000).toISOString())
+    .or("status.eq.checked_in,check_out_time.gte." + startOfDay.toISOString());
 
   let energyData: any[] = [];
   let from = 0;
@@ -72,10 +68,10 @@ export async function GET(request: Request) {
     const anomalies = roomsData.map((room) => {
       // ดึงการจองของห้องนี้
       const roomBookings = (bookingsData || []).filter(b => b.room_id === room.id).map(b => {
-        const out = new Date(b.check_out_time);
+        const w = getStayWindow(b, now);
         return {
-          in: new Date(b.check_in_time),
-          out: out > now ? now : out // ถ้ายังไม่ checkout ถือว่าครอบคลุมถึงปัจจุบัน
+          in: w.checkIn,
+          out: w.checkOut // ถ้ายังไม่ checkout ถือว่าครอบคลุมถึงปัจจุบัน
         };
       });
 
@@ -176,7 +172,7 @@ export async function GET(request: Request) {
           isOngoing
         };
       }).filter(s => {
-        if (s.durationMins < 20) return false;
+        if (s.durationMins < 15) return false;
         // ตรวจสอบว่า session นี้ถูกรีวิวไปแล้วหรือยัง โดยเทียบเวลาเริ่ม (ยอมให้คลาดเคลื่อนได้ 1 นาที)
         const isReviewed = (reviewsData || []).some(r => 
           r.room_id === room.id && 
