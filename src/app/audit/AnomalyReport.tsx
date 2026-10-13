@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 import AnomalyReviewModal from "./AnomalyReviewModal";
 import EnergyRangeChart from "./EnergyRangeChart";
 import { businessWindow } from "@/lib/stayWindow";
@@ -16,6 +17,24 @@ export default function AnomalyReport({ dateOffset }: AnomalyReportProps) {
   const [loading, setLoading] = useState(true);
   const [selectedReview, setSelectedReview] = useState<any | null>(null);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<string | null>(null);
+  const [allLocations, setAllLocations] = useState<string[]>([]);
+
+  useEffect(() => {
+    const loadLocations = async () => {
+      const { data: rooms } = await supabase.from("rooms").select("location");
+      const { data: ord } = await supabase.from("system_settings").select("value").eq("key", "locations_order").maybeSingle();
+      const order: string[] = (ord?.value as string[]) || [];
+      const locs = Array.from(new Set((rooms || []).map((r: any) => r.location).filter(Boolean))) as string[];
+      locs.sort((a, b) => {
+        let ia = order.indexOf(a); if (ia === -1) ia = 999;
+        let ib = order.indexOf(b); if (ib === -1) ib = 999;
+        return ia - ib;
+      });
+      setAllLocations(locs);
+    };
+    loadLocations();
+  }, []);
 
   useEffect(() => {
     fetchData();
@@ -68,9 +87,28 @@ export default function AnomalyReport({ dateOffset }: AnomalyReportProps) {
 
   return (
     <>
+      {/* ตัวกรองสถานที่ เหมือนหน้า Check-in */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        <button
+          onClick={() => setFilter(null)}
+          className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${filter === null ? "bg-blue-600 text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+        >
+          ทั้งหมด
+        </button>
+        {allLocations.map((loc: any) => (
+          <button
+            key={loc}
+            onClick={() => setFilter(loc)}
+            className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${filter === loc ? "bg-blue-600 text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+          >
+            {loc}
+          </button>
+        ))}
+      </div>
+
       {/* การ์ดขนาดเท่าการ์ดหน้า Check-in */}
       <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12 gap-1.5 sm:gap-2 lg:gap-2.5">
-        {data.map(room => {
+        {data.filter(r => !filter || r.location === filter).map(room => {
           const totalWastedMins = room.sessions.reduce((acc: number, s: any) => acc + s.durationMins, 0);
           const totalCost = room.sessions.reduce((acc: number, s: any) => acc + Number(s.estimatedCost), 0).toFixed(0);
           const hours = Math.floor(totalWastedMins / 60);
