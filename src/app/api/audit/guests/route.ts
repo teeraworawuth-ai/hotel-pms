@@ -3,8 +3,35 @@ import { supabase } from '@/lib/supabase';
 import { getStayWindow, STAY_STATUSES, businessWindow } from '@/lib/stayWindow';
 
 const COST_PER_KWH = 5; // เท่ากับที่ใช้ในรายงานความผิดปกติ
+const BKK = 7 * 3600000;
+const DAY = 86400000;
 
-// รายงานผู้เข้าพัก: 1 การ์ด = 1 รอบเช็คอิน -> เช็คเอาท์ (ไม่มีข้อมูลกราฟ โหลดตอนคลิกการ์ด)
+// วันที่ธุรกิจ (YYYY-MM-DD, ตัดรอบ 06:45 เวลาไทย)
+const bizDateStr = (ms: number) => new Date(ms + BKK - (6 * 60 + 45) * 60000).toISOString().slice(0, 10);
+// 12:00 (เวลาไทย) ของวันที่ YYYY-MM-DD + addDays
+const noonOf = (dateStr: string, addDays: number) => {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return Date.UTC(y, m - 1, d + addDays, 12, 0, 0) - BKK;
+};
+
+// แบ่งการเข้าพักเป็นรอบคิดค่าไฟ:
+// - พัก 1 คืน: เช็คอินจริง -> เช็คเอาท์จริง (หรือปัจจุบัน)
+// - พักหลายคืน: เช็คอิน -> 12:00 วันถัดไป, 12:00 -> 12:00, ..., 12:00 -> เช็คเอาท์จริง
+function splitNights(inMs: number, outMs: number, scheduledOutMs: number) {
+  const segs: { start: number; end: number }[] = [];
+  const firstNoon = noonOf(bizDateStr(inMs), 1);
+  let cur = inMs;
+  // ตัดที่ 12:00 เฉพาะคืนที่ยังไม่ใช่คืนสุดท้ายตามกำหนด (เผื่อออกช้าในวันสุดท้าย)
+  for (let noon = firstNoon; noon < outMs && noon < scheduledOutMs - 3600000; noon += DAY) {
+    if (noon <= cur) continue;
+    segs.push({ start: cur, end: noon });
+    cur = noon;
+  }
+  segs.push({ start: cur, end: outMs });
+  return segs;
+}
+
+// รายงานผู้เข้าพัก: 1 การ์ด = 1 คืน (รอบคิดค่าไฟ) ของการเข้าพัก ที่เริ่มในวันธุรกิจที่เลือก
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const dateOffsetStr = searchParams.get('dateOffset');
@@ -19,7 +46,7 @@ export async function GET(request: Request) {
     .from('bookings')
     .select('*, rooms ( room_no, location, sort_order )')
     .in('status', STAY_STATUSES)
-    .lte('check_in_time', new Date(endOfDay.getTime() + 86400000).toISOString())
+    .lte('check_in_time', new Date(endOfDay.getTime() + DAY).toISOString())
     .or('status.eq.checked_in,check_out_time.gte.' + startOfDay.toISOString());
 
   if (bErr || !bookingsData) {
@@ -33,17 +60,36 @@ export async function GET(request: Request) {
     .maybeSingle();
   const locationsOrder: string[] = (settingsData?.value as string[]) || [];
 
-  // เลือกเฉพาะรอบที่ทับซ้อนกับวันธุรกิจที่เลือก
-  const stays = bookingsData
-    .map((b: any) => ({ b, w: getStayWindow(b, now) }))
-    .filter(({ w }) => w.checkIn <= endOfDay && w.checkOut >= startOfDay && w.checkIn <= now);
+  // หา "คืน" ที่เริ่มในวันธุรกิจที่เลือก
+  const items: any[] = [];
+  bookingsData.forEach((b: any) => {
+    const w = getStayWindow(b, now);
+    if (w.checkIn > now) return;
+    const effectiveEnd = w.ended
+      ? w.checkOut.getTime()
+      : Math.max(w.checkOut.getTime(), w.scheduledOut.getTime());
+    const allSegs = splitNights(w.checkIn.getTime(), effectiveEnd, w.scheduledOut.getTime());
+    allSegs.forEach((s, i) => {
+      // คืนที่เริ่มในวันธุรกิจที่เลือก และเริ่มแล้วจริง (ไม่แสดงคืนในอนาคตที่ยังไม่ถึงเวลาเริ่ม)
+      if (bizDateStr(s.start) === dateStr && s.start <= now.getTime()) {
+        const segActualEnd = Math.min(s.end, w.checkOut.getTime());
+        items.push({
+          b,
+          w,
+          seg: { start: s.start, end: segActualEnd },
+          nightNo: i + 1,
+          totalNights: allSegs.length,
+        });
+      }
+    });
+  });
 
-  if (stays.length === 0) {
-    return NextResponse.json({ cards: [], locationsOrder }, { headers: { 'Cache-Control': 'no-store' } });
+  if (items.length === 0) {
+    return NextResponse.json({ cards: [], locationsOrder, dateStr }, { headers: { 'Cache-Control': 'no-store' } });
   }
 
   // ราคาของวันนั้น
-  const bookingIds = stays.map(s => s.b.id);
+  const bookingIds = Array.from(new Set(items.map(it => it.b.id)));
   const { data: rates } = await supabase
     .from('booking_daily_rates')
     .select('booking_id, amount, target_date')
@@ -52,8 +98,10 @@ export async function GET(request: Request) {
   const rateMap: Record<string, number> = {};
   (rates || []).forEach((r: any) => { rateMap[r.booking_id] = Number(r.amount); });
 
-  // ข้อมูลไฟ (เฉพาะห้องที่เกี่ยวข้อง ภายในวันธุรกิจ)
-  const roomIds = Array.from(new Set(stays.map(s => s.b.room_id)));
+  // ข้อมูลไฟของห้องที่เกี่ยวข้อง ครอบคลุมทุกคืนที่จะแสดง
+  const roomIds = Array.from(new Set(items.map(it => it.b.room_id)));
+  const minStart = Math.min(...items.map(it => it.seg.start));
+  const maxEnd = Math.max(...items.map(it => it.seg.end));
   let energy: any[] = [];
   let from = 0;
   const limit = 1000;
@@ -62,8 +110,8 @@ export async function GET(request: Request) {
       .from('energy_logs')
       .select('room_id, wattage, recorded_at')
       .in('room_id', roomIds)
-      .gte('recorded_at', startOfDay.toISOString())
-      .lte('recorded_at', endOfDay.toISOString())
+      .gte('recorded_at', new Date(minStart).toISOString())
+      .lte('recorded_at', new Date(maxEnd).toISOString())
       .order('recorded_at', { ascending: true })
       .range(from, from + limit - 1);
     if (!data) break;
@@ -72,14 +120,12 @@ export async function GET(request: Request) {
     from += limit;
   }
 
-  const cards = stays.map(({ b, w }) => {
+  const cards = items.map(({ b, w, seg, nightNo, totalNights }) => {
     const room = Array.isArray(b.rooms) ? b.rooms[0] : b.rooms;
-    const winStart = Math.max(w.checkIn.getTime(), startOfDay.getTime());
-    const winEnd = Math.min(w.checkOut.getTime(), endOfDay.getTime(), now.getTime());
     const logs = energy.filter(l => {
       if (l.room_id !== b.room_id) return false;
       const t = new Date(l.recorded_at).getTime();
-      return t >= winStart && t <= winEnd;
+      return t >= seg.start && t <= seg.end;
     });
     let kwh = 0;
     for (let i = 1; i < logs.length; i++) {
@@ -91,6 +137,7 @@ export async function GET(request: Request) {
     const schedMs = w.scheduledOut.getTime() - w.checkIn.getTime();
     return {
       bookingId: b.id,
+      cardKey: `${b.id}_${nightNo}`,
       roomId: b.room_id,
       roomNo: room?.room_no,
       location: room?.location || 'ไม่มีสถานที่',
@@ -101,23 +148,27 @@ export async function GET(request: Request) {
       checkOut: w.checkOut.toISOString(),
       scheduledOut: w.scheduledOut.toISOString(),
       ended: w.ended,
-      isOvernight: schedMs >= 12 * 3600000,
-      nights: Math.max(1, Math.round(schedMs / 86400000)),
+      isOvernight: b.stay_type ? b.stay_type === 'overnight' : schedMs >= 12 * 3600000,
+      nights: Math.max(1, Math.round(schedMs / DAY)),
       hours: Math.max(1, Math.round(schedMs / 3600000)),
+      nightNo,
+      totalNights,
+      segStart: new Date(seg.start).toISOString(),
+      segEnd: new Date(seg.end).toISOString(),
       price: rateMap[b.id] !== undefined ? rateMap[b.id] : (b.actual_price ?? null),
       kwh: Number(kwh.toFixed(2)),
       cost: Math.round(kwh * COST_PER_KWH),
     };
   });
 
-  // เรียงตามสถานที่ -> เบอร์ห้อง (ตามหน้า Setting) -> รอบ (เวลาเช็คอิน)
+  // เรียงตามสถานที่ -> เบอร์ห้อง (ตามหน้า Setting) -> รอบ (เวลาเริ่ม)
   cards.sort((a: any, b: any) => {
     let la = locationsOrder.indexOf(a.location); if (la === -1) la = 999;
     let lb = locationsOrder.indexOf(b.location); if (lb === -1) lb = 999;
     if (la !== lb) return la - lb;
     if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
     if (a.roomId !== b.roomId) return String(a.roomNo).localeCompare(String(b.roomNo));
-    return new Date(a.checkIn).getTime() - new Date(b.checkIn).getTime();
+    return new Date(a.segStart).getTime() - new Date(b.segStart).getTime();
   });
 
   // หมายเลขรอบ (เฉพาะห้องที่มีหลายรอบในวันเดียวกัน)

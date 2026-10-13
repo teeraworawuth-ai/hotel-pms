@@ -59,7 +59,8 @@ export default function GuestReport({ dateOffset }: GuestReportProps) {
 
   const grouped: Record<string, any[]> = {};
   cards.forEach(c => { (grouped[c.location] = grouped[c.location] || []).push(c); });
-  const locations = Object.keys(grouped).sort((a, b) => {
+  const allLocations = Array.from(new Set([...locationsOrder, ...Object.keys(grouped)])).filter(Boolean);
+  const locations = allLocations.sort((a, b) => {
     let ia = locationsOrder.indexOf(a); if (ia === -1) ia = 999;
     let ib = locationsOrder.indexOf(b); if (ib === -1) ib = 999;
     return ia - ib;
@@ -95,21 +96,27 @@ export default function GuestReport({ dateOffset }: GuestReportProps) {
       </div>
 
       <div className="space-y-8">
-        {locations.filter(loc => !filter || loc === filter).map(loc => (
-          <div key={loc} className="bg-slate-50/50 p-2 sm:p-6 rounded-2xl border border-slate-100">
-            <h2 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2">
-              <span className="w-2 h-6 bg-slate-300 rounded-full"></span>
-              {loc}
-              <span className="text-sm font-normal text-slate-400">({grouped[loc].length} รอบ)</span>
-            </h2>
-            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12 gap-1.5 sm:gap-2 lg:gap-2.5">
-              {grouped[loc].map(c => {
+        {locations.filter(loc => !filter || loc === filter).map(loc => {
+          const locCards = grouped[loc] || [];
+          if (locCards.length === 0 && filter !== loc) return null;
+          return (
+            <div key={loc} className="bg-slate-50/50 p-2 sm:p-6 rounded-2xl border border-slate-100">
+              <h2 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2">
+                <span className="w-2 h-6 bg-slate-300 rounded-full"></span>
+                {loc}
+                <span className="text-sm font-normal text-slate-400">({locCards.length} รอบ)</span>
+              </h2>
+              {locCards.length === 0 ? (
+                <div className="py-10 text-center text-slate-400 text-sm font-medium">ไม่มีประวัติผู้เข้าพักในโซนนี้</div>
+              ) : (
+                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12 gap-1.5 sm:gap-2 lg:gap-2.5">
+                  {locCards.map(c => {
                 const icons = roomIconsMap[c.roomId];
                 const inDate = fmtDateRel(c.checkIn);
                 const outDate = fmtDateRel(c.checkOut);
                 return (
                   <button
-                    key={c.bookingId}
+                    key={c.cardKey || c.bookingId}
                     onClick={() => setSelected(c)}
                     className="relative aspect-[16/14] w-full flex items-center justify-center rounded-xl border-2 transition-all active:scale-95 group overflow-hidden bg-blue-100 border-blue-300 text-blue-800 hover:bg-blue-200 hover:border-blue-400 shadow-sm"
                   >
@@ -167,6 +174,13 @@ export default function GuestReport({ dateOffset }: GuestReportProps) {
                       </div>
                     </div>
 
+                    {/* ป้ายคืนที่ (กรณีพักมากกว่า 1 คืน) */}
+                    {c.totalNights > 1 && (
+                      <span className="absolute top-[2px] left-[3px] text-[7px] sm:text-[9px] font-black bg-blue-50 text-blue-700 border border-blue-200 rounded px-[3px] leading-tight z-30">
+                        คืน {c.nightNo}/{c.totalNights}
+                      </span>
+                    )}
+
                     {/* ป้ายรอบ (เฉพาะห้องที่มีหลายรอบในวันเดียวกัน) */}
                     {c.totalRounds > 1 && (
                       <span className="absolute top-[2px] right-[3px] text-[7px] sm:text-[9px] font-black bg-white/80 text-slate-600 rounded px-[3px] leading-tight z-30">
@@ -174,7 +188,7 @@ export default function GuestReport({ dateOffset }: GuestReportProps) {
                       </span>
                     )}
 
-                    {/* แถบล่าง: ค่าไฟรวม */}
+                    {/* แถบล่าง: ค่าไฟรวมของรอบคืนนี้ */}
                     <div className="absolute bottom-0 left-0 right-0 w-full h-[14px] sm:h-[18px] flex items-center justify-center gap-0.5 sm:gap-1 text-[7px] sm:text-[9.5px] font-bold z-30 whitespace-nowrap bg-white/60 backdrop-blur-[1px] border-t border-slate-300/40 text-slate-500 tracking-tight overflow-hidden px-0.5">
                       <span>⚡{c.kwh}</span>
                       <span className="text-slate-300 font-bold">|</span>
@@ -184,36 +198,97 @@ export default function GuestReport({ dateOffset }: GuestReportProps) {
                 );
               })}
             </div>
-          </div>
-        ))}
+          )}
+        </div>
+      );
+    })}
       </div>
 
-      {selected && (
-        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4" onClick={() => setSelected(null)}>
-          <div className="bg-white rounded-2xl w-full max-w-4xl p-5" onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-start mb-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl font-black text-slate-800">{selected.roomNo}</span>
-                  <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded text-xs font-bold">{selected.location}</span>
-                  {selected.totalRounds > 1 && <span className="text-xs font-bold text-slate-500">รอบ {selected.round}/{selected.totalRounds}</span>}
+      {selected && (() => {
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        const MAX_SPAN = 3 * DAY_MS;
+        const stayStart = new Date(selected.checkIn).getTime();
+        const stayEnd = new Date(selected.checkOut).getTime();
+        const segStart = new Date(selected.segStart).getTime();
+        const segEnd = new Date(selected.segEnd).getTime();
+
+        let maxBoundStart: number;
+        let maxBoundEnd: number;
+
+        if (stayEnd - stayStart <= MAX_SPAN) {
+          maxBoundStart = stayStart;
+          maxBoundEnd = stayEnd;
+        } else {
+          let start = segStart - DAY_MS;
+          let end = start + MAX_SPAN;
+          if (start < stayStart) {
+            start = stayStart;
+            end = start + MAX_SPAN;
+          } else if (end > stayEnd) {
+            end = stayEnd;
+            start = end - MAX_SPAN;
+          }
+          maxBoundStart = Math.max(stayStart, start);
+          maxBoundEnd = Math.min(stayEnd, end);
+        }
+
+        const isMultiNight = selected.totalNights > 1;
+        const fmtDt = (iso: string) =>
+          `${new Date(iso).toLocaleDateString("th-TH", { day: "numeric", month: "short" })} ${fmtTime(iso)}`;
+
+        return (
+          <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-3 sm:p-4" onClick={() => setSelected(null)}>
+            <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto p-4 sm:p-5" onClick={e => e.stopPropagation()}>
+              <div className="flex justify-between items-start mb-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl font-black text-slate-800">{selected.roomNo}</span>
+                    <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded text-xs font-bold">{selected.location}</span>
+                    {isMultiNight && (
+                      <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs font-black">
+                        คืนที่ {selected.nightNo}/{selected.totalNights}
+                      </span>
+                    )}
+                    {selected.totalRounds > 1 && (
+                      <span className="text-xs font-bold text-slate-500">
+                        รอบ {selected.round}/{selected.totalRounds}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-sm font-semibold text-slate-700 mt-0.5">{selected.guestName}</div>
+                  <div className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span>เช็คอิน: {fmtDt(selected.checkIn)}</span>
+                    <span>-</span>
+                    <span>
+                      {selected.ended ? (
+                        <>เช็คเอาท์จริง: <span className="text-amber-600 font-bold">{fmtDt(selected.checkOut)}</span></>
+                      ) : (
+                        <span className="text-emerald-600 font-bold">ยังพักอยู่ (กำหนดออก: {fmtDt(selected.scheduledOut)})</span>
+                      )}
+                    </span>
+                    <span className="text-slate-300">|</span>
+                    <span className="font-bold text-blue-700">
+                      รอบคืนนี้: {fmtDt(selected.segStart)} - {fmtDt(selected.segEnd)} ({selected.kwh} kWh / {selected.cost}฿)
+                    </span>
+                  </div>
                 </div>
-                <div className="text-sm text-slate-600">{selected.guestName}</div>
-                <div className="text-xs text-slate-500 mt-1">
-                  เช็คอิน {fmtTime(selected.checkIn)} - {selected.ended ? <>เช็คเอาท์ <span className="text-amber-600 font-bold">{fmtTime(selected.checkOut)}</span></> : "ยังพักอยู่"}
-                  {" "}| ไฟวันนี้ {selected.kwh} kWh ({selected.cost}฿)
-                </div>
+                <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
               </div>
-              <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+
+              <EnergyRangeChart
+                roomId={selected.roomId}
+                startMs={segStart}
+                endMs={segEnd}
+                maxBoundStartMs={maxBoundStart}
+                maxBoundEndMs={maxBoundEnd}
+                focusStartMs={segStart}
+                focusEndMs={segEnd}
+                activeNightLabel={isMultiNight ? `คืนที่ ${selected.nightNo}/${selected.totalNights}` : 'รอบคืนนี้'}
+              />
             </div>
-            <EnergyRangeChart
-              roomId={selected.roomId}
-              startMs={new Date(selected.checkIn).getTime()}
-              endMs={new Date(selected.checkOut).getTime()}
-            />
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
