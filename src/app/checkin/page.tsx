@@ -584,6 +584,11 @@ export default function CheckinPage() {
     return indexA - indexB;
   });
 
+  // กรองสถานที่ที่ผู้ใช้นี้ได้รับสิทธิ์ตามที่ตั้งไว้ใน Settings (authUser.locations)
+  const userVisibleLocations = isManagerOrAdmin
+    ? sortedLocations
+    : sortedLocations.filter(loc => authUser?.locations?.includes(loc));
+
   const getStayDetails = (room: RoomStatus) => {
     if (room.status !== 'occupied' || !room.check_out_time) return null;
     
@@ -886,8 +891,8 @@ export default function CheckinPage() {
               </button>
             </div>
 
-            {/* Location Filters */}
-            {!loading && sortedLocations.length > 0 && (
+            {/* Location Filters (แสดงเฉพาะเมื่อมีสิทธิ์มากกว่า 1 สถานที่ เพื่อประหยัดพื้นที่หากมีสิทธิ์เพียงสถานที่เดียว) */}
+            {!loading && userVisibleLocations.length > 1 && (
               <div className="flex flex-wrap items-center gap-1.5">
                 <button 
                   onClick={() => setSelectedLocationFilter(null)}
@@ -895,7 +900,7 @@ export default function CheckinPage() {
                 >
                   ทั้งหมด
                 </button>
-                {sortedLocations.map(loc => (
+                {userVisibleLocations.map(loc => (
                   <button
                     key={loc}
                     onClick={() => setSelectedLocationFilter(loc)}
@@ -920,14 +925,21 @@ export default function CheckinPage() {
 
       {loading ? (
         <div className="text-center py-20 text-slate-500">กำลังโหลดข้อมูล...</div>
+      ) : !isManagerOrAdmin && userVisibleLocations.length === 0 ? (
+        <div className="text-center py-16 bg-white rounded-2xl border border-slate-200 p-6">
+          <div className="text-4xl mb-2">🔒</div>
+          <div className="text-base font-bold text-slate-700">ยังไม่ได้รับการกำหนดสถานที่ดูแล</div>
+          <div className="text-xs text-slate-400 mt-1">โปรดติดต่อผู้ดูแลระบบ (Admin) เพื่อกำหนดสถานที่ที่มองเห็นในหน้า Settings</div>
+        </div>
       ) : (
         <div className="space-y-8">
           {sortedLocations.filter(loc => {
+            // สำหรับระดับต่ำกว่าแอดมิน ต้องอยู่ในสถานที่ที่ได้รับสิทธิ์เท่านั้น
+            if (!isManagerOrAdmin && !userVisibleLocations.includes(loc)) {
+              return false;
+            }
             if (selectedLocationFilter) {
               return loc === selectedLocationFilter;
-            }
-            if (isHousekeeper && authUser?.locations && authUser.locations.length > 0) {
-              return authUser.locations.includes(loc);
             }
             return true;
           }).map(loc => {
