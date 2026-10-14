@@ -4,7 +4,12 @@ import { useState, useRef, useEffect } from "react";
 import { useShift } from "@/contexts/ShiftContext";
 import { supabase } from "@/lib/supabase";
 
-export default function ShiftManager() {
+interface ShiftManagerProps {
+  compact?: boolean;
+  hideExpense?: boolean;
+}
+
+export default function ShiftManager({ compact = false, hideExpense = false }: ShiftManagerProps = {}) {
   const { activeShift, loading, refreshShift } = useShift();
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
@@ -173,13 +178,14 @@ export default function ShiftManager() {
     // Get Signature
     const signatureData = canvasRef.current?.toDataURL("image/png");
 
-    const discrepancy = finalCash - activeShift.expected_cash;
+    const countedCash = Number(finalCash) || 0;
+    const discrepancy = countedCash - activeShift.expected_cash;
 
     const { error: shiftError } = await supabase
       .from('shifts')
       .update({
         end_time: new Date().toISOString(),
-        final_cash: finalCash,
+        final_cash: countedCash,
         discrepancy: discrepancy,
         status: 'closed',
         signature_data: signatureData
@@ -261,10 +267,35 @@ export default function ShiftManager() {
       {!activeShift ? (
         <button 
           onClick={() => setShowOpenModal(true)}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-sm flex items-center gap-2 animate-pulse"
+          className={`bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm flex items-center gap-1.5 transition-all active:scale-95 ${
+            compact ? "px-3 py-1.5 rounded-xl text-xs" : "px-4 py-1.5 rounded-full text-sm animate-pulse"
+          }`}
         >
-          <span>เปิดกะ (Open Shift)</span>
+          <span>เปิดกะ {compact ? "" : "(Open Shift)"}</span>
         </button>
+      ) : compact ? (
+        <div className="flex items-center gap-1.5 sm:gap-2 text-xs">
+          <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 px-2 sm:px-2.5 py-1 rounded-xl">
+            <span className="text-slate-500 font-medium">กะ:</span>
+            <span className="font-bold text-slate-800">{activeShift.staff_name}</span>
+            <span className="text-slate-300">|</span>
+            <span className="text-emerald-600 font-bold">฿{activeShift.expected_cash.toLocaleString()}</span>
+          </div>
+          {!hideExpense && (
+            <button 
+              onClick={() => setShowExpenseModal(true)}
+              className="bg-orange-100 hover:bg-orange-200 text-orange-700 px-2 sm:px-2.5 py-1 rounded-xl text-xs font-bold transition-colors active:scale-95"
+            >
+              รายจ่าย
+            </button>
+          )}
+          <button 
+            onClick={() => setShowCloseModal(true)}
+            className="bg-slate-800 hover:bg-slate-900 text-white px-2.5 sm:px-3 py-1 rounded-xl text-xs font-bold transition-colors active:scale-95"
+          >
+            ปิดกะ
+          </button>
+        </div>
       ) : (
         <div className="flex items-center gap-3">
           <div className="text-right hidden sm:block">
@@ -374,9 +405,9 @@ export default function ShiftManager() {
                         : 'bg-blue-50 border-blue-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-blue-600'
                     }`}
                   />
-                  {isCashCounted && finalCash !== activeShift.expected_cash && (
-                    <p className={`text-xs mt-1 font-bold ${finalCash > activeShift.expected_cash ? 'text-emerald-600' : 'text-red-500'}`}>
-                      {finalCash > activeShift.expected_cash ? 'ยอดเงินเกิน' : 'ยอดเงินขาด'}: ฿{Math.abs(finalCash - activeShift.expected_cash).toLocaleString()}
+                  {isCashCounted && Number(finalCash) !== activeShift.expected_cash && (
+                    <p className={`text-xs mt-1 font-bold ${Number(finalCash) > activeShift.expected_cash ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {Number(finalCash) > activeShift.expected_cash ? 'ยอดเงินเกิน' : 'ยอดเงินขาด'}: ฿{Math.abs(Number(finalCash) - activeShift.expected_cash).toLocaleString()}
                     </p>
                   )}
                 </div>

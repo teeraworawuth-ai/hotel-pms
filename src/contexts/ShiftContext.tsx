@@ -42,20 +42,20 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
   const refreshShift = async () => {
     setLoading(true);
 
-    // Check AuthUser for Dummy Shift
+    // Check AuthUser for Housekeeper Dummy Shift
     const saved = localStorage.getItem('auth_user');
     if (saved) {
       try {
         const user = JSON.parse(saved);
-        if (user.role === 'staff' || user.role === 'housekeeper') {
-          // Dummy shift for staff
+        if (user.role === 'housekeeper') {
+          // Dummy shift for housekeeper so cleaning is never blocked
           setActiveShift({
             id: 'dummy-shift-id',
             staff_id: user.id,
             staff_name: user.name,
-            staff_role: 'staff',
-            housekeeper_only: user.role === 'housekeeper',
-            can_clean: !!user.can_clean,
+            staff_role: 'housekeeper',
+            housekeeper_only: true,
+            can_clean: true,
             locations: user.locations || [],
             start_time: new Date().toISOString(),
             end_time: null,
@@ -98,29 +98,38 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
         shiftData.staff_role = staffData.role;
       }
 
-            // คำนวณยอดเงินสดจาก Ledger
-        const { data: ledgers } = await supabase
-          .from('ledger_transactions')
-          .select('amount, category, transaction_type')
-          .eq('shift_id', shiftData.id);
-          
-        let cashReceived = 0;
-        let cashExpenses = 0;
+      // แนบสิทธิ์ของ staff ที่ล็อกอินอยู่ปัจจุบัน
+      if (saved) {
+        try {
+          const user = JSON.parse(saved);
+          if (user.locations) shiftData.locations = user.locations;
+          if (user.can_clean !== undefined) shiftData.can_clean = user.can_clean;
+        } catch (e) {}
+      }
 
-        if (ledgers) {
-          ledgers.forEach(txn => {
-            if (txn.category === 'cash' && txn.transaction_type === 'payment') {
-              // การรับชำระเงินถูกบันทึกเป็นค่าลบ (-) เพื่อหักล้างหนี้
-              cashReceived += Math.abs(Number(txn.amount));
-            } else if (txn.transaction_type === 'expense' || (txn.transaction_type === 'deposit' && Number(txn.amount) < 0 && (txn.category.includes('คืนมัดจำ') || txn.category.includes('คืนเงินทอน')))) {
-              // ค่าใช้จ่ายถูกบันทึกเป็นลบ
-              cashExpenses += Math.abs(Number(txn.amount));
-            }
-          });
-        }
+      // คำนวณยอดเงินสดจาก Ledger
+      const { data: ledgers } = await supabase
+        .from('ledger_transactions')
+        .select('amount, category, transaction_type')
+        .eq('shift_id', shiftData.id);
         
-        shiftData.expected_cash = shiftData.initial_cash + cashReceived - cashExpenses;
+      let cashReceived = 0;
+      let cashExpenses = 0;
+
+      if (ledgers) {
+        ledgers.forEach(txn => {
+          if (txn.category === 'cash' && txn.transaction_type === 'payment') {
+            // การรับชำระเงินถูกบันทึกเป็นค่าลบ (-) เพื่อหักล้างหนี้
+            cashReceived += Math.abs(Number(txn.amount));
+          } else if (txn.transaction_type === 'expense' || (txn.transaction_type === 'deposit' && Number(txn.amount) < 0 && (txn.category.includes('คืนมัดจำ') || txn.category.includes('คืนเงินทอน')))) {
+            // ค่าใช้จ่ายถูกบันทึกเป็นลบ
+            cashExpenses += Math.abs(Number(txn.amount));
+          }
+        });
+      }
       
+      shiftData.expected_cash = shiftData.initial_cash + cashReceived - cashExpenses;
+    
       // อัปเดตตาราง shifts ด้วยเพื่อความแน่ใจ
       supabase.from('shifts').update({ expected_cash: shiftData.expected_cash }).eq('id', shiftData.id).then();
       

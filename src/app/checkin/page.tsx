@@ -7,6 +7,7 @@ import RoomCheckinModal from "@/app/components/RoomCheckinModal";
 import CleaningNoteModal from "@/app/components/CleaningNoteModal";
 import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
 import { useShift } from "@/contexts/ShiftContext";
+import ShiftManager from "@/app/components/ShiftManager";
 
 export type RoomStatus = {
   id: string;
@@ -76,7 +77,7 @@ export default function CheckinPage() {
 
   const handleRoomClick = async (room: RoomStatus) => {
     if (room.status === 'dirty' || room.status === 'cleaning') {
-      if (activeShift?.staff_role === 'staff' && !activeShift.housekeeper_only && !activeShift.can_clean) {
+      if (isStaff && !authUser?.can_clean && !activeShift?.can_clean) {
         alert('ผู้ใช้นี้ไม่มีสิทธิ์ทำความสะอาดห้อง');
         return;
       }
@@ -126,13 +127,49 @@ export default function CheckinPage() {
       }
     } else {
       // สำหรับห้องสถานะอื่นๆ ให้เปิด Modal ปกติ
-      if (activeShift?.housekeeper_only) return; // แม่บ้านเปิดได้เฉพาะห้องรอทำ/กำลังทำความสะอาด
+      if (isHousekeeper || activeShift?.housekeeper_only) return; // แม่บ้านเปิดได้เฉพาะห้องรอทำ/กำลังทำความสะอาด
       setSelectedRoom(room);
     }
   };
 
   // 0 = Today, -1 = Yesterday, 1 = Tomorrow
   const [dateOffset, setDateOffset] = useState<number>(0);
+
+  const [authUser, setAuthUser] = useState<{ id: string; name: string; role: string; locations?: string[]; can_clean?: boolean } | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('auth_user');
+        return saved ? JSON.parse(saved) : null;
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    const saved = localStorage.getItem('auth_user');
+    if (saved) {
+      try {
+        setAuthUser(JSON.parse(saved));
+      } catch (e) {}
+    }
+  }, []);
+
+  const isManagerOrAdmin = !authUser || authUser.role === 'admin' || authUser.role === 'manager';
+  const isHousekeeper = authUser?.role === 'housekeeper' || activeShift?.housekeeper_only === true;
+  const isStaff = !isManagerOrAdmin && !isHousekeeper;
+
+  useEffect(() => {
+    if (isHousekeeper && dateOffset !== 0) {
+      setDateOffset(0);
+    }
+  }, [isHousekeeper, dateOffset]);
+
+  const handleLogout = () => {
+    localStorage.removeItem('auth_user');
+    window.location.href = '/';
+  };
   const [smartPricesMap, setSmartPricesMap] = useState<Record<string, number>>({});
   const [roomIconsMap, setRoomIconsMap] = useState<Record<string, string[]>>({});
 
@@ -615,25 +652,37 @@ export default function CheckinPage() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       
       {/* Date Slider / Timeline */}
-      <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between overflow-x-auto gap-2">
-        <button 
-          onClick={() => setDateOffset(prev => Math.max(-10, prev - 1))}
-          className="p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 flex-shrink-0"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
-        </button>
-
-        <div className="flex-1 flex flex-col md:flex-row justify-center items-center gap-4">
-          <div className="text-center hidden md:block">
-            <h2 className="text-xl font-black text-slate-800">
-              {dateOffset === 0 ? `วันนี้ (Today) ${displayDate.toLocaleDateString('th-TH', { weekday: 'long' })} ที่ ${displayDate.getDate()}/${displayDate.getMonth() + 1}/${displayDate.getFullYear()}` : displayDate.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'short' })}
-            </h2>
-            <p className="text-xs text-slate-500">
-              {dateOffset < 0 ? `ย้อนหลัง ${Math.abs(dateOffset)} วัน` : dateOffset > 0 ? `ล่วงหน้า ${dateOffset} วัน` : "สถานะปัจจุบันแบบ Real-time"}
-            </p>
-          </div>
-          
+      {isHousekeeper ? (
+        /* HOUSEKEEPER: Minimal Top Bar (No shift info, locked to today, logout button) */
+        <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
+            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
+            <span className="text-sm sm:text-base font-black text-slate-800">
+              วันนี้ {displayDate.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-medium hidden sm:inline">({authUser?.name})</span>
+            <button
+              onClick={handleLogout}
+              className="text-red-500 hover:text-red-700 font-bold text-xs px-3 py-1.5 rounded-xl border border-red-200 hover:bg-red-50 transition-colors"
+            >
+              ออกจากระบบ
+            </button>
+          </div>
+        </div>
+      ) : isStaff ? (
+        /* STAFF: Date Slider + Shift Info (กะปัจจุบัน / เงินในลิ้นชัก / เปิดกะ-ปิดกะ) + Logout on same line */
+        <div className="bg-white p-2.5 sm:p-3 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-2 sm:gap-4">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <button 
+              onClick={() => setDateOffset(prev => Math.max(-10, prev - 1))}
+              className="p-1.5 sm:p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 flex-shrink-0"
+              title="ย้อนหลัง 1 วัน"
+            >
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
+            </button>
+
             <input 
               type="date"
               value={`${displayDate.getFullYear()}-${String(displayDate.getMonth() + 1).padStart(2, '0')}-${String(displayDate.getDate()).padStart(2, '0')}`}
@@ -648,98 +697,224 @@ export default function CheckinPage() {
                   setDateOffset(diffDays);
                 }
               }}
-              className="border-slate-200 rounded-xl px-4 py-2 font-medium focus:ring-blue-500 focus:border-blue-500 bg-slate-50 text-slate-700 h-11 outline-none border"
+              className="border-slate-200 rounded-xl px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm font-bold focus:ring-blue-500 focus:border-blue-500 bg-slate-50 text-slate-700 h-9 sm:h-10 outline-none border"
             />
-            {dateOffset !== 0 && (
+
+            {dateOffset !== 0 ? (
               <button 
                 onClick={() => setDateOffset(0)}
-                className="px-4 py-2 bg-blue-100 text-blue-700 text-sm font-bold rounded-xl hover:bg-blue-200 transition-colors h-11 flex items-center"
+                className="px-2.5 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-xl hover:bg-blue-200 transition-colors h-9 sm:h-10 flex items-center"
               >
                 วันนี้
               </button>
+            ) : (
+              <span className="text-xs font-bold text-slate-500 hidden md:inline ml-1">
+                {displayDate.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}
+              </span>
+            )}
+
+            <button 
+              onClick={() => setDateOffset(prev => Math.min(7, prev + 1))}
+              className="p-1.5 sm:p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 flex-shrink-0"
+              title="ล่วงหน้า 1 วัน"
+            >
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-3 ml-auto">
+            <ShiftManager compact={true} hideExpense={true} />
+            <button
+              onClick={handleLogout}
+              className="text-red-500 hover:text-red-700 font-bold text-xs px-2.5 sm:px-3 py-1.5 rounded-xl border border-red-200 hover:bg-red-50 transition-colors"
+              title="ออกจากระบบ"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* ADMIN / MANAGER: Full Date Slider */
+        <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between overflow-x-auto gap-2">
+          <button 
+            onClick={() => setDateOffset(prev => Math.max(-10, prev - 1))}
+            className="p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 flex-shrink-0"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
+          </button>
+
+          <div className="flex-1 flex flex-col md:flex-row justify-center items-center gap-4">
+            <div className="text-center hidden md:block">
+              <h2 className="text-xl font-black text-slate-800">
+                {dateOffset === 0 ? `วันนี้ (Today) ${displayDate.toLocaleDateString('th-TH', { weekday: 'long' })} ที่ ${displayDate.getDate()}/${displayDate.getMonth() + 1}/${displayDate.getFullYear()}` : displayDate.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'short' })}
+              </h2>
+              <p className="text-xs text-slate-500">
+                {dateOffset < 0 ? `ย้อนหลัง ${Math.abs(dateOffset)} วัน` : dateOffset > 0 ? `ล่วงหน้า ${dateOffset} วัน` : "สถานะปัจจุบันแบบ Real-time"}
+              </p>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <input 
+                type="date"
+                value={`${displayDate.getFullYear()}-${String(displayDate.getMonth() + 1).padStart(2, '0')}-${String(displayDate.getDate()).padStart(2, '0')}`}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    const selectedDate = new Date(e.target.value);
+                    const today = getBusinessDate(getNow());
+                    selectedDate.setHours(0, 0, 0, 0);
+                    today.setHours(0, 0, 0, 0);
+                    const diffTime = selectedDate.getTime() - today.getTime();
+                    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+                    setDateOffset(diffDays);
+                  }
+                }}
+                className="border-slate-200 rounded-xl px-4 py-2 font-medium focus:ring-blue-500 focus:border-blue-500 bg-slate-50 text-slate-700 h-11 outline-none border"
+              />
+              {dateOffset !== 0 && (
+                <button 
+                  onClick={() => setDateOffset(0)}
+                  className="px-4 py-2 bg-blue-100 text-blue-700 text-sm font-bold rounded-xl hover:bg-blue-200 transition-colors h-11 flex items-center"
+                >
+                  วันนี้
+                </button>
+              )}
+            </div>
+          </div>
+
+          <button 
+            onClick={() => setDateOffset(prev => Math.min(7, prev + 1))}
+            className="p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 flex-shrink-0"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
+          </button>
+        </div>
+      )}
+
+      {isManagerOrAdmin ? (
+        <>
+          {/* Header & Legend (Admin/Manager Full View) */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
+            <div className="flex flex-col gap-2">
+              <h1 className="text-2xl font-bold text-slate-800 tracking-tight">สมุดจอง & สถานะห้อง <span className="text-xs text-slate-400 font-normal ml-2">(v2)</span></h1>
+              <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
+                <button 
+                  onClick={() => setViewMode('grid')}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${viewMode === 'grid' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  มุมมองตาราง
+                </button>
+                <button 
+                  onClick={() => setViewMode('map')}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${viewMode === 'map' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  มุมมองแผนผัง
+                </button>
+              </div>
+            </div>
+            
+            {/* Legend & Actions */}
+            <div className="flex flex-col xl:flex-row gap-4 items-start xl:items-center">
+              <div className="flex flex-wrap gap-4 text-xs font-medium text-slate-600 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm">
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-emerald-300 bg-white"></span>ว่าง</div>
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-blue-300 bg-blue-100"></span>มีแขกพัก</div>
+                {dateOffset === 0 && <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-orange-300 bg-orange-100"></span>รอทำความสะอาด</div>}
+                {dateOffset > 0 && <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-purple-300 bg-purple-100"></span>จองแล้ว</div>}
+                <div className="flex items-center gap-1.5 text-[10px] text-slate-400 border-l border-slate-200 pl-4">12 13 = วันที่ติดจอง (ใน 7 วัน)</div>
+              </div>
+              
+              {dateOffset === 0 && rooms.some(r => r.status === 'dirty') && (
+                <button 
+                  onClick={handleCleanAllDirtyRooms}
+                  disabled={loading}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 text-sm font-bold rounded-xl shadow-sm transition-colors active:scale-95"
+                >
+                  🧹 ทำความสะอาดทุกห้อง
+                </button>
+              )}
+
+              {dateOffset === 0 && rooms.some(r => r.status === 'occupied') && (
+                <button 
+                  onClick={handleClearAllOccupiedRooms}
+                  disabled={loading}
+                  className="flex items-center gap-2 px-4 py-2 bg-orange-50 text-orange-600 border border-orange-200 hover:bg-orange-100 hover:border-orange-300 text-sm font-bold rounded-xl shadow-sm transition-colors active:scale-95"
+                >
+                  🚪 เคลียร์แขก (สำหรับทดสอบ)
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Location Filter for Admin/Manager */}
+          {!loading && sortedLocations.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-4">
+              <button 
+                onClick={() => setSelectedLocationFilter(null)}
+                className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${selectedLocationFilter === null ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+              >
+                ทั้งหมด
+              </button>
+              {sortedLocations.map(loc => (
+                <button
+                  key={loc}
+                  onClick={() => setSelectedLocationFilter(loc)}
+                  className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${selectedLocationFilter === loc ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                >
+                  {loc}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        /* NON-ADMIN / STAFF / HOUSEKEEPER: Combined Compact View Mode + Location Filter + Mini Legend */
+        <div className="flex flex-wrap items-center justify-between gap-2.5 bg-white p-2.5 rounded-2xl shadow-xs border border-slate-200">
+          {/* Left: View Mode Toggle + Location Filters */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* View Mode Toggle */}
+            <div className="flex bg-slate-100 p-0.5 rounded-xl">
+              <button 
+                onClick={() => setViewMode('grid')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${viewMode === 'grid' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                มุมมองตาราง
+              </button>
+              <button 
+                onClick={() => setViewMode('map')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${viewMode === 'map' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                มุมมองแผนผัง
+              </button>
+            </div>
+
+            {/* Location Filters */}
+            {!loading && sortedLocations.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button 
+                  onClick={() => setSelectedLocationFilter(null)}
+                  className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-bold transition-colors ${selectedLocationFilter === null ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                >
+                  ทั้งหมด
+                </button>
+                {sortedLocations.map(loc => (
+                  <button
+                    key={loc}
+                    onClick={() => setSelectedLocationFilter(loc)}
+                    className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-bold transition-colors ${selectedLocationFilter === loc ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                  >
+                    {loc}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
-        </div>
 
-        <button 
-          onClick={() => setDateOffset(prev => Math.min(7, prev + 1))}
-          className="p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 flex-shrink-0"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
-        </button>
-      </div>
-
-      {/* Header & Legend */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
-        <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">สมุดจอง & สถานะห้อง <span className="text-xs text-slate-400 font-normal ml-2">(v2)</span></h1>
-          <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
-            <button 
-              onClick={() => setViewMode('grid')}
-              className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${viewMode === 'grid' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-              มุมมองตาราง
-            </button>
-            <button 
-              onClick={() => setViewMode('map')}
-              className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${viewMode === 'map' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-              มุมมองแผนผัง
-            </button>
+          {/* Right: Mini Legend */}
+          <div className="flex items-center gap-2 sm:gap-2.5 text-[11px] font-medium text-slate-500 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-100 ml-auto">
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full border border-emerald-300 bg-white inline-block"></span>ว่าง</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full border border-blue-300 bg-blue-100 inline-block"></span>มีแขก</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full border border-orange-300 bg-orange-100 inline-block"></span>รอทำ</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full border border-purple-300 bg-purple-100 inline-block"></span>จอง</span>
           </div>
-        </div>
-        
-        {/* Legend & Actions */}
-        <div className="flex flex-col xl:flex-row gap-4 items-start xl:items-center">
-          <div className="flex flex-wrap gap-4 text-xs font-medium text-slate-600 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm">
-            <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-emerald-300 bg-white"></span>ว่าง</div>
-            <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-blue-300 bg-blue-100"></span>มีแขกพัก</div>
-            {dateOffset === 0 && <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-orange-300 bg-orange-100"></span>รอทำความสะอาด</div>}
-            {dateOffset > 0 && <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-purple-300 bg-purple-100"></span>จองแล้ว</div>}
-            <div className="flex items-center gap-1.5 text-[10px] text-slate-400 border-l border-slate-200 pl-4">12 13 = วันที่ติดจอง (ใน 7 วัน)</div>
-          </div>
-          
-          {dateOffset === 0 && rooms.some(r => r.status === 'dirty') && (
-            <button 
-              onClick={handleCleanAllDirtyRooms}
-              disabled={loading}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 text-sm font-bold rounded-xl shadow-sm transition-colors active:scale-95"
-            >
-              🧹 ทำความสะอาดทุกห้อง
-            </button>
-          )}
-
-          {dateOffset === 0 && rooms.some(r => r.status === 'occupied') && (
-            <button 
-              onClick={handleClearAllOccupiedRooms}
-              disabled={loading}
-              className="flex items-center gap-2 px-4 py-2 bg-orange-50 text-orange-600 border border-orange-200 hover:bg-orange-100 hover:border-orange-300 text-sm font-bold rounded-xl shadow-sm transition-colors active:scale-95"
-            >
-              🚪 เคลียร์แขก (สำหรับทดสอบ)
-            </button>
-          )}
-        </div>
-      </div>
-
-
-      {/* Location Filter */}
-      {!loading && sortedLocations.length > 0 && activeShift?.staff_role !== 'staff' && (
-        <div className="flex flex-wrap gap-2 mb-4">
-          <button 
-            onClick={() => setSelectedLocationFilter(null)}
-            className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${selectedLocationFilter === null ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-          >
-            ทั้งหมด
-          </button>
-          {sortedLocations.map(loc => (
-            <button
-              key={loc}
-              onClick={() => setSelectedLocationFilter(loc)}
-              className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${selectedLocationFilter === loc ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-            >
-              {loc}
-            </button>
-          ))}
         </div>
       )}
 
@@ -747,7 +922,15 @@ export default function CheckinPage() {
         <div className="text-center py-20 text-slate-500">กำลังโหลดข้อมูล...</div>
       ) : (
         <div className="space-y-8">
-          {sortedLocations.filter(loc => { if (activeShift?.staff_role === 'staff') { return activeShift.locations?.includes(loc) ?? false; } return !selectedLocationFilter || loc === selectedLocationFilter; }).map(loc => {
+          {sortedLocations.filter(loc => {
+            if (selectedLocationFilter) {
+              return loc === selectedLocationFilter;
+            }
+            if (isHousekeeper && authUser?.locations && authUser.locations.length > 0) {
+              return authUser.locations.includes(loc);
+            }
+            return true;
+          }).map(loc => {
             const locRooms = groupedRooms[loc].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
             return (
               <div key={loc} className="bg-slate-50/50 p-2 sm:p-6 rounded-2xl border border-slate-100">

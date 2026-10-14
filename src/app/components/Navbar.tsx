@@ -20,12 +20,26 @@ export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
 
-  const [userRole, setUserRole] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('auth_user');
+        return saved ? JSON.parse(saved).role : null;
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  });
   
   useEffect(() => {
+    setMounted(true);
     const saved = localStorage.getItem('auth_user');
     if (saved) {
-      setUserRole(JSON.parse(saved).role);
+      try {
+        setUserRole(JSON.parse(saved).role);
+      } catch (e) {}
     }
   }, []);
 
@@ -34,6 +48,11 @@ export default function Navbar() {
     window.location.href = '/';
   };
 
+  // สำหรับผู้ใช้ระดับต่ำกว่า Admin/Manager เมื่ออยู่ในหน้า /checkin ให้ซ่อน Navbar ด้านบนทั้งหมด
+  // เพื่อประหยัดพื้นที่ โดยมีแถบ กะ/วันที่/Logout รวมอยู่ที่หัวตารางในหน้า Check-in แล้ว
+  if (mounted && pathname === '/checkin' && userRole && userRole !== 'admin' && userRole !== 'manager') {
+    return null;
+  }
 
   return (
     <header className="sticky top-0 z-50 glass border-b border-white/20">
