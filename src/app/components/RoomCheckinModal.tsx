@@ -230,9 +230,50 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [payCash, setPayCash] = useState<number | ''>('');
   const [payTransfer, setPayTransfer] = useState<number | ''>('');
   const [payCredit, setPayCredit] = useState<number | ''>('');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'credit'>('cash');
+  const [receivedCash, setReceivedCash] = useState<number | ''>('');
+  const [isSplitPayment, setIsSplitPayment] = useState(false);
+  const [showDailyDetails, setShowDailyDetails] = useState(false);
+  const [discount, setDiscount] = useState<number | ''>('');
   const [isScanningSlip, setIsScanningSlip] = useState(false);
   const [pastPayments, setPastPayments] = useState<LedgerTransaction[]>([]);
   const [staffName, setStaffName] = useState<string>(room.staff_name || '');
+
+  const handleDiscountChange = (newDiscountStr: string) => {
+    const disc = newDiscountStr === '' ? '' : Number(newDiscountStr);
+    setDiscount(disc);
+    const dVal = Number(disc) || 0;
+    const base = totalTargetPrice || Number(actualPrice) || 0;
+    const newPrice = Math.max(0, base - dVal);
+    setActualPrice(newPrice);
+    if (dailyBreakdown.length === 1) {
+      updateDailyActualPrice(dailyBreakdown[0].date, String(newPrice));
+    }
+  };
+
+  const handleActualPriceChange = (newPriceStr: string) => {
+    const p = newPriceStr === '' ? '' : Number(newPriceStr);
+    setActualPrice(p);
+    const base = totalTargetPrice || 0;
+    if (base > 0 && p !== '') {
+      setDiscount(base > Number(p) ? base - Number(p) : '');
+    }
+    if (dailyBreakdown.length === 1 && p !== '') {
+      updateDailyActualPrice(dailyBreakdown[0].date, String(p));
+    }
+  };
+
+  const handleNightsChange = (delta: number) => {
+    const current = Number(nights) || 0;
+    const nextVal = Math.max(dateOffset === 0 ? 0 : 1, current + delta);
+    setNights(nextVal);
+  };
+
+  const handleHoursChange = (delta: number) => {
+    const current = Number(hours) || 1;
+    const nextVal = Math.max(1, current + delta);
+    setHours(nextVal);
+  };
   
   // States for Key Deposit & Daily Extras
   const [keyDepositEnabled, setKeyDepositEnabled] = useState<boolean>(true);
@@ -680,9 +721,19 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         }
 
         // --- 5. บันทึกการรับชำระเงิน (Payment) แยกช่องทาง ---
-        const cash = Number(payCash) || 0;
-        const transfer = Number(payTransfer) || 0;
-        const credit = Number(payCredit) || 0;
+        let cash = 0;
+        let transfer = 0;
+        let credit = 0;
+
+        if (isSplitPayment) {
+          cash = Number(payCash) || 0;
+          transfer = Number(payTransfer) || 0;
+          credit = Number(payCredit) || 0;
+        } else {
+          if (paymentMethod === 'cash') cash = totalToPay;
+          else if (paymentMethod === 'transfer') transfer = totalToPay;
+          else if (paymentMethod === 'credit') credit = totalToPay;
+        }
         
         
     
@@ -730,9 +781,19 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     if (!room.booking_id) return;
     
     setLoading(true);
-    const cash = Number(payCash) || 0;
-    const transfer = Number(payTransfer) || 0;
-    const credit = Number(payCredit) || 0;
+    let cash = 0;
+    let transfer = 0;
+    let credit = 0;
+
+    if (isSplitPayment) {
+      cash = Number(payCash) || 0;
+      transfer = Number(payTransfer) || 0;
+      credit = Number(payCredit) || 0;
+    } else {
+      if (paymentMethod === 'cash') cash = remainingBalance;
+      else if (paymentMethod === 'transfer') transfer = remainingBalance;
+      else if (paymentMethod === 'credit') credit = remainingBalance;
+    }
     
 
     // Sync Key Deposit Charge for existing bookings
@@ -1399,526 +1460,615 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-full flex flex-col overflow-hidden" 
         onClick={e => e.stopPropagation()}
       >
-        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
-          <div>
-            <h2 className="text-xl font-black text-slate-800">ห้อง {room.room_no}</h2>
-            {dateOffset > 0 && <p className="text-xs text-purple-600 font-bold">โหมดจองล่วงหน้า (วันที่ {displayDate.toLocaleDateString('th-TH')})</p>}
+        <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-white shrink-0">
+          <div className="flex items-center gap-2">
+            <button 
+              type="button" 
+              onClick={onClose} 
+              className="p-1 -ml-1 text-slate-700 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-colors"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+            </button>
+            <h2 className="text-xl font-black text-slate-800 tracking-tight">เช็คอิน</h2>
+            {dateOffset > 0 && <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-bold ml-1">จองล่วงหน้า</span>}
           </div>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-          </button>
+          <div className="px-3.5 py-1 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-700 shadow-xs flex items-center gap-1.5">
+            <span className="text-slate-400 font-normal">ห้อง</span>
+            <span className="text-slate-900 font-black text-sm">{room.room_no}</span>
+          </div>
         </div>
 
         <div className="p-6 overflow-y-auto">
           
-          {/* 1. ห้องว่าง -> รอการเข้าพัก หรือ เพิ่มการจองล่วงหน้า */}
+          {/* 1. ห้องว่าง / จองแล้ว / กำลังพัก (Form View) */}
           {(!room.status || room.status === 'available' || room.status === 'reserved' || room.status === 'occupied') && (
-            <div className="space-y-6">
-              <div className="flex bg-slate-100 p-1 rounded-xl">
-                <button 
-                  onClick={() => setActiveTab('overnight')}
-                  className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${activeTab === 'overnight' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                  🌙 ค้างคืน
-                </button>
-                {dateOffset === 0 && ( // โหมดชั่วคราว มีเฉพาะเช็คอินวันนี้
-                  <button 
-                    onClick={() => setActiveTab('short_stay')}
-                    className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${activeTab === 'short_stay' ? 'bg-white shadow-sm text-amber-600' : 'text-slate-500 hover:text-slate-700'}`}
-                  >
-                    ⏳ ชั่วคราว
-                  </button>
-                )}
-              </div>
-
+            <div className="space-y-4">
               {timeBand === 'early_in' && activeTab === 'overnight' && (
-                <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-lg text-sm font-medium">
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 p-2.5 rounded-xl text-xs font-medium">
                   ⚠️ <b>เตือน:</b> เข้าพักก่อนเวลา (06:45-09:44) ต้องเรียกเก็บเงินค่าเข้าพักก่อนเวลาเพิ่มเติม (ราคาชั่วคราว + ราคาปกติ)
                 </div>
               )}
 
               {timeBand === 'late_night' && activeTab === 'overnight' && (
-                <div className="bg-blue-50 border border-blue-200 text-blue-800 p-3 rounded-lg text-sm font-medium">
+                <div className="bg-blue-50 border border-blue-200 text-blue-800 p-2.5 rounded-xl text-xs font-medium">
                   ℹ️ <b>รอบดึก:</b> เช็คอินรอบนี้ถือเป็นของเมื่อวาน ค่าเริ่มต้นคือ 0 คืน (ออก 12:00 น. วันนี้) 
                   หากต้องการให้ออกพรุ่งนี้ กรุณาเปลี่ยนเป็น 1 หรือ 2 คืน
                 </div>
               )}
 
-              <div className="space-y-4">
-                <div className="flex gap-4">
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium text-slate-700 mb-1">ชื่อลูกค้า</label>
-                    <input 
-                      type="text" 
-                      value={guestName} onChange={(e) => setGuestName(e.target.value)} disabled={room.status === 'occupied'}
-                      placeholder="ชื่อ-นามสกุล"
-                      className="w-full border-slate-200 rounded-xl px-4 py-3 font-medium focus:ring-blue-500 focus:border-blue-500 bg-slate-50 disabled:opacity-50"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium text-slate-700 mb-1">เบอร์โทรศัพท์ <span className="text-red-500">*</span></label>
-                    <input 
-                      type="tel" maxLength={10}
-                      value={guestPhone} onChange={(e) => setGuestPhone(e.target.value.replace(/\D/g, ''))} disabled={room.status === 'occupied'}
-                      placeholder="ตัวเลข 10 หลัก"
-                      className="w-full border-slate-200 rounded-xl px-4 py-3 font-medium focus:ring-blue-500 focus:border-blue-500 bg-slate-50 disabled:opacity-50"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-<div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">จำนวนผู้เข้าพัก (คน)</label>
+              {/* เบอร์โทรลูกค้า */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                  เบอร์โทรลูกค้า <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-indigo-700">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                    </svg>
+                  </span>
                   <input 
-                    type="number" min="1" 
-                    value={guestCount} onChange={(e) => setGuestCount(e.target.value === '' ? '' : Number(e.target.value))} disabled={room.status === 'occupied'}
-                    className="w-full border-slate-200 rounded-xl px-4 py-3 text-lg font-bold focus:ring-blue-500 focus:border-blue-500 bg-slate-50 disabled:opacity-50"
+                    type="tel" maxLength={10}
+                    value={guestPhone} 
+                    onChange={(e) => setGuestPhone(e.target.value.replace(/\D/g, ''))} 
+                    disabled={room.status === 'occupied'}
+                    placeholder="081-234-5678"
+                    className="w-full border border-slate-300/80 rounded-2xl pl-11 pr-4 py-3 text-base font-bold text-slate-800 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 bg-white disabled:opacity-50 transition-all shadow-xs"
                   />
                 </div>
-{activeTab === 'overnight' ? (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">จำนวนคืน 🌙</label>
-                    <input 
-                      type="number" min="0" disabled={room.status === 'occupied'} value={nights} onChange={(e) => setNights(e.target.value === '' ? '' : Number(e.target.value))}
-                      className="w-full border-slate-200 rounded-xl px-4 py-3 text-lg font-bold focus:ring-blue-500 focus:border-blue-500 bg-slate-50 disabled:opacity-50"
-                    />
-                    <p className="text-xs text-slate-500 mt-2">
-                      ออกวันที่: {getNextNoon(displayDate, Number(nights) || 0).toLocaleString('th-TH')}
-                    </p>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">จำนวนชั่วโมง ⏳</label>
-                    <input 
-                      type="number" min="1" 
-                      value={hours} onChange={(e) => setHours(e.target.value === '' ? '' : Number(e.target.value))}
-                      className="w-full border-slate-200 rounded-xl px-4 py-3 text-lg font-bold focus:ring-amber-500 focus:border-amber-500 bg-slate-50 disabled:opacity-50"
-                    />
-                  </div>
-                )}
-</div>
-                {dynamicPricingDetails && (dynamicPricingDetails.weekendSurcharge > 0 || dynamicPricingDetails.holidaySurcharge > 0 || dynamicPricingDetails.lowOccupancySurcharge > 0 || dynamicPricingDetails.isSurgeDisabled) && (
-                  <div className="bg-slate-100 rounded-xl p-3 text-sm flex flex-col gap-1 border border-slate-200">
-                    <p className="font-bold text-slate-700">⚡ การคำนวณราคาอัตโนมัติ:</p>
-                    <ul className="text-slate-600 space-y-1 ml-4 list-disc">
-                      {dynamicPricingDetails.weekendSurcharge > 0 && <li>บวกเพิ่มวันหยุดสุดสัปดาห์: +{dynamicPricingDetails.weekendSurcharge} บ.</li>}
-                      {dynamicPricingDetails.holidaySurcharge > 0 && <li>บวกเพิ่มเทศกาล: +{dynamicPricingDetails.holidaySurcharge} บ.</li>}
-                      {dynamicPricingDetails.lowOccupancySurcharge > 0 && <li>บวกเพิ่มห้องเหลือน้อย: +{dynamicPricingDetails.lowOccupancySurcharge} บ.</li>}
-                      {dynamicPricingDetails.isSurgeDisabled && <li className="text-orange-600">ห้องเหลือน้อย แต่ยกเลิกบวกราคา (หลัง {dynamicPricingDetails.surgeDisableTimeString} น.)</li>}
-                    </ul>
-                  </div>
-                )}
-                
-                                  {activeTab === 'overnight' ? (
-                    <div className="col-span-2 border border-slate-200 rounded-xl overflow-hidden mt-2">
-                      <div className="bg-slate-50 p-3 border-b border-slate-200">
-                          <label className="text-sm font-bold text-slate-700">📌 สรุปยอดค่าห้องพัก (อัตโนมัติตามปฏิทิน)</label>
-                        </div>
-                      
-                      <div className="p-0">
-                        <table className="w-full text-sm text-left">
-                          <thead className="bg-slate-100 text-slate-500 uppercase text-xs">
-                            <tr>
-                              <th className="px-4 py-2">วันที่ (Date)</th>
-                              <th className="px-4 py-2 text-right">เป้าหมาย</th>
-                              <th className="px-4 py-2 w-32">ราคาขายจริง</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {dailyBreakdown.map(day => {
-                              const dt = new Date(day.date);
-                              const dateDisplay = dt.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' });
-                              
-                              let colorClass = "text-slate-800 focus:border-slate-400";
-                              let icon = "";
-                              let bgClass = "bg-white";
-                              
-                              if (day.isOverride) {
-                                if (Number(day.actualPrice) < Number(day.targetPrice)) {
-                                  colorClass = "text-red-600 focus:border-red-500 border-red-300";
-                                  bgClass = "bg-red-50";
-                                  icon = "🔻";
-                                } else if (Number(day.actualPrice) > Number(day.targetPrice)) {
-                                  colorClass = "text-emerald-600 focus:border-emerald-500 border-emerald-300";
-                                  bgClass = "bg-emerald-50";
-                                  icon = "🔺";
-                                }
-                              }
-                              
-                              return (
-                                <tr key={day.date} className="border-b border-slate-100 last:border-0">
-                                  <td className="px-4 py-3 font-medium text-slate-600">{dateDisplay}</td>
-                                  <td className="px-4 py-3 text-right text-slate-400">฿{day.targetPrice}</td>
-                                  <td className="px-3 py-2">
-                                    <div className="relative">
-                                      <span className="absolute left-2 top-2 text-xs">{icon}</span>
-                                      <input 
-                                        type="number" min="0" 
-                                        value={day.actualPrice} 
-                                        onChange={(e) => updateDailyActualPrice(day.date, e.target.value)}
-                                        disabled={room.status === 'occupied' || room.status === 'reserved'}
-                                        className={`w-full border rounded-lg pl-7 pr-2 py-1.5 font-bold ${colorClass} ${bgClass} transition-colors`}
-                                      />
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                      <div className="bg-slate-50 p-3 border-t border-slate-200 flex justify-between items-center">
-                        <span className="text-sm font-bold text-slate-500">รวมที่ต้องเก็บจริง (Total)</span>
-                        <div className="text-right">
-                          <span className="text-xs text-slate-400 mr-2 line-through">เป้าหมาย: ฿{totalTargetPrice}</span>
-                          <span className="text-xl font-black text-slate-800">฿{actualPrice}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">ราคาห้อง (Price)</label>
-                      <input 
-                        type="number" min="0" 
-                        value={actualPrice} onChange={(e) => setActualPrice(e.target.value === '' ? '' : Number(e.target.value))} disabled={room.status === 'occupied'}
-                        className="w-full border-slate-200 rounded-xl px-4 py-3 text-lg font-bold focus:ring-emerald-500 focus:border-emerald-500 bg-emerald-50 text-emerald-700"
-                      />
-                    </div>
-                  )}
-                
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">พนักงานที่รับเช็คอิน</label>
+              </div>
+
+              {/* ชื่อลูกค้า */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                  ชื่อลูกค้า
+                </label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-indigo-700">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  </span>
                   <input 
                     type="text" 
-                    value={staffName} onChange={(e) => setStaffName(e.target.value)} disabled={room.status === 'occupied'}
-                    placeholder="ใส่ชื่อพนักงาน"
-                    className="w-full border-slate-200 rounded-xl px-4 py-3 font-medium focus:ring-blue-500 focus:border-blue-500 bg-slate-50 disabled:opacity-50"
+                    value={guestName} 
+                    onChange={(e) => setGuestName(e.target.value)} 
+                    disabled={room.status === 'occupied'}
+                    placeholder="สมชาย ใจดี"
+                    className="w-full border border-slate-300/80 rounded-2xl pl-11 pr-4 py-3 text-base font-bold text-slate-800 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 bg-white disabled:opacity-50 transition-all shadow-xs"
                   />
                 </div>
+              </div>
 
-
-                {/* --- Past Payments History --- */}
-                {pastPayments.length > 0 && (
-                  <div className="pt-2 border-t border-slate-100 mb-4">
-                    <label className="block text-sm font-bold text-slate-700 mb-2">ประวัติการรับชำระเงิน (Past Payments)</label>
-                    <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                      {pastPayments.map(p => (
-                        <div key={p.id} className="flex justify-between text-sm">
-                          <span className="text-slate-600">{p.category === 'transfer' && p.notes && p.notes.includes('โอนเวลา:') ? p.notes.split('โอนเวลา:')[1].trim() : new Date(p.created_at).toLocaleString('sv-SE')} - {p.category}</span>
-                          <span className="font-bold text-emerald-600">฿{Math.abs(p.amount).toLocaleString()}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* --- Key Deposit UI --- */}
-                <div className="pt-2 border-t border-slate-100">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        checked={keyDepositEnabled}
-                        onChange={e => setKeyDepositEnabled(e.target.checked)} disabled={room.status === 'occupied'}
-                        className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
-                      />
-                      <span className="text-sm font-bold text-slate-700">รับมัดจำกุญแจ</span>
-                    </label>
-                  </div>
-                  {keyDepositEnabled && (
-                    <div className="flex gap-2">
-                      <input 
-                        type="number"
-                        value={keyDepositAmount}
-                        onChange={e => setKeyDepositAmount(e.target.value === '' ? '' : Number(e.target.value))} disabled={room.status === 'occupied'}
-                        className="flex-1 border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:ring-emerald-500 focus:border-emerald-500 bg-emerald-50"
-                        placeholder="จำนวนเงินมัดจำ..."
-                      />
-                    </div>
+              {/* ประเภทการเข้าพัก */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">ประเภทการเข้าพัก</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button 
+                    type="button"
+                    onClick={() => setActiveTab('overnight')}
+                    disabled={room.status === 'occupied'}
+                    className={`py-3 px-4 rounded-2xl font-bold flex items-center justify-center gap-2 text-base transition-all ${
+                      activeTab === 'overnight'
+                        ? 'bg-indigo-700 text-white shadow-md shadow-indigo-700/20'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>🌙</span>
+                    <span>ค้างคืน</span>
+                  </button>
+                  {dateOffset === 0 && (
+                    <button 
+                      type="button"
+                      onClick={() => setActiveTab('short_stay')}
+                      disabled={room.status === 'occupied'}
+                      className={`py-3 px-4 rounded-2xl font-bold flex items-center justify-center gap-2 text-base transition-all ${
+                        activeTab === 'short_stay'
+                          ? 'bg-indigo-700 text-white shadow-md shadow-indigo-700/20'
+                          : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <svg className="w-5 h-5 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="9" strokeWidth="2" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 7v5l3 2" />
+                      </svg>
+                      <span>ชั่วคราว</span>
+                    </button>
                   )}
                 </div>
+              </div>
 
-                                {/* --- Extra Charges UI --- */}
-                {extraSettings.length > 0 && (
-                <div className="pt-3 border-t border-slate-100 mb-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="block text-sm font-bold text-slate-700">เพิ่มค่าใช้จ่าย (Add Extras)</label>
-                    {(room.status === 'reserved' || room.status === 'occupied') && !extrasManagerUnlocked && (
-                      <button type="button" onClick={() => setShowExtrasPinPrompt(true)} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded font-medium flex items-center gap-1">
-                        🔒 ปลดล็อกแก้ไข (Manager)
+              {/* Stepper จำนวนคืน / ชั่วโมง */}
+              <div className="border border-slate-200 rounded-2xl p-2.5 px-4 bg-white flex items-center justify-between shadow-xs">
+                <div>
+                  <span className="text-sm font-bold text-slate-800">
+                    {activeTab === 'overnight' ? 'จำนวนคืน' : 'จำนวนชั่วโมง'}
+                  </span>
+                  {activeTab === 'overnight' && (
+                    <p className="text-[11px] text-slate-400 font-medium">
+                      ออก: {getNextNoon(displayDate, Number(nights) || 0).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })} 12:00 น.
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button 
+                    type="button"
+                    onClick={() => activeTab === 'overnight' ? handleNightsChange(-1) : handleHoursChange(-1)}
+                    disabled={room.status === 'occupied' || (activeTab === 'overnight' ? (Number(nights) <= (dateOffset === 0 ? 0 : 1)) : Number(hours) <= 1)}
+                    className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-indigo-50 text-indigo-700 font-bold text-xl flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                  >
+                    -
+                  </button>
+                  <span className="w-10 text-center text-xl font-black text-slate-900">
+                    {activeTab === 'overnight' ? (nights === '' ? 0 : nights) : (hours === '' ? 1 : hours)}
+                  </span>
+                  <button 
+                    type="button"
+                    onClick={() => activeTab === 'overnight' ? handleNightsChange(1) : handleHoursChange(1)}
+                    disabled={room.status === 'occupied'}
+                    className="w-10 h-10 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xl flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* 2 ช่อง: ค่าห้อง และ ส่วนลด */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="text-sm font-semibold text-slate-700">ค่าห้อง</label>
+                    {activeTab === 'overnight' && Number(nights) > 1 && (
+                      <button 
+                        type="button"
+                        onClick={() => setShowDailyDetails(!showDailyDetails)}
+                        className="text-[11px] text-indigo-600 font-bold hover:underline"
+                      >
+                        {showDailyDetails ? 'ซ่อน' : 'ดูรายวัน'}
                       </button>
                     )}
                   </div>
-                  
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-indigo-700 font-bold text-lg">
+                      ฿
+                    </span>
+                    <input 
+                      type="number" min="0"
+                      value={actualPrice}
+                      onChange={(e) => handleActualPriceChange(e.target.value)}
+                      disabled={room.status === 'occupied'}
+                      placeholder="0"
+                      className="w-full border border-slate-300/80 rounded-2xl pl-9 pr-3 py-3 text-lg font-black text-slate-900 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 bg-white disabled:opacity-50 transition-all shadow-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">ส่วนลด</label>
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-indigo-700 font-bold text-lg">
+                      ฿
+                    </span>
+                    <input 
+                      type="number" min="0"
+                      value={discount}
+                      onChange={(e) => handleDiscountChange(e.target.value)}
+                      disabled={room.status === 'occupied'}
+                      placeholder="0"
+                      className="w-full border border-slate-300/80 rounded-2xl pl-9 pr-3 py-3 text-lg font-black text-slate-900 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 bg-white disabled:opacity-50 transition-all shadow-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Dynamic Pricing Info */}
+              {dynamicPricingDetails && (dynamicPricingDetails.weekendSurcharge > 0 || dynamicPricingDetails.holidaySurcharge > 0 || dynamicPricingDetails.lowOccupancySurcharge > 0 || dynamicPricingDetails.isSurgeDisabled) && (
+                <div className="bg-slate-50 rounded-xl p-2.5 text-xs text-slate-600 border border-slate-200">
+                  <span className="font-bold text-slate-700">⚡ ปรับราคาอัตโนมัติ: </span>
+                  {dynamicPricingDetails.weekendSurcharge > 0 && <span>สุดสัปดาห์ +{dynamicPricingDetails.weekendSurcharge}บ. </span>}
+                  {dynamicPricingDetails.holidaySurcharge > 0 && <span>เทศกาล +{dynamicPricingDetails.holidaySurcharge}บ. </span>}
+                  {dynamicPricingDetails.lowOccupancySurcharge > 0 && <span>ห้องเหลือน้อย +{dynamicPricingDetails.lowOccupancySurcharge}บ. </span>}
+                  {dynamicPricingDetails.isSurgeDisabled && <span className="text-orange-600">ยกเลิกบวกห้องเหลือน้อยหลัง {dynamicPricingDetails.surgeDisableTimeString}</span>}
+                </div>
+              )}
+
+              {/* Breakdown table if user expands */}
+              {showDailyDetails && activeTab === 'overnight' && dailyBreakdown.length > 0 && (
+                <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
+                  <div className="bg-slate-50 p-2 font-bold text-slate-700 border-b border-slate-200">
+                    แจกแจงรายวัน ({dailyBreakdown.length} คืน)
+                  </div>
+                  <table className="w-full">
+                    <thead className="bg-slate-100 text-slate-500">
+                      <tr>
+                        <th className="p-2 text-left">วันที่</th>
+                        <th className="p-2 text-right">ราคาเป้าหมาย</th>
+                        <th className="p-2 text-right">ราคาขายจริง</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dailyBreakdown.map(day => (
+                        <tr key={day.date} className="border-t border-slate-100">
+                          <td className="p-2 font-medium">{new Date(day.date).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}</td>
+                          <td className="p-2 text-right text-slate-400">฿{day.targetPrice}</td>
+                          <td className="p-1 text-right">
+                            <input 
+                              type="number"
+                              value={day.actualPrice}
+                              onChange={e => updateDailyActualPrice(day.date, e.target.value)}
+                              disabled={room.status === 'occupied'}
+                              className="w-20 border border-slate-200 rounded px-2 py-1 text-right font-bold"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* บริการเสริม (Add-ons) */}
+              {extraSettings.length > 0 && (
+                <div className="pt-1">
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="text-xs font-bold text-slate-600">บริการเสริม (Add-ons)</label>
+                    {(room.status === 'reserved' || room.status === 'occupied') && !extrasManagerUnlocked && (
+                      <button type="button" onClick={() => setShowExtrasPinPrompt(true)} className="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium">
+                        🔒 ปลดล็อก (Manager)
+                      </button>
+                    )}
+                  </div>
                   {room.status !== 'occupied' && (
-                    <div className="flex flex-wrap gap-2 mb-2">
+                    <div className="flex flex-wrap gap-1.5">
                       {extraSettings.filter(e => e.ui_type === 'quick_button').map(e => (
                         <button 
                           key={e.id}
                           type="button"
                           onClick={() => handleAddExtra(e)}
-                          className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm transition-colors"
+                          className="bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 text-slate-700 border border-slate-200 px-2.5 py-1 rounded-xl text-xs font-bold transition-colors"
                         >
-                          + {e.name} (฿{e.price})
+                          + {e.name} ({e.price}บ.)
                         </button>
                       ))}
+                      {extraSettings.filter(e => e.ui_type === 'dropdown').length > 0 && (
+                        <select 
+                          onChange={(e) => {
+                            const setting = extraSettings.find(s => s.id === e.target.value);
+                            if (setting) {
+                              handleAddExtra(setting);
+                              e.target.value = "";
+                            }
+                          }}
+                          className="border border-slate-200 rounded-xl px-2 py-1 text-xs font-medium bg-slate-50"
+                          defaultValue=""
+                        >
+                          <option value="" disabled>+ รายการอื่นๆ</option>
+                          {extraSettings.filter(e => e.ui_type === 'dropdown').map(e => (
+                            <option key={e.id} value={e.id}>{e.name} (฿{e.price})</option>
+                          ))}
+                        </select>
+                      )}
                     </div>
-                  )}
-                  
-                  {extraSettings.filter(e => e.ui_type === 'dropdown').length > 0 && room.status !== 'occupied' && (
-                    <select 
-                      onChange={(e) => {
-                        const setting = extraSettings.find(s => s.id === e.target.value);
-                        if (setting) {
-                          handleAddExtra(setting);
-                          e.target.value = ""; // reset
-                        }
-                      }}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:ring-emerald-500 focus:border-emerald-500 bg-slate-50 mb-3"
-                      defaultValue=""
-                    >
-                      <option value="" disabled>-- เลือกรายการอื่นๆ --</option>
-                      {extraSettings.filter(e => e.ui_type === 'dropdown').map(e => (
-                        <option key={e.id} value={e.id}>{e.name} (฿{e.price})</option>
-                      ))}
-                    </select>
                   )}
 
                   {dailyExtras.length > 0 && (
-                    <div className="mt-3 bg-slate-50 border border-slate-200 rounded-lg overflow-hidden">
-                      <div className="bg-slate-100 px-3 py-2 border-b border-slate-200 flex justify-between items-center">
-                        <span className="text-xs font-bold text-slate-600">รายการที่เลือก</span>
-                        {extrasManagerUnlocked && <span className="text-xs font-bold text-rose-600">🔓 โหมดผู้จัดการ: {extrasManagerName}</span>}
-                      </div>
-                      <div className="p-2 space-y-2">
-                        {dailyExtras.map(ext => {
-                          const isLocked = ext.isSaved && !extrasManagerUnlocked;
-                          const showControls = !isLocked && room.status !== 'occupied';
-                          return (
-                            <div key={ext.id} className="flex justify-between items-center bg-white p-2 rounded border border-slate-200 text-sm shadow-sm">
-                              <div className="flex flex-col">
-                                <span className="font-medium text-slate-700 flex items-center gap-1">
-                                  {ext.isSaved && <span title="บันทึกแล้ว" className="text-xs">🔒</span>} 
-                                  {ext.name} {ext.isPerNight ? '(ต่อคืน)' : ''}
-                                </span>
-                                {showControls && (
-                                  <div className="flex items-center gap-2 mt-1">
-                                    <span className="text-xs text-slate-500">฿{ext.price} ×</span>
-                                    <button type="button" onClick={() => handleChangeExtraQty(ext.id, -1)} className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 font-bold flex items-center justify-center">-</button>
-                                    <span className="font-bold w-4 text-center">{ext.qty || 1}</span>
-                                    <button type="button" onClick={() => handleChangeExtraQty(ext.id, 1)} className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 font-bold flex items-center justify-center">+</button>
-                                  </div>
-                                )}
-                                {isLocked && (ext.qty || 1) > 1 && (
-                                  <span className="text-xs text-slate-500 mt-0.5">จำนวน: {ext.qty}</span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <span className="font-bold text-slate-900">฿{extraLineTotal(ext).toLocaleString()}</span>
-                                {showControls && (
-                                  <button type="button" onClick={() => handleRemoveExtra(ext.id)} className="text-rose-500 hover:text-rose-700 font-bold px-2 py-1 bg-rose-50 hover:bg-rose-100 rounded">✕</button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                        
-                        {extrasManagerUnlocked && dailyExtras.some(e => e.isSaved && e.isModified) && (
-                          <div className="mt-2 pt-2 border-t border-slate-200">
-                            <input 
-                              type="text" 
-                              placeholder="หมายเหตุการแก้ไข (บังคับกรอก)..." 
-                              value={extrasEditNote}
-                              onChange={e => setExtrasEditNote(e.target.value)}
-                              className="w-full border border-rose-200 rounded px-2 py-1.5 text-sm focus:ring-rose-500 focus:border-rose-500 bg-rose-50"
-                            />
-                            {!extrasEditNote.trim() && <p className="text-xs text-rose-500 mt-1">* กรุณาระบุหมายเหตุการแก้ไข</p>}
+                    <div className="mt-2 space-y-1 bg-slate-50/80 p-2 rounded-xl border border-slate-100 text-xs">
+                      {dailyExtras.map(ext => (
+                        <div key={ext.id} className="flex justify-between items-center bg-white p-1.5 px-2 rounded-lg border border-slate-200">
+                          <span className="font-semibold text-slate-700">{ext.name} {ext.isPerNight ? '(ต่อคืน)' : ''}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-500 font-bold">x{ext.qty || 1}</span>
+                            <span className="font-black text-indigo-900">฿{extraLineTotal(ext)}</span>
+                            {room.status !== 'occupied' && (
+                              <button type="button" onClick={() => handleRemoveExtra(ext.id)} className="text-rose-500 font-bold ml-1 hover:text-rose-700">✕</button>
+                            )}
                           </div>
-                        )}
-                        <div className="pt-2 border-t border-slate-200 flex justify-between items-center text-sm">
-                          <span className="font-bold text-slate-600">รวมค่าใช้จ่ายเพิ่ม</span>
-                          <span className="font-bold text-emerald-600">฿{getTotalExtrasAmount().toLocaleString()}</span>
                         </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Extras PIN Prompt Modal */}
+              {showExtrasPinPrompt && (
+                <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-[70] backdrop-blur-sm p-4">
+                  <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
+                    <div className="bg-slate-800 p-4 text-white">
+                      <h3 className="font-bold text-lg">ปลดล็อกแก้ไขรายการ (Manager)</h3>
+                    </div>
+                    <div className="p-4 space-y-4">
+                      <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-1">รหัส PIN ผู้จัดการ/Admin</label>
+                        <input 
+                          type="password" 
+                          value={extrasPin}
+                          onChange={(e) => setExtrasPin(e.target.value)}
+                          className="w-full border border-slate-300 rounded-lg p-3 text-center text-xl font-mono tracking-widest focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="****"
+                          autoFocus
+                          maxLength={6}
+                        />
+                      </div>
+                      {extrasPinError && <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100 font-medium">{extrasPinError}</div>}
+                      <div className="flex gap-2 pt-2">
+                        <button type="button" onClick={() => { setShowExtrasPinPrompt(false); setExtrasPinError(''); setExtrasPin(''); }} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl transition-colors">ยกเลิก</button>
+                        <button type="button" onClick={handleVerifyExtrasPin} disabled={loading || !extrasPin} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-sm shadow-blue-200">ยืนยัน</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ประวัติการรับชำระเงินที่ผ่านมา */}
+              {pastPayments.length > 0 && (
+                <div className="pt-2 border-t border-slate-100">
+                  <label className="block text-xs font-bold text-slate-600 mb-1">ประวัติชำระเงินเดิม</label>
+                  <div className="space-y-1.5 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-xs">
+                    {pastPayments.map(p => (
+                      <div key={p.id} className="flex justify-between items-center">
+                        <span className="text-slate-600">
+                          {p.category === 'transfer' ? 'โอนเงิน' : p.category === 'credit_card' ? 'บัตรเครดิต' : 'เงินสด'}
+                          {p.notes && p.notes.includes('โอนเวลา:') ? ` (${p.notes.split('โอนเวลา:')[1].trim()})` : ` (${new Date(p.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })})`}
+                        </span>
+                        <span className="font-bold text-emerald-600">฿{Math.abs(p.amount).toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* วิธีชำระเงิน (Quick Payment Method Selector) */}
+              {room.status !== 'occupied' && (
+                <div className="pt-1">
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="text-xs font-bold text-slate-600">วิธีชำระเงิน</label>
+                    <button 
+                      type="button" 
+                      onClick={() => setIsSplitPayment(!isSplitPayment)}
+                      className="text-[11px] text-indigo-600 font-bold hover:underline"
+                    >
+                      {isSplitPayment ? '✓ ชำระเต็มยอด' : 'จ่ายแยกช่องทาง (Split)'}
+                    </button>
+                  </div>
+
+                  {!isSplitPayment ? (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('cash')}
+                          className={`py-2 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${
+                            paymentMethod === 'cash'
+                              ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-xs'
+                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span>💵</span> เงินสด
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('transfer')}
+                          className={`py-2 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${
+                            paymentMethod === 'transfer'
+                              ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-xs'
+                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span>📱</span> โอนเงิน
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('credit')}
+                          className={`py-2 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${
+                            paymentMethod === 'credit'
+                              ? 'bg-purple-50 border-purple-500 text-purple-700 shadow-xs'
+                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span>💳</span> บัตร
+                        </button>
+                      </div>
+
+                      {paymentMethod === 'cash' && (
+                        <div className="bg-emerald-50/50 p-2.5 rounded-xl border border-emerald-100 flex items-center justify-between text-xs">
+                          <span className="text-slate-600 font-medium">รับเงินสดมา:</span>
+                          <div className="flex items-center gap-2">
+                            <input 
+                              type="number"
+                              value={receivedCash}
+                              onChange={e => setReceivedCash(e.target.value === '' ? '' : Number(e.target.value))}
+                              placeholder={String(totalToPay)}
+                              className="w-24 border border-emerald-300 rounded-lg px-2 py-1 text-right font-bold bg-white text-emerald-900"
+                            />
+                            {Number(receivedCash) > totalToPay && (
+                              <span className="text-emerald-700 font-bold">
+                                ทอน: ฿{Number(receivedCash) - totalToPay}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {paymentMethod === 'transfer' && (
+                        <div className="bg-blue-50/50 p-2.5 rounded-xl border border-blue-100 flex flex-col gap-2 text-xs">
+                          <div className="flex gap-2 items-center">
+                            <input 
+                              type="datetime-local" 
+                              value={paymentTime} 
+                              onChange={e => setPaymentTime(e.target.value)} 
+                              className="flex-1 border border-blue-200 rounded-lg px-2 py-1 text-xs bg-white text-slate-700" 
+                            />
+                            <label className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors shadow-xs shrink-0">
+                              {isScanningSlip ? '⏳...' : '📷 สแกนสลิป'}
+                              <input type="file" accept="image/*" className="hidden" onChange={handleScanSlip} disabled={isScanningSlip} />
+                            </label>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="w-14 font-bold text-slate-600">💵 เงินสด:</span>
+                        <input 
+                          type="number" 
+                          value={payCash} 
+                          onChange={e => setPayCash(e.target.value === '' ? '' : Number(e.target.value))}
+                          className="flex-1 border-slate-200 rounded-lg p-1.5 text-xs font-bold bg-white" 
+                          placeholder="0"
+                        />
+                        <button type="button" onClick={() => setPayCash(totalToPay)} className="text-[10px] bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded font-bold">เต็ม</button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="w-14 font-bold text-slate-600">📱 โอน:</span>
+                        <input 
+                          type="number" 
+                          value={payTransfer} 
+                          onChange={e => setPayTransfer(e.target.value === '' ? '' : Number(e.target.value))}
+                          className="flex-1 border-slate-200 rounded-lg p-1.5 text-xs font-bold bg-white" 
+                          placeholder="0"
+                        />
+                        <button type="button" onClick={() => setPayTransfer(totalToPay)} className="text-[10px] bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded font-bold">เต็ม</button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="w-14 font-bold text-slate-600">💳 บัตร:</span>
+                        <input 
+                          type="number" 
+                          value={payCredit} 
+                          onChange={e => setPayCredit(e.target.value === '' ? '' : Number(e.target.value))}
+                          className="flex-1 border-slate-200 rounded-lg p-1.5 text-xs font-bold bg-white" 
+                          placeholder="0"
+                        />
                       </div>
                     </div>
                   )}
                 </div>
-                )}
+              )}
 
-                {/* --- Extras PIN Prompt Modal --- */}
-                {showExtrasPinPrompt && (
-                  <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-[70] backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
-                      <div className="bg-slate-800 p-4 text-white">
-                        <h3 className="font-bold text-lg">ปลดล็อกแก้ไขรายการ (Manager)</h3>
+              {/* สรุปยอด Summary Card (Mobile-first Mockup Match) */}
+              <div className="bg-slate-50/60 rounded-2xl border border-slate-200/90 p-3.5 shadow-xs">
+                <div className="grid grid-cols-2 gap-3 items-center">
+                  {/* Left Column: Breakdown */}
+                  <div className="space-y-1.5 pr-1">
+                    <div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-semibold text-slate-600">ค่าห้อง</span>
+                        <span className="font-black text-slate-900">฿{Number(actualPrice || 0).toLocaleString()}</span>
                       </div>
-                      <div className="p-4 space-y-4">
-                        <div>
-                          <label className="block text-sm font-bold text-slate-700 mb-1">รหัส PIN ผู้จัดการ/Admin</label>
+                      {Number(discount) > 0 && (
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          ฿{(Number(actualPrice || 0) + Number(discount)).toLocaleString()} – ส่วนลด ฿{Number(discount).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="pt-1.5 border-t border-slate-200/70">
+                      <label className="flex items-center justify-between cursor-pointer text-xs">
+                        <div className="flex items-center gap-1.5">
                           <input 
-                            type="password" 
-                            value={extrasPin}
-                            onChange={(e) => setExtrasPin(e.target.value)}
-                            className="w-full border border-slate-300 rounded-lg p-3 text-center text-xl font-mono tracking-widest focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="****"
-                            autoFocus
-                            maxLength={6}
+                            type="checkbox" 
+                            checked={keyDepositEnabled}
+                            onChange={e => setKeyDepositEnabled(e.target.checked)} 
+                            disabled={room.status === 'occupied'}
+                            className="w-3.5 h-3.5 text-indigo-700 rounded border-slate-300 focus:ring-indigo-600"
                           />
+                          <span className="font-medium text-slate-600">ค่ามัดจำกุญแจ</span>
                         </div>
-                        {extrasPinError && <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100 font-medium">{extrasPinError}</div>}
-                        <div className="flex gap-2 pt-2">
-                          <button type="button" onClick={() => { setShowExtrasPinPrompt(false); setExtrasPinError(''); setExtrasPin(''); }} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl transition-colors">ยกเลิก</button>
-                          <button type="button" onClick={handleVerifyExtrasPin} disabled={loading || !extrasPin} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-sm shadow-blue-200">ยืนยัน</button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* --- Split Payment UI --- */}
-                {room.status !== 'occupied' && (
-                <div className="pt-2 border-t border-slate-100">
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="block text-sm font-bold text-slate-700">รับชำระเงิน (บาท)</label>
-                    <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded">จ่ายแยกช่องทางได้</span>
-                  </div>
-                  
-                  <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                    <div className="flex flex-col mb-3 pb-3 border-b border-slate-200 gap-1">
-                      <div className="flex justify-between items-center text-sm text-slate-600">
-                        <span>ค่าห้องพัก ({nights} คืน):</span>
-                        <span>฿{Number(actualPrice || 0).toLocaleString()}</span>
-                      </div>
-                      {keyDepositEnabled && (
-                        <div className="flex justify-between items-center text-sm text-slate-600">
-                          <span>มัดจำกุญแจ (คืนตอนออก):</span>
-                          <span>฿{Number(keyDepositAmount || 0).toLocaleString()}</span>
-                        </div>
-                      )}
-                      
-                      {dailyExtras.length > 0 && dailyExtras.map(ext => (
-                        <div key={'sum-'+ext.id} className="flex justify-between items-center text-sm text-slate-600">
-                          <span>{ext.name} {(ext.qty || 1) > 1 ? '× ' + ext.qty : ''}:</span>
-                          <span>฿{extraLineTotal(ext).toLocaleString()}</span>
-                        </div>
-                      ))}
-                      <div className="flex justify-between items-center mt-1 pt-1 border-t border-slate-100">
-                        <span className="text-xs font-bold text-slate-500">ยอดรวมทั้งหมด:</span>                      <span className="text-sm font-bold text-slate-700">฿{totalToPay.toLocaleString()}</span>
-                      </div>
-                      {totalPaid > 0 && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs font-bold text-slate-500">ชำระแล้ว:</span>
-                          <span className="text-sm font-bold text-emerald-600">-฿{totalPaid.toLocaleString()}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between items-center mt-1 pt-1 border-t border-slate-100">
-                        <span className="text-sm font-bold text-slate-700">ยอดคงเหลือที่ต้องชำระ:</span>
-                        <span className="text-lg font-black text-rose-600">฿{remainingBalance.toLocaleString()}</span>
-                      </div>
+                        <span className="font-black text-slate-900">฿{keyDepositEnabled ? Number(keyDepositAmount || 0) : 0}</span>
+                      </label>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <div className="w-16 text-xs font-bold text-slate-600">💵 เงินสด:</div>
-                      <input 
-                        type="number" 
-                        value={payCash} 
-                        onChange={e => setPayCash(e.target.value === '' ? '' : Number(e.target.value))}
-                        className="flex-1 border-slate-200 rounded-lg p-2 text-sm font-bold focus:ring-emerald-500 focus:border-emerald-500" 
-                        placeholder="0"
-                      />
-                      <button type="button" onClick={() => setPayCash(totalToPay)} className="text-[10px] bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded font-bold">เต็มยอด</button>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-16 text-xs font-bold text-slate-600">📱 โอนเงิน:</div>
-                      <input 
-                        type="number" 
-                        value={payTransfer} 
-                        onChange={e => setPayTransfer(e.target.value === '' ? '' : Number(e.target.value))}
-                        className="flex-1 border-slate-200 rounded-lg p-2 text-sm font-bold focus:ring-emerald-500 focus:border-emerald-500" 
-                        placeholder="0"
-                      />
-                      <button type="button" onClick={() => setPayTransfer(totalToPay)} className="text-[10px] bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded font-bold">เต็มยอด</button>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-16 text-xs font-bold text-slate-600">💳 เครดิต:</div>
-                      <input 
-                        type="number" 
-                        value={payCredit} 
-                        onChange={e => setPayCredit(e.target.value === '' ? '' : Number(e.target.value))}
-                        className="flex-1 border-slate-200 rounded-lg p-2 text-sm font-bold focus:ring-emerald-500 focus:border-emerald-500" 
-                        placeholder="0"
-                      />
-                    </div>
-                    
-                    {(Number(payTransfer) > 0 || isScanningSlip) && (
-                      <div className="pt-2 border-t border-slate-200 mt-2 flex flex-col gap-2">
-                        <label className="block text-xs font-medium text-slate-500 mb-1">เวลาที่โอน (ตามสลิป)</label>
-                        <div className="flex gap-2">
-                          <input type="datetime-local" value={paymentTime} onChange={e => setPaymentTime(e.target.value)} className="flex-1 border-slate-200 rounded-lg p-2 text-xs focus:ring-blue-500 bg-white" />
-                          <label className="flex items-center gap-1 bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors border border-blue-200">
-                            {isScanningSlip ? '⏳ สแกน...' : '📷 สแกนสลิป'}
-                            <input type="file" accept="image/*" className="hidden" onChange={handleScanSlip} disabled={isScanningSlip} />
-                          </label>
-                        </div>
-                        {paymentTime && (
-                          <div className="flex gap-2 justify-end">
-                            <button
-                              type="button"
-                              onClick={() => setPaymentTime('')}
-                              className="px-3 py-1 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors"
-                            >
-                              ✕ ยกเลิก/ล้างเวลา
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => { /* time is already set, just visual confirmation */ }}
-                              className="px-3 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
-                            >
-                              ✓ ยืนยันเวลา
-                            </button>
-                          </div>
-                        )}
+                    {dailyExtras.length > 0 && (
+                      <div className="pt-1 border-t border-slate-200/70 flex justify-between items-center text-xs">
+                        <span className="text-slate-500">บริการเสริม</span>
+                        <span className="font-bold text-slate-800">+฿{getTotalExtrasAmount().toLocaleString()}</span>
                       </div>
                     )}
                   </div>
-                </div>
-                )}
 
-                
+                  {/* Right Column: Net Total */}
+                  <div className="border-l border-slate-200/90 pl-3.5 flex flex-col justify-center">
+                    <span className="text-xs font-semibold text-slate-500">ยอดสุทธิ</span>
+                    <span className="text-2xl sm:text-3xl font-black text-indigo-950 tracking-tight leading-none mt-1">
+                      ฿{totalToPay.toLocaleString()}
+                    </span>
+                    <span className="text-[10px] text-slate-400 mt-1">
+                      {keyDepositEnabled ? 'รวมค่ามัดจำกุญแจแล้ว' : 'ไม่รวมมัดจำกุญแจ'}
+                    </span>
+                    {totalPaid > 0 && (
+                      <span className="text-[11px] font-bold text-rose-600 mt-0.5">
+                        ค้างชำระ: ฿{remainingBalance.toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
-                            {room.status !== 'occupied' && (
-                <div className="flex gap-2 w-full mt-6">
+
+              {/* พนักงานผู้ทำรายการ */}
+              <div className="flex items-center justify-between gap-2 px-1 text-xs">
+                <span className="text-slate-500">พนักงาน:</span>
+                <input 
+                  type="text" 
+                  value={staffName} 
+                  onChange={(e) => setStaffName(e.target.value)} 
+                  disabled={room.status === 'occupied'}
+                  placeholder={activeShift?.staff_name || "ชื่อพนักงาน"}
+                  className="border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 bg-white max-w-[160px] text-right"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              {room.status !== 'occupied' && (
+                <div className="space-y-2 pt-2">
                   {room.status === 'reserved' ? (
-                    <>
+                    <div className="flex gap-2">
                       <button 
-                        onClick={handleAdditionalPayment} disabled={loading}
-                        className="w-1/2 py-4 text-white font-bold rounded-xl text-lg transition-all active:scale-95 bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20 shadow-lg"
+                        type="button"
+                        onClick={handleAdditionalPayment} 
+                        disabled={loading}
+                        className="w-1/2 py-3.5 text-white font-bold rounded-2xl text-sm transition-all active:scale-95 bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-600/20"
                       >
-                        💾 บันทึกรับชำระเพิ่ม
+                        💾 บันทึกชำระเพิ่ม
                       </button>
                       <button 
-                        onClick={handleCheckInReserved} disabled={loading}
-                        className="w-1/2 py-4 text-white font-bold rounded-xl text-lg transition-all active:scale-95 bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 shadow-lg"
+                        type="button"
+                        onClick={handleCheckInReserved} 
+                        disabled={loading}
+                        className="w-1/2 py-3.5 text-white font-bold rounded-2xl text-sm transition-all active:scale-95 bg-indigo-700 hover:bg-indigo-800 shadow-md shadow-indigo-700/20"
                       >
-                        {timeBand === 'early_in' ? '🚪 Early Check-in' : '🚪 Check-in ทันที'}
+                        🚪 Check-in ทันที
                       </button>
-                    </>
+                    </div>
                   ) : (
-                    <>
+                    <div className="flex flex-col gap-2">
+                      <button 
+                        type="button"
+                        onClick={() => handleCheckIn(activeTab)} 
+                        disabled={loading}
+                        className="w-full py-4 text-white font-bold rounded-2xl text-lg transition-all active:scale-98 bg-indigo-700 hover:bg-indigo-800 shadow-lg shadow-indigo-700/25 flex items-center justify-center gap-2"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span>
+                          {loading ? 'กำลังบันทึก...' : dateOffset > 0 ? 'ยืนยันจองล่วงหน้า' : 'ยืนยันเช็คอิน'}
+                        </span>
+                      </button>
+                      
                       {dateOffset === 0 && activeTab === 'overnight' && (
                         <button 
-                          onClick={() => handleCheckIn(activeTab, true)} disabled={loading}
-                          className="w-1/2 py-4 text-white font-bold rounded-xl text-lg transition-all active:scale-95 bg-purple-600 hover:bg-purple-700 shadow-purple-600/20 shadow-lg"
+                          type="button"
+                          onClick={() => handleCheckIn(activeTab, true)} 
+                          disabled={loading}
+                          className="w-full py-2.5 text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 border border-slate-200 rounded-xl text-xs font-bold transition-all"
                         >
-                          📝 จองไว้ก่อน
+                          📝 จองไว้ก่อน (ยังไม่เข้าพัก)
                         </button>
                       )}
-                      <button 
-                        onClick={() => handleCheckIn(activeTab)} disabled={loading}
-                        className={`${dateOffset === 0 && activeTab === 'overnight' ? 'w-1/2' : 'w-full'} py-4 text-white font-bold rounded-xl text-lg transition-all active:scale-95 ${dateOffset > 0 ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-600/20 shadow-lg' : activeTab === 'overnight' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 shadow-lg' : 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20 shadow-lg'}`}
-                      >
-                        {loading ? 'กำลังบันทึก...' : dateOffset > 0 ? '📅 บันทึกการจองล่วงหน้า' : activeTab === 'overnight' ? (timeBand === 'late_night' ? `✅ check-in (เมื่อวานนี้) = ${nights} คืน` : timeBand === 'early_in' ? `✅ early+check-in = ${nights} คืน` : `✅ check-in = ${nights} คืน`) : `✅ Check-in ชั่วคราว`}
-                      </button>
-                    </>
+                    </div>
                   )}
                 </div>
               )}
