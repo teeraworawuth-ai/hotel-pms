@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { RoomStatus } from "../checkin/page";
 
@@ -43,6 +43,10 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [guestCount, setGuestCount] = useState<number | ''>(room.guest_count || 2);
   const [guestName, setGuestName] = useState<string>(room.guest_name || "");
   const [guestPhone, setGuestPhone] = useState<string>(room.guest_phone || "");
+  const [skipPhone, setSkipPhone] = useState<boolean>(false);
+  const phoneInputRef = useRef<HTMLInputElement>(null);
+  // จองแล้ว/เข้าพักแล้ว: ล็อกข้อมูลลูกค้าและราคา (จองแล้วยังแก้มัดจำ + เพิ่มการชำระได้)
+  const isBookingLocked = room.status === 'occupied' || room.status === 'reserved';
     const [nights, setNights] = useState<number | ''>(() => {
     if (room.status === 'reserved' || room.status === 'occupied') {
       if (room.check_in_time && room.check_out_time) {
@@ -278,6 +282,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   // States for Key Deposit & Daily Extras
   const [keyDepositEnabled, setKeyDepositEnabled] = useState<boolean>(true);
   const [initialKeyDepositStatus, setInitialKeyDepositStatus] = useState<boolean>(true);
+  const [existingDepositTx, setExistingDepositTx] = useState<{ id: string; amount: number } | null>(null);
   const [keyDepositAmount, setKeyDepositAmount] = useState<number | ''>(room.key_deposit !== undefined && room.key_deposit !== null ? room.key_deposit : 200);
   
     const [extraSettings, setExtraSettings] = useState<any[]>([]);
@@ -611,8 +616,12 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       alert('กรุณาเปิดกะก่อนทำการจองหรือ Check-in');
       return;
     }
-    if (!guestPhone.trim() || guestPhone.length !== 10 || !/^\d+$/.test(guestPhone)) {
-      alert('กรุณากรอกเบอร์โทรศัพท์ลูกค้า (ตัวเลข 10 หลัก) ให้ถูกต้อง');
+    if (!skipPhone && (!guestPhone.trim() || guestPhone.length !== 10 || !/^\d+$/.test(guestPhone))) {
+      alert('กรุณากรอกเบอร์โทรศัพท์ลูกค้า (ตัวเลข 10 หลัก) ให้ถูกต้อง\nหรือกด "ไม่ระบุเบอร์" หากลูกค้าไม่สะดวกให้เบอร์');
+      setTimeout(() => {
+        phoneInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        phoneInputRef.current?.focus();
+      }, 50);
       return;
     }
     setLoading(true);
@@ -808,6 +817,11 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         await supabase.from('ledger_transactions').delete().eq('booking_id', room.booking_id).in('category', ['ค่ามัดจำกุญแจ', 'key_deposit']).gt('amount', 0);
       }
       setInitialKeyDepositStatus(keyDepositEnabled);
+    } else if (keyDepositEnabled && existingDepositTx && Number(keyDepositAmount) > 0 && Number(keyDepositAmount) !== Number(existingDepositTx.amount)) {
+      // แก้ไขจำนวนเงินมัดจำของการจองที่บันทึกไว้แล้ว (แก้ได้ก่อนเช็คอินเท่านั้น)
+      await supabase.from('ledger_transactions').update({ amount: Number(keyDepositAmount), notes: `แก้มัดจำจาก ฿${existingDepositTx.amount} โดย ${activeShift.staff_name}` }).eq('id', existingDepositTx.id);
+      await supabase.from('rooms').update({ key_deposit: Number(keyDepositAmount) }).eq('id', room.id);
+      setExistingDepositTx({ id: existingDepositTx.id, amount: Number(keyDepositAmount) });
     }
     const paymentInserts = [];
     let newExtrasTotal = 0;
@@ -895,6 +909,8 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
             const keyDepositTx = data.find(d => d.category === 'ค่ามัดจำกุญแจ' || d.category === 'key_deposit');
             if (keyDepositTx) {
               setKeyDepositEnabled(true); setInitialKeyDepositStatus(true);
+              setExistingDepositTx({ id: keyDepositTx.id, amount: Number(keyDepositTx.amount) });
+              if (Number(keyDepositTx.amount) > 0) setKeyDepositAmount(Number(keyDepositTx.amount));
             } else {
               setKeyDepositEnabled(false); setInitialKeyDepositStatus(false);
             }
@@ -1500,9 +1516,20 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
               {/* เบอร์โทรลูกค้า */}
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                  เบอร์โทรลูกค้า <span className="text-rose-500">*</span>
-                </label>
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="block text-sm font-semibold text-slate-700">
+                    เบอร์โทรลูกค้า {skipPhone ? <span className="text-xs font-medium text-slate-400">(ไม่ระบุเบอร์โทร)</span> : <span className="text-rose-500">*</span>}
+                  </label>
+                  {!isBookingLocked && (
+                    <button
+                      type="button"
+                      onClick={() => setSkipPhone(!skipPhone)}
+                      className={`text-[11px] font-bold px-2 py-0.5 rounded-full border transition-colors ${skipPhone ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                    >
+                      {skipPhone ? '🔓 ไม่ระบุเบอร์ (กดเพื่อยกเลิก)' : '🔒 ไม่ระบุเบอร์'}
+                    </button>
+                  )}
+                </div>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-indigo-700">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1510,11 +1537,12 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     </svg>
                   </span>
                   <input 
+                    ref={phoneInputRef}
                     type="tel" maxLength={10}
                     value={guestPhone} 
                     onChange={(e) => setGuestPhone(e.target.value.replace(/\D/g, ''))} 
-                    disabled={room.status === 'occupied'}
-                    placeholder="081-234-5678"
+                    disabled={isBookingLocked}
+                    placeholder={skipPhone ? 'ไม่ระบุเบอร์โทร' : '081-234-5678'}
                     className="w-full border border-slate-300/80 rounded-2xl pl-11 pr-4 py-3 text-base font-bold text-slate-800 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 bg-white disabled:opacity-50 transition-all shadow-xs"
                   />
                 </div>
@@ -1535,7 +1563,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     type="text" 
                     value={guestName} 
                     onChange={(e) => setGuestName(e.target.value)} 
-                    disabled={room.status === 'occupied'}
+                    disabled={isBookingLocked}
                     placeholder="สมชาย ใจดี"
                     className="w-full border border-slate-300/80 rounded-2xl pl-11 pr-4 py-3 text-base font-bold text-slate-800 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 bg-white disabled:opacity-50 transition-all shadow-xs"
                   />
@@ -1549,7 +1577,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                   <button 
                     type="button"
                     onClick={() => setActiveTab('overnight')}
-                    disabled={room.status === 'occupied'}
+                    disabled={isBookingLocked}
                     className={`py-3 px-4 rounded-2xl font-bold flex items-center justify-center gap-2 text-base transition-all ${
                       activeTab === 'overnight'
                         ? 'bg-indigo-700 text-white shadow-md shadow-indigo-700/20'
@@ -1563,7 +1591,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     <button 
                       type="button"
                       onClick={() => setActiveTab('short_stay')}
-                      disabled={room.status === 'occupied'}
+                      disabled={isBookingLocked}
                       className={`py-3 px-4 rounded-2xl font-bold flex items-center justify-center gap-2 text-base transition-all ${
                         activeTab === 'short_stay'
                           ? 'bg-indigo-700 text-white shadow-md shadow-indigo-700/20'
@@ -1596,7 +1624,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                   <button 
                     type="button"
                     onClick={() => activeTab === 'overnight' ? handleNightsChange(-1) : handleHoursChange(-1)}
-                    disabled={room.status === 'occupied' || (activeTab === 'overnight' ? (Number(nights) <= (dateOffset === 0 ? 0 : 1)) : Number(hours) <= 1)}
+                    disabled={isBookingLocked || (activeTab === 'overnight' ? (Number(nights) <= (dateOffset === 0 ? 0 : 1)) : Number(hours) <= 1)}
                     className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-indigo-50 text-indigo-700 font-bold text-xl flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none transition-colors"
                   >
                     -
@@ -1607,7 +1635,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                   <button 
                     type="button"
                     onClick={() => activeTab === 'overnight' ? handleNightsChange(1) : handleHoursChange(1)}
-                    disabled={room.status === 'occupied'}
+                    disabled={isBookingLocked}
                     className="w-10 h-10 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xl flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none transition-colors"
                   >
                     +
@@ -1615,53 +1643,42 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                 </div>
               </div>
 
-              {/* 2 ช่อง: ค่าห้อง และ ส่วนลด */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <label className="text-sm font-semibold text-slate-700">ค่าห้อง</label>
-                    {activeTab === 'overnight' && Number(nights) > 1 && (
-                      <button 
-                        type="button"
-                        onClick={() => setShowDailyDetails(!showDailyDetails)}
-                        className="text-[11px] text-indigo-600 font-bold hover:underline"
-                      >
-                        {showDailyDetails ? 'ซ่อน' : 'ดูรายวัน'}
-                      </button>
-                    )}
+              {/* ค่าห้อง (ตัดช่องส่วนลดออก) */}
+              {(() => {
+                const isMultiNight = activeTab === 'overnight' && dailyBreakdown.length > 1;
+                const targetTotal = activeTab === 'overnight' ? Number(totalTargetPrice || 0) : Number(dynamicPricingDetails?.total || 0);
+                const diff = Number(actualPrice || 0) - targetTotal;
+                return (
+                  <div>
+                    <div className="flex justify-between items-center mb-1.5">
+                      <label className="text-sm font-semibold text-slate-700">
+                        ค่าห้อง {isMultiNight && <span className="text-[11px] font-medium text-slate-400">(รวม {dailyBreakdown.length} คืน — แก้ราคาในตารางรายวัน)</span>}
+                      </label>
+                      {targetTotal > 0 && diff !== 0 && actualPrice !== '' && (
+                        <span className={`text-xs font-bold ${diff < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                          {diff < 0 ? '🔻' : '🔺'} ส่วนต่าง {diff > 0 ? '+' : ''}{diff.toLocaleString()} (เป้าหมาย ฿{targetTotal.toLocaleString()})
+                        </span>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-indigo-700 font-bold text-lg">
+                        ฿
+                      </span>
+                      <input 
+                        type="number" min="0"
+                        value={actualPrice}
+                        onChange={(e) => handleActualPriceChange(e.target.value)}
+                        disabled={isBookingLocked || isMultiNight}
+                        readOnly={isMultiNight}
+                        placeholder="0"
+                        className={`w-full border rounded-2xl pl-9 pr-3 py-3 text-lg font-black focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 disabled:opacity-80 transition-all shadow-xs ${
+                          targetTotal > 0 && diff < 0 ? 'border-red-300 bg-red-50 text-red-700' : targetTotal > 0 && diff > 0 ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-300/80 bg-white text-slate-900'
+                        }`}
+                      />
+                    </div>
                   </div>
-                  <div className="relative">
-                    <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-indigo-700 font-bold text-lg">
-                      ฿
-                    </span>
-                    <input 
-                      type="number" min="0"
-                      value={actualPrice}
-                      onChange={(e) => handleActualPriceChange(e.target.value)}
-                      disabled={room.status === 'occupied'}
-                      placeholder="0"
-                      className="w-full border border-slate-300/80 rounded-2xl pl-9 pr-3 py-3 text-lg font-black text-slate-900 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 bg-white disabled:opacity-50 transition-all shadow-xs"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">ส่วนลด</label>
-                  <div className="relative">
-                    <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-indigo-700 font-bold text-lg">
-                      ฿
-                    </span>
-                    <input 
-                      type="number" min="0"
-                      value={discount}
-                      onChange={(e) => handleDiscountChange(e.target.value)}
-                      disabled={room.status === 'occupied'}
-                      placeholder="0"
-                      className="w-full border border-slate-300/80 rounded-2xl pl-9 pr-3 py-3 text-lg font-black text-slate-900 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 bg-white disabled:opacity-50 transition-all shadow-xs"
-                    />
-                  </div>
-                </div>
-              </div>
+                );
+              })()}
 
               {/* Dynamic Pricing Info */}
               {dynamicPricingDetails && (dynamicPricingDetails.weekendSurcharge > 0 || dynamicPricingDetails.holidaySurcharge > 0 || dynamicPricingDetails.lowOccupancySurcharge > 0 || dynamicPricingDetails.isSurgeDisabled) && (
@@ -1674,11 +1691,11 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                 </div>
               )}
 
-              {/* Breakdown table if user expands */}
-              {showDailyDetails && activeTab === 'overnight' && dailyBreakdown.length > 0 && (
+              {/* แจกแจงรายวัน: แสดงอัตโนมัติเมื่อพัก 2 คืนขึ้นไป */}
+              {activeTab === 'overnight' && dailyBreakdown.length > 1 && (
                 <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
                   <div className="bg-slate-50 p-2 font-bold text-slate-700 border-b border-slate-200">
-                    แจกแจงรายวัน ({dailyBreakdown.length} คืน)
+                    📌 แจกแจงรายวัน ({dailyBreakdown.length} คืน)
                   </div>
                   <table className="w-full">
                     <thead className="bg-slate-100 text-slate-500">
@@ -1689,21 +1706,37 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                       </tr>
                     </thead>
                     <tbody>
-                      {dailyBreakdown.map(day => (
-                        <tr key={day.date} className="border-t border-slate-100">
-                          <td className="p-2 font-medium">{new Date(day.date).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}</td>
-                          <td className="p-2 text-right text-slate-400">฿{day.targetPrice}</td>
-                          <td className="p-1 text-right">
-                            <input 
-                              type="number"
-                              value={day.actualPrice}
-                              onChange={e => updateDailyActualPrice(day.date, e.target.value)}
-                              disabled={room.status === 'occupied'}
-                              className="w-20 border border-slate-200 rounded px-2 py-1 text-right font-bold"
-                            />
-                          </td>
-                        </tr>
-                      ))}
+                      {dailyBreakdown.map(day => {
+                        let colorClass = "text-slate-800 border-slate-200 bg-white";
+                        let icon = "";
+                        if (day.isOverride && day.actualPrice !== '') {
+                          if (Number(day.actualPrice) < Number(day.targetPrice)) {
+                            colorClass = "text-red-600 border-red-300 bg-red-50";
+                            icon = "🔻";
+                          } else if (Number(day.actualPrice) > Number(day.targetPrice)) {
+                            colorClass = "text-emerald-600 border-emerald-300 bg-emerald-50";
+                            icon = "🔺";
+                          }
+                        }
+                        return (
+                          <tr key={day.date} className="border-t border-slate-100">
+                            <td className="p-2 font-medium">{new Date(day.date).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}</td>
+                            <td className="p-2 text-right text-slate-400">฿{day.targetPrice}</td>
+                            <td className="p-1 text-right">
+                              <div className="relative inline-block">
+                                {icon && <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[10px]">{icon}</span>}
+                                <input 
+                                  type="number" min="0"
+                                  value={day.actualPrice}
+                                  onChange={e => updateDailyActualPrice(day.date, e.target.value)}
+                                  disabled={isBookingLocked}
+                                  className={`w-24 border rounded pl-6 pr-2 py-1 text-right font-bold transition-colors ${colorClass}`}
+                                />
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1958,16 +1991,16 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                         <span className="font-semibold text-slate-600">ค่าห้อง</span>
                         <span className="font-black text-slate-900">฿{Number(actualPrice || 0).toLocaleString()}</span>
                       </div>
-                      {Number(discount) > 0 && (
-                        <p className="text-[10px] text-slate-400 mt-0.5">
-                          ฿{(Number(actualPrice || 0) + Number(discount)).toLocaleString()} – ส่วนลด ฿{Number(discount).toLocaleString()}
+                      {activeTab === 'overnight' && Number(totalTargetPrice) > 0 && Number(actualPrice || 0) !== Number(totalTargetPrice) && (
+                        <p className={`text-[10px] mt-0.5 ${Number(actualPrice || 0) < Number(totalTargetPrice) ? 'text-red-500' : 'text-emerald-600'}`}>
+                          เป้าหมาย ฿{Number(totalTargetPrice).toLocaleString()} ({Number(actualPrice || 0) < Number(totalTargetPrice) ? '🔻' : '🔺'} {(Number(actualPrice || 0) - Number(totalTargetPrice)).toLocaleString()})
                         </p>
                       )}
                     </div>
 
                     <div className="pt-1.5 border-t border-slate-200/70">
-                      <label className="flex items-center justify-between cursor-pointer text-xs">
-                        <div className="flex items-center gap-1.5">
+                      <div className="flex items-center justify-between text-xs gap-1">
+                        <label className="flex items-center gap-1.5 cursor-pointer">
                           <input 
                             type="checkbox" 
                             checked={keyDepositEnabled}
@@ -1976,9 +2009,18 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                             className="w-3.5 h-3.5 text-indigo-700 rounded border-slate-300 focus:ring-indigo-600"
                           />
                           <span className="font-medium text-slate-600">ค่ามัดจำกุญแจ</span>
+                        </label>
+                        <div className="flex items-center gap-0.5">
+                          <span className="font-black text-slate-500">฿</span>
+                          <input
+                            type="number" min="0"
+                            value={keyDepositEnabled ? keyDepositAmount : 0}
+                            onChange={e => setKeyDepositAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                            disabled={room.status === 'occupied' || !keyDepositEnabled}
+                            className="w-16 border border-slate-200 rounded-md px-1.5 py-0.5 text-right font-black text-slate-900 bg-white disabled:bg-transparent disabled:border-transparent focus:ring-1 focus:ring-indigo-600"
+                          />
                         </div>
-                        <span className="font-black text-slate-900">฿{keyDepositEnabled ? Number(keyDepositAmount || 0) : 0}</span>
-                      </label>
+                      </div>
                     </div>
 
                     {dailyExtras.length > 0 && (

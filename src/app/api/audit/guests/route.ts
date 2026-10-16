@@ -65,6 +65,8 @@ export async function GET(request: Request) {
   bookingsData.forEach((b: any) => {
     const w = getStayWindow(b, now);
     if (w.checkIn > now) return;
+    // เช็คอินแล้วออก/ย้ายภายใน 10 นาที = เช็คอินผิดห้อง/ไม่ตั้งใจ -> ไม่แสดงในรายงานผู้เข้าพัก
+    if (w.ended && (w.checkOut.getTime() - w.checkIn.getTime()) <= 10 * 60000) return;
     const effectiveEnd = w.ended
       ? w.checkOut.getTime()
       : Math.max(w.checkOut.getTime(), w.scheduledOut.getTime());

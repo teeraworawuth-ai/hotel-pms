@@ -38,6 +38,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   const [includeKeyDeposit, setIncludeKeyDeposit] = useState<boolean>(true);
   const [depositInput, setDepositInput] = useState<number | ''>(200);
   const [depositChecked, setDepositChecked] = useState<boolean>(false);
+  const [showProjected, setShowProjected] = useState<boolean>(false);
   const { getNow } = useSimulatedTime();
 
   useEffect(() => {
@@ -274,7 +275,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
           <h2 className="text-xl font-black text-slate-800">จัดการบิลค่าใช้จ่ายห้อง {roomNo}</h2>
           <button onClick={onClose} className="p-2 bg-slate-200 hover:bg-slate-300 rounded-full transition-colors">
@@ -282,9 +283,9 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 flex flex-col md:flex-row gap-6 bg-slate-50/50">
-          {/* ขวา: รายการบิลปัจจุบัน */}
-          <div className="flex-1 flex flex-col">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 flex flex-col md:flex-row gap-6 bg-slate-50/50">
+          {/* ซ้าย: รายการบิลปัจจุบัน */}
+          <div className="flex-1 min-w-0 flex flex-col">
             <h3 className="text-sm font-bold text-slate-500 mb-3 uppercase tracking-wider">รายการในบิล (Folio)</h3>
             <div className="flex flex-col bg-slate-100 rounded-lg p-3 mb-2 shrink-0 gap-3 border border-slate-200">
                 <div className="flex items-center gap-2">
@@ -414,10 +415,19 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
           </div>
 
           {/* ขวา: สรุปยอด, เครื่องมือ POS และชำระเงิน */}
-          <div className="flex-1 flex flex-col gap-4">
+          <div className="flex-1 min-w-0 flex flex-col gap-4">
             
-            {/* 1. Grand Total Dashboard */}
-            <div className="bg-slate-800 text-white p-5 rounded-xl shadow-md border-t-4 border-emerald-400">
+            {/* 1. Grand Total Dashboard (ยุบไว้เป็นค่าเริ่มต้น) */}
+            <button
+              type="button"
+              onClick={() => setShowProjected(!showProjected)}
+              className="w-full flex justify-between items-center bg-slate-800 hover:bg-slate-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-colors"
+            >
+              <span>📊 สรุปยอดตลอดการเข้าพัก {showProjected ? '' : '(คลิกดูรายละเอียด)'}</span>
+              <span>{showProjected ? '▲' : '▼'}</span>
+            </button>
+            {showProjected && (
+            <div className="bg-slate-800 text-white p-5 rounded-xl shadow-md border-t-4 border-emerald-400 -mt-2">
               <h3 className="text-xs font-bold text-slate-300 mb-4 uppercase tracking-wider flex justify-between items-center">
                 <span>สรุปยอดตลอดการเข้าพัก (Projected Total)</span>
                 <span className="bg-slate-700 px-2 py-1 rounded text-[10px]">รวมอนาคต</span>
@@ -462,6 +472,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                 </span>
               </div>
             </div>
+            )}
 
             {/* 1.5 Key Deposit */}
             <div className="bg-amber-50 border-2 border-amber-200 p-4 rounded-xl shadow-sm">
