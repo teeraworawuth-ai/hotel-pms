@@ -6,6 +6,16 @@ import { computeDeposit } from '@/lib/depositMath';
 
 type PosItem = { id: string, name: string, default_price: number };
 type Transaction = { id: string, transaction_type: string, category: string, amount: number, created_at: string, staff_name: string, notes?: string };
+type FieldEditEntry = { oldValue: string; newValue: string; by: string; at: string };
+type BookingMeta = {
+  history?: Record<string, FieldEditEntry[]>;
+  targetPrices?: {
+    totalTargetPrice: number;
+    dailyTargets?: Record<string, number>;
+    timeBand?: string;
+    stayType?: 'overnight' | 'short_stay';
+  };
+};
 
 interface BillingModalProps {
   roomId: string;
@@ -23,6 +33,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   
   const [dailyRates, setDailyRates] = useState<any[]>([]);
   const [dailyExtras, setDailyExtras] = useState<any[]>([]);
+  const [bookingMeta, setBookingMeta] = useState<BookingMeta>({});
   
   const [payCash, setPayCash] = useState<number | ''>('');
   const [payTransfer, setPayTransfer] = useState<number | ''>('');
@@ -38,7 +49,17 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   const [includeKeyDeposit, setIncludeKeyDeposit] = useState<boolean>(true);
   const [depositInput, setDepositInput] = useState<number | ''>(200);
   const [depositChecked, setDepositChecked] = useState<boolean>(false);
+  const [activeDepositTx, setActiveDepositTx] = useState<{ id: string; amount: number } | null>(null);
   const [showProjected, setShowProjected] = useState<boolean>(false);
+
+  // Admin/Manager PIN unlock for editing room charges
+  const [roomPriceUnlocked, setRoomPriceUnlocked] = useState<boolean>(false);
+  const [roomPriceManagerName, setRoomPriceManagerName] = useState<string>('');
+  const [showRoomPinPrompt, setShowRoomPinPrompt] = useState<boolean>(false);
+  const [roomPin, setRoomPin] = useState<string>('');
+  const [roomPinError, setRoomPinError] = useState<string>('');
+  const [editingRoomTxAmounts, setEditingRoomTxAmounts] = useState<Record<string, number | ''>>({});
+
   const { getNow } = useSimulatedTime();
 
   useEffect(() => {
@@ -47,20 +68,58 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
 
   const fetchData = async () => {
     setLoading(true);
-    const [txRes, posRes, ratesRes, extrasRes] = await Promise.all([
+    const [txRes, posRes, ratesRes, extrasRes, metaRes, roomRes] = await Promise.all([
       supabase.from('ledger_transactions').select('*').eq('booking_id', bookingId).order('created_at', { ascending: true }),
       supabase.from('pos_items').select('*').eq('is_active', true),
       supabase.from('booking_daily_rates').select('*').eq('booking_id', bookingId),
-      supabase.from('booking_daily_extras').select('*').eq('booking_id', bookingId)
+      supabase.from('booking_daily_extras').select('*').eq('booking_id', bookingId),
+      supabase.from('system_settings').select('value').eq('key', `booking_meta_${bookingId}`).maybeSingle(),
+      supabase.from('rooms').select('key_deposit').eq('id', roomId).maybeSingle()
     ]);
     
-    if (txRes.data) setTransactions(txRes.data);
+    const txs = txRes.data || [];
+    setTransactions(txs);
     if (posRes.data) setPosItems(posRes.data);
     if (ratesRes?.data) setDailyRates(ratesRes.data);
     if (extrasRes?.data) setDailyExtras(extrasRes.data);
-    const { data: roomRow } = await supabase.from('rooms').select('key_deposit').eq('id', roomId).maybeSingle();
-    if (roomRow && roomRow.key_deposit && Number(roomRow.key_deposit) > 0) setDepositInput(Number(roomRow.key_deposit));
+    if (metaRes?.data?.value) setBookingMeta(metaRes.data.value as BookingMeta);
+
+    const activeDeps = txs.filter(t => !t.category.includes('Voided') && Number(t.amount) > 0 && (t.transaction_type === 'deposit' || t.category === 'ค่ามัดจำกุญแจ' || t.category === 'key_deposit'));
+    const depTx = activeDeps.length > 0 ? activeDeps[activeDeps.length - 1] : null;
+    if (depTx) {
+      setActiveDepositTx({ id: depTx.id, amount: Number(depTx.amount) });
+      setDepositChecked(true);
+      setDepositInput(Number(depTx.amount));
+    } else {
+      setActiveDepositTx(null);
+      setDepositChecked(false);
+      const defaultDep = roomRes.data?.key_deposit && Number(roomRes.data.key_deposit) > 0 ? Number(roomRes.data.key_deposit) : 200;
+      setDepositInput(defaultDep);
+    }
+
+    const roomAmtMap: Record<string, number | ''> = {};
+    txs.forEach(t => {
+      if (!t.category.includes('Voided') && (t.category === 'room_charge' || t.category.includes('ค่าห้องพัก'))) {
+        roomAmtMap[t.id] = Number(t.amount);
+      }
+    });
+    setEditingRoomTxAmounts(roomAmtMap);
     setLoading(false);
+  };
+
+  const renderFieldHistory = (fieldKey: string) => {
+    const entries = bookingMeta?.history?.[fieldKey];
+    if (!entries || entries.length === 0) return null;
+    return (
+      <div className="mt-1 space-y-0.5">
+        {entries.map((entry, idx) => (
+          <div key={idx} className="text-[11px] text-slate-400/90 flex items-center gap-1.5">
+            <span className="line-through">{entry.oldValue || '-'}</span>
+            <span className="text-[10px] text-slate-400/75 no-underline">(แก้โดย {entry.by})</span>
+          </div>
+        ))}
+      </div>
+    );
   };
 
   const now = getNow();
@@ -183,24 +242,126 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   };
 
 
-  const handleAddDeposit = async () => {
+  const handleSaveDeposit = async () => {
     if (!activeShift) { alert('กรุณาเปิดกะก่อนทำรายการ'); return; }
-    if (depositReceivedTotal > 0) return; // มีมัดจำแล้ว ห้ามเพิ่มซ้ำ/แก้ไข
-    const amt = Number(depositInput) || 0;
-    if (amt <= 0) return;
+    const oldDepAmt = activeDepositTx ? Number(activeDepositTx.amount) : 0;
+    const newDepAmt = depositChecked ? (Number(depositInput) || 0) : 0;
+    if (oldDepAmt === newDepAmt) return;
 
     setLoading(true);
-    const { error } = await supabase.from('ledger_transactions').insert({
-      shift_id: activeShift.staff_role === 'staff' ? null : activeShift.id,
-      staff_name: activeShift.staff_name,
-      room_id: roomId,
-      booking_id: bookingId,
-      transaction_type: 'deposit',
-      category: 'ค่ามัดจำกุญแจ',
-      amount: amt
-    });
-    if (error) alert('บันทึกมัดจำกุญแจไม่สำเร็จ: ' + error.message);
-    else await fetchData();
+    const editor = activeShift.staff_name;
+    const nowIso = getNow().toISOString();
+
+    if (newDepAmt > 0) {
+      if (activeDepositTx) {
+        const { error } = await supabase.from('ledger_transactions').update({
+          amount: newDepAmt,
+          notes: `แก้มัดจำจาก ฿${oldDepAmt.toLocaleString()} โดย ${editor}`
+        }).eq('id', activeDepositTx.id);
+        if (error) { alert('แก้ไขมัดจำไม่สำเร็จ: ' + error.message); setLoading(false); return; }
+      } else {
+        const { error } = await supabase.from('ledger_transactions').insert({
+          shift_id: activeShift.staff_role === 'staff' ? null : activeShift.id,
+          staff_name: editor,
+          room_id: roomId,
+          booking_id: bookingId,
+          transaction_type: 'deposit',
+          category: 'ค่ามัดจำกุญแจ',
+          amount: newDepAmt
+        });
+        if (error) { alert('บันทึกมัดจำกุญแจไม่สำเร็จ: ' + error.message); setLoading(false); return; }
+      }
+    } else if (activeDepositTx) {
+      const { error } = await supabase.from('ledger_transactions').update({
+        category: 'ค่ามัดจำกุญแจ (Voided)',
+        notes: `ยกเลิกมัดจำโดย ${editor}`
+      }).eq('id', activeDepositTx.id);
+      if (error) { alert('ยกเลิกมัดจำไม่สำเร็จ: ' + error.message); setLoading(false); return; }
+    }
+
+    await supabase.from('rooms').update({ key_deposit: newDepAmt }).eq('id', roomId);
+
+    const nextHistory: Record<string, FieldEditEntry[]> = { ...(bookingMeta.history || {}) };
+    nextHistory.key_deposit = [
+      ...(nextHistory.key_deposit || []),
+      {
+        oldValue: oldDepAmt > 0 ? `฿${oldDepAmt.toLocaleString()}` : 'ไม่เก็บมัดจำ (฿0)',
+        newValue: newDepAmt > 0 ? `฿${newDepAmt.toLocaleString()}` : 'ไม่เก็บมัดจำ (฿0)',
+        by: editor,
+        at: nowIso
+      }
+    ];
+    const updatedMeta: BookingMeta = { ...bookingMeta, history: nextHistory };
+    await supabase.from('system_settings').upsert({ key: `booking_meta_${bookingId}`, value: updatedMeta }, { onConflict: 'key' });
+    setBookingMeta(updatedMeta);
+
+    await fetchData();
+    setLoading(false);
+  };
+
+  const handleVerifyRoomPin = async () => {
+    if (!roomPin) return;
+    setLoading(true);
+    setRoomPinError('');
+    const { data: staffData, error } = await supabase.from('staff').select('role, name').eq('pin', roomPin).maybeSingle();
+    setLoading(false);
+    if (error || !staffData || (staffData.role !== 'admin' && staffData.role !== 'manager')) {
+      setRoomPinError('รหัส PIN ไม่ถูกต้อง หรือไม่มีสิทธิ์ (ต้องเป็น Admin/Manager)');
+      return;
+    }
+    setShowRoomPinPrompt(false);
+    setRoomPin('');
+    setRoomPriceUnlocked(true);
+    setRoomPriceManagerName(staffData.name || staffData.role);
+  };
+
+  const handleSaveRoomCharge = async (tx: Transaction) => {
+    const newAmt = Number(editingRoomTxAmounts[tx.id]);
+    if (isNaN(newAmt) || newAmt < 0) return;
+    const oldAmt = Number(tx.amount);
+    if (newAmt === oldAmt) return;
+
+    setLoading(true);
+    const editor = roomPriceManagerName || activeShift?.staff_name || 'Admin';
+    const nowIso = getNow().toISOString();
+
+    await supabase.from('ledger_transactions').update({
+      amount: newAmt,
+      notes: `แก้ไขราคาโดย ${editor} (เดิม ฿${oldAmt.toLocaleString()})`
+    }).eq('id', tx.id);
+
+    const diffAmt = newAmt - oldAmt;
+    const { data: bRow } = await supabase.from('bookings').select('actual_price').eq('id', bookingId).maybeSingle();
+    const oldTotalActual = bRow?.actual_price != null ? Number(bRow.actual_price) : oldAmt;
+    const newTotalActual = Math.max(0, oldTotalActual + diffAmt);
+
+    await supabase.from('bookings').update({ actual_price: newTotalActual }).eq('id', bookingId);
+    await supabase.from('rooms').update({ actual_price: newTotalActual }).eq('id', roomId);
+
+    if (dailyRates.length > 0) {
+      const sortedRates = [...dailyRates].sort((a, b) => a.target_date.localeCompare(b.target_date));
+      const firstRate = sortedRates[0];
+      if (firstRate) {
+        await supabase.from('booking_daily_rates').update({
+          amount: newAmt,
+          is_manual_override: true
+        }).eq('id', firstRate.id);
+      }
+    }
+
+    const nextHistory: Record<string, FieldEditEntry[]> = { ...(bookingMeta.history || {}) };
+    const pushHist = (key: string, oldVal: string, newVal: string) => {
+      if (oldVal === newVal) return;
+      nextHistory[key] = [...(nextHistory[key] || []), { oldValue: oldVal, newValue: newVal, by: editor, at: nowIso }];
+    };
+    pushHist(`tx_${tx.id}`, `฿${oldAmt.toLocaleString()}`, `฿${newAmt.toLocaleString()}`);
+    pushHist('actual_price', `฿${oldTotalActual.toLocaleString()}`, `฿${newTotalActual.toLocaleString()}`);
+
+    const updatedMeta: BookingMeta = { ...bookingMeta, history: nextHistory };
+    await supabase.from('system_settings').upsert({ key: `booking_meta_${bookingId}`, value: updatedMeta }, { onConflict: 'key' });
+    setBookingMeta(updatedMeta);
+    setRoomPriceUnlocked(false);
+    await fetchData();
     setLoading(false);
   };
 
@@ -286,7 +447,26 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 flex flex-col md:flex-row gap-6 bg-slate-50/50">
           {/* ซ้าย: รายการบิลปัจจุบัน */}
           <div className="flex-1 min-w-0 flex flex-col">
-            <h3 className="text-sm font-bold text-slate-500 mb-3 uppercase tracking-wider">รายการในบิล (Folio)</h3>
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider">รายการในบิล (Folio)</h3>
+              {roomPriceUnlocked ? (
+                <button
+                  type="button"
+                  onClick={() => setRoomPriceUnlocked(false)}
+                  className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-800 border border-amber-300"
+                >
+                  🔓 แก้ค่าห้องโดย {roomPriceManagerName} (คลิกเพื่อล็อก)
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setRoomPin(''); setRoomPinError(''); setShowRoomPinPrompt(true); }}
+                  className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 transition-colors"
+                >
+                  🔑 ปลดล็อกแก้ค่าห้อง (Admin)
+                </button>
+              )}
+            </div>
             <div className="flex flex-col bg-slate-100 rounded-lg p-3 mb-2 shrink-0 gap-3 border border-slate-200">
                 <div className="flex items-center gap-2">
                   <label className="text-xs font-bold text-slate-600 whitespace-nowrap">เลือกวันที่:</label>
@@ -356,15 +536,40 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                             <div className="p-2 space-y-1">
                               {dailyTxs.filter(tx => !tx.category.includes('ค่ามัดจำกุญแจ') && !tx.category.includes('คืนมัดจำกุญแจ')).map(tx => {
                                 const isVoid = tx.category.includes('Voided');
+                                const isRoomCharge = !isVoid && (tx.category === 'room_charge' || tx.category.includes('ค่าห้องพัก'));
                                 return (
                                   <div key={tx.id} className="flex justify-between items-start p-2 hover:bg-slate-50 rounded-lg text-sm border-b border-slate-50 last:border-0 group">
                                     <div className={isVoid ? 'line-through text-slate-400 opacity-60' : ''}>
                                       <p className="font-bold text-slate-700">{tx.category === 'room_charge' ? 'ค่าห้องพัก' : tx.category}</p>
                                       {tx.notes && <p className="text-xs text-slate-500 italic mt-0.5">{tx.notes}</p>}
                                       <p className="text-[10px] text-slate-400 mt-0.5">{new Date(tx.created_at).toLocaleTimeString('th-TH')} ({tx.staff_name})</p>
+                                      {renderFieldHistory(`tx_${tx.id}`)}
+                                      {isRoomCharge && !bookingMeta?.history?.[`tx_${tx.id}`] && renderFieldHistory('actual_price')}
                                     </div>
-                                    <div className={`font-black text-right ${isVoid ? 'line-through text-slate-400 opacity-60' : tx.amount < 0 ? 'text-emerald-600' : 'text-slate-800'}`}>
-                                      {tx.amount < 0 ? '' : '+'}{Number(tx.amount).toLocaleString()}
+                                    <div className="text-right">
+                                      {isRoomCharge && roomPriceUnlocked ? (
+                                        <div className="flex items-center gap-1.5">
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            value={editingRoomTxAmounts[tx.id] ?? tx.amount}
+                                            onChange={e => setEditingRoomTxAmounts(prev => ({ ...prev, [tx.id]: e.target.value === '' ? '' : Number(e.target.value) }))}
+                                            className="w-24 border border-amber-300 rounded-lg px-2 py-1 text-right font-black text-slate-900 bg-amber-50/40"
+                                          />
+                                          <button
+                                            type="button"
+                                            onClick={() => handleSaveRoomCharge(tx)}
+                                            disabled={loading || Number(editingRoomTxAmounts[tx.id]) === Number(tx.amount)}
+                                            className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-200 text-white text-xs font-bold rounded-lg transition-colors"
+                                          >
+                                            บันทึก
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <div className={`font-black ${isVoid ? 'line-through text-slate-400 opacity-60' : tx.amount < 0 ? 'text-emerald-600' : 'text-slate-800'}`}>
+                                          {tx.amount < 0 ? '' : '+'}{Number(tx.amount).toLocaleString()}
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 );
@@ -385,13 +590,14 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                   )}
                 </div>
               
-              {depositReceivedTotal > 0 && (
+              {dep.target > 0 && (
                 <div className="mx-2 mb-2 p-2 text-xs border border-amber-200 bg-amber-50 rounded-lg space-y-0.5">
                   <p className="font-bold text-amber-800">🔑 สรุปเงินมัดจำกุญแจ (ไม่รวมในค่าใช้จ่าย)</p>
                   <div className="flex justify-between text-slate-600"><span>ตกลงเก็บ</span><span>฿{dep.target.toLocaleString()}</span></div>
                   <div className="flex justify-between text-slate-600"><span>เก็บได้จริง (หลังชำระค่าใช้จ่ายครบ)</span><span>฿{dep.held.toLocaleString()}</span></div>
                   {depositRefundedTotal > 0 && <div className="flex justify-between text-slate-600"><span>คืนลูกค้าแล้ว</span><span>-฿{depositRefundedTotal.toLocaleString()}</span></div>}
                   <div className="flex justify-between font-bold text-amber-700 pt-0.5 border-t border-amber-200"><span>คงเหลือ</span><span>฿{Math.max(0, dep.held - depositRefundedTotal).toLocaleString()}</span></div>
+                  {renderFieldHistory('key_deposit')}
                 </div>
               )}
               {true && (
@@ -474,65 +680,85 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
             </div>
             )}
 
-            {/* 1.5 Key Deposit */}
-            <div className="bg-amber-50 border-2 border-amber-200 p-4 rounded-xl shadow-sm">
-              <h3 className="text-sm font-bold text-amber-800 mb-2 flex justify-between items-center">
-                <span>🔑 มัดจำกุญแจ</span>
-                {depositReceivedTotal > 0 && (
-                  <span className="text-[10px] bg-amber-200 text-amber-800 px-2 py-1 rounded">บันทึกแล้ว (แก้ไม่ได้)</span>
-                )}
-              </h3>
-              {depositReceivedTotal > 0 ? (
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between text-slate-600"><span>ตกลงเก็บ</span><span>฿{dep.target.toLocaleString()}</span></div>
-                  <div className="flex justify-between items-center pt-1 border-t border-amber-200">
-                    <span className="font-bold text-slate-700">เก็บได้จริง (ถืออยู่)</span>
-                    <span className="text-xl font-black text-amber-700">฿{dep.held.toLocaleString()}</span>
+            {/* 1.5 Key Deposit (ทั้งพนักงานทั่วไปและ Admin/Manager แก้ไขได้หลังเช็คอิน) */}
+            <div className="bg-amber-50 border-2 border-amber-200 p-4 rounded-xl shadow-sm space-y-3">
+              <div className="flex justify-between items-center">
+                <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={depositChecked}
+                    onChange={e => setDepositChecked(e.target.checked)}
+                    className="w-4 h-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                  />
+                  <span className="text-sm font-bold text-amber-900">🔑 รับมัดจำกุญแจ</span>
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-slate-500">฿</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={depositChecked ? depositInput : 0}
+                    onChange={e => setDepositInput(e.target.value === '' ? '' : Number(e.target.value))}
+                    disabled={!depositChecked}
+                    className="w-24 border-2 border-amber-200 rounded-lg px-2 py-1 text-right font-black text-slate-900 focus:border-amber-500 outline-none bg-white disabled:bg-slate-100 disabled:text-slate-400"
+                  />
+                  {((depositChecked ? (Number(depositInput) || 0) : 0) !== (activeDepositTx ? Number(activeDepositTx.amount) : 0)) && (
+                    <button
+                      type="button"
+                      onClick={handleSaveDeposit}
+                      disabled={loading || (depositChecked && (!depositInput || Number(depositInput) <= 0))}
+                      className="bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-white font-bold px-3 py-1.5 rounded-lg text-xs shadow-xs transition-colors"
+                    >
+                      บันทึกมัดจำ
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {renderFieldHistory('key_deposit')}
+
+              {dep.target > 0 && (
+                <div className="space-y-1 text-sm pt-2 border-t border-amber-200/80">
+                  <div className="flex justify-between text-slate-600 text-xs"><span>ตกลงเก็บ</span><span>฿{dep.target.toLocaleString()}</span></div>
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-slate-700 text-xs">เก็บได้จริง (ถืออยู่)</span>
+                    <span className="text-lg font-black text-amber-700">฿{dep.held.toLocaleString()}</span>
                   </div>
                   {dep.unpaid > 0 && <p className="text-[11px] font-bold text-rose-600">ค่าใช้จ่ายค้าง ฿{dep.unpaid.toLocaleString()} ต้องชำระครบก่อน จึงจะนับเงินที่เหลือเป็นมัดจำ</p>}
                   {dep.unpaid === 0 && dep.shortfall > 0 && <p className="text-[11px] font-bold text-rose-600">เก็บมัดจำไม่ครบ ขาดอีก ฿{dep.shortfall.toLocaleString()}</p>}
                   {dep.excess > 0 && <p className="text-[11px] font-bold text-sky-700">มีเงินเกินยอดที่ตกลง ฿{dep.excess.toLocaleString()} = เงินทอนที่ต้องคืน</p>}
-                  <p className="text-[11px] text-slate-500">ค่าใช้จ่ายที่เพิ่มภายหลัง (มินิบาร์/ค่าปรับ) จะหักจากเงินมัดจำนี้เองอัตโนมัติ</p>
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  <label className="flex items-center gap-3 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={depositChecked}
-                      onChange={e => setDepositChecked(e.target.checked)}
-                      className="w-5 h-5 rounded border-amber-300 text-amber-500 focus:ring-amber-500"
-                    />
-                    <span className="text-sm font-bold text-slate-700">รับมัดจำกุญแจ</span>
-                    <span className="text-xs text-slate-400">(ห้องนี้ยังไม่ได้เก็บ)</span>
-                  </label>
-
-                  {depositChecked && (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-slate-600 whitespace-nowrap">จำนวนเงิน:</span>
-                        <input
-                          type="number" min={1}
-                          value={depositInput}
-                          onChange={e => setDepositInput(e.target.value === '' ? '' : Number(e.target.value))}
-                          className="flex-1 border-2 border-amber-200 rounded-lg p-2 text-right font-bold focus:border-amber-500 outline-none bg-white"
-                        />
-                        <span className="font-bold text-slate-500">฿</span>
-                      </div>
-                      <button
-                        onClick={handleAddDeposit}
-                        disabled={!depositInput || Number(depositInput) <= 0 || loading}
-                        className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-white font-bold py-2.5 rounded-lg text-sm"
-                      >
-                        ยืนยันรับมัดจำ ฿{Number(depositInput || 0).toLocaleString()}
-                      </button>
-                      <p className="text-[11px] text-amber-700">* กดยืนยันแล้วจะบันทึกเข้าบิล และแก้ไขหรือยกเลิกไม่ได้ (คืนได้ตอนเช็คเอาท์)</p>
-                    </div>
-                  )}
-                </div>
-
               )}
             </div>
+
+            {showRoomPinPrompt && (
+              <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-[70] backdrop-blur-sm p-4" onClick={() => setShowRoomPinPrompt(false)}>
+                <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+                  <div className="bg-slate-800 p-4 text-white">
+                    <h3 className="font-bold text-lg">ปลดล็อกแก้ไขค่าห้องพัก (Admin/Manager)</h3>
+                  </div>
+                  <div className="p-4 space-y-4">
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">รหัส PIN ผู้จัดการ/Admin (กรอกทุกครั้ง)</label>
+                      <input
+                        type="password"
+                        value={roomPin}
+                        onChange={e => setRoomPin(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg p-3 text-center text-xl font-mono tracking-widest focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="****"
+                        autoFocus
+                        maxLength={6}
+                      />
+                    </div>
+                    {roomPinError && <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100 font-medium">{roomPinError}</div>}
+                    <div className="flex gap-2 pt-2">
+                      <button type="button" onClick={() => { setShowRoomPinPrompt(false); setRoomPinError(''); setRoomPin(''); }} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl transition-colors">ยกเลิก</button>
+                      <button type="button" onClick={handleVerifyRoomPin} disabled={loading || !roomPin} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-bold py-3 px-4 rounded-xl transition-colors">ยืนยัน</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* 2. POS Items */}
             <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
