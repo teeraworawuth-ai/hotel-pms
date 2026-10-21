@@ -121,9 +121,16 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         const { data: plans } = await supabase.from('rate_plans').select('id, name').order('created_at', { ascending: true });
         if (plans) setRatePlans(plans);
 
-        // 2. Fetch Global Yield Rules
-        const { data: rulesData } = await supabase.from('system_settings').select('value').eq('key', 'yield_management_rules').single();
-        if (rulesData && rulesData.value) setYieldRules(rulesData.value);
+        // 2. Fetch Global Yield Rules & Bank Accounts
+        const [rulesRes, bankRes] = await Promise.all([
+          supabase.from('system_settings').select('value').eq('key', 'yield_management_rules').maybeSingle(),
+          supabase.from('system_settings').select('value').eq('key', 'bank_accounts').maybeSingle()
+        ]);
+        if (rulesRes.data && rulesRes.data.value) setYieldRules(rulesRes.data.value);
+        if (bankRes.data && Array.isArray(bankRes.data.value) && bankRes.data.value.length > 0) {
+          setBankAccounts(bankRes.data.value);
+          setSelectedBank(bankRes.data.value[0]);
+        }
 
         // 3. Fetch Occupancy
         const { data: rooms } = await supabase.from('rooms').select('status');
@@ -285,6 +292,8 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [payTransfer, setPayTransfer] = useState<number | ''>('');
   const [payCredit, setPayCredit] = useState<number | ''>('');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'credit'>('cash');
+  const [bankAccounts, setBankAccounts] = useState<string[]>(['SCB', 'KBANK']);
+  const [selectedBank, setSelectedBank] = useState<string>('SCB');
   const [receivedCash, setReceivedCash] = useState<number | ''>('');
   const [isSplitPayment, setIsSplitPayment] = useState(false);
   const [showDailyDetails, setShowDailyDetails] = useState(false);
@@ -807,7 +816,10 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     
         const paymentInserts = [];
         if (cash > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'cash', amount: -cash });
-        if (transfer > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: paymentTime ? `โอนเวลา: ${paymentTime.replace('T', ' ')}` : undefined });
+        if (transfer > 0) {
+          const transferNote = `[BANK:${selectedBank || 'SCB'}]${paymentTime ? ` โอนเวลา: ${paymentTime.replace('T', ' ')}` : ''}`;
+          paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: transferNote });
+        }
         if (credit > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'credit_card', amount: -credit });
         
         if (paymentInserts.length > 0) {
@@ -1142,7 +1154,10 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       }
     }
     if (cash > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'cash', amount: -cash });
-    if (transfer > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: paymentTime ? `โอนเวลา: ${paymentTime.replace('T', ' ')}` : undefined });
+    if (transfer > 0) {
+      const transferNote = `[BANK:${selectedBank || 'SCB'}]${paymentTime ? ` โอนเวลา: ${paymentTime.replace('T', ' ')}` : ''}`;
+      paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: transferNote });
+    }
     if (credit > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'credit_card', amount: -credit });
     
     if (paymentInserts.length > 0) {
@@ -2196,15 +2211,19 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                 <div className="pt-2 border-t border-slate-100">
                   <label className="block text-xs font-bold text-slate-600 mb-1">ประวัติชำระเงินเดิม</label>
                   <div className="space-y-1.5 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-xs">
-                    {pastPayments.map(p => (
+                    {pastPayments.map(p => {
+                      const bankMatch = p.notes?.match(/\[BANK:([^\]]+)\]/);
+                      const bankLabel = bankMatch ? ` (${bankMatch[1]})` : '';
+                      return (
                       <div key={p.id} className="flex justify-between items-center">
                         <span className="text-slate-600">
-                          {p.category === 'transfer' ? 'โอนเงิน' : p.category === 'credit_card' ? 'บัตรเครดิต' : 'เงินสด'}
+                          {p.category === 'transfer' ? `โอนเงิน${bankLabel}` : p.category === 'credit_card' ? 'บัตรเครดิต' : 'เงินสด'}
                           {p.notes && p.notes.includes('โอนเวลา:') ? ` (${p.notes.split('โอนเวลา:')[1].trim()})` : ` (${new Date(p.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })})`}
                         </span>
                         <span className="font-bold text-emerald-600">฿{Math.abs(p.amount).toLocaleString()}</span>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -2283,6 +2302,23 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
                       {paymentMethod === 'transfer' && (
                         <div className="bg-blue-50/50 p-2.5 rounded-xl border border-blue-100 flex flex-col gap-2 text-xs">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[11px] font-bold text-blue-800 mr-1">เข้าบัญชี:</span>
+                            {bankAccounts.map(bank => (
+                              <button
+                                key={bank}
+                                type="button"
+                                onClick={() => setSelectedBank(bank)}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-black border transition-all ${
+                                  selectedBank === bank
+                                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                    : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50'
+                                }`}
+                              >
+                                {bank}
+                              </button>
+                            ))}
+                          </div>
                           <div className="flex gap-2 items-center">
                             <input 
                               type="datetime-local" 
@@ -2322,6 +2358,25 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                         />
                         <button type="button" onClick={() => setPayTransfer(totalToPay)} className="text-[10px] bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded font-bold">เต็ม</button>
                       </div>
+                      {Number(payTransfer) > 0 && (
+                        <div className="flex items-center gap-1.5 flex-wrap pl-14 pt-0.5">
+                          <span className="text-[11px] font-bold text-blue-700 mr-1">เข้าบัญชี:</span>
+                          {bankAccounts.map(bank => (
+                            <button
+                              key={bank}
+                              type="button"
+                              onClick={() => setSelectedBank(bank)}
+                              className={`px-2 py-0.5 rounded-md text-[11px] font-black border transition-all ${
+                                selectedBank === bank
+                                  ? 'bg-blue-600 text-white border-blue-600'
+                                  : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50'
+                              }`}
+                            >
+                              {bank}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <div className="flex items-center gap-2">
                         <span className="w-14 font-bold text-slate-600">💳 บัตร:</span>
                         <input 

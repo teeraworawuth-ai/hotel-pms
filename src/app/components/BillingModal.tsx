@@ -40,6 +40,8 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   const [payCredit, setPayCredit] = useState<number | ''>('');
   const [paymentTime, setPaymentTime] = useState<string>('');
   const [isScanningSlip, setIsScanningSlip] = useState(false);
+  const [bankAccounts, setBankAccounts] = useState<string[]>(['SCB', 'KBANK']);
+  const [selectedBank, setSelectedBank] = useState<string>('SCB');
   
   // Custom POS states
   const [customItemName, setCustomItemName] = useState('');
@@ -68,13 +70,14 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
 
   const fetchData = async () => {
     setLoading(true);
-    const [txRes, posRes, ratesRes, extrasRes, metaRes, roomRes] = await Promise.all([
+    const [txRes, posRes, ratesRes, extrasRes, metaRes, roomRes, bankRes] = await Promise.all([
       supabase.from('ledger_transactions').select('*').eq('booking_id', bookingId).order('created_at', { ascending: true }),
       supabase.from('pos_items').select('*').eq('is_active', true),
       supabase.from('booking_daily_rates').select('*').eq('booking_id', bookingId),
       supabase.from('booking_daily_extras').select('*').eq('booking_id', bookingId),
       supabase.from('system_settings').select('value').eq('key', `booking_meta_${bookingId}`).maybeSingle(),
-      supabase.from('rooms').select('key_deposit').eq('id', roomId).maybeSingle()
+      supabase.from('rooms').select('key_deposit').eq('id', roomId).maybeSingle(),
+      supabase.from('system_settings').select('value').eq('key', 'bank_accounts').maybeSingle()
     ]);
     
     const txs = txRes.data || [];
@@ -83,6 +86,10 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     if (ratesRes?.data) setDailyRates(ratesRes.data);
     if (extrasRes?.data) setDailyExtras(extrasRes.data);
     if (metaRes?.data?.value) setBookingMeta(metaRes.data.value as BookingMeta);
+    if (bankRes?.data && Array.isArray(bankRes.data.value) && bankRes.data.value.length > 0) {
+      setBankAccounts(bankRes.data.value);
+      setSelectedBank(prev => bankRes.data!.value.includes(prev) ? prev : bankRes.data!.value[0]);
+    }
 
     const activeDeps = txs.filter(t => !t.category.includes('Voided') && Number(t.amount) > 0 && (t.transaction_type === 'deposit' || t.category === 'ค่ามัดจำกุญแจ' || t.category === 'key_deposit'));
     const depTx = activeDeps.length > 0 ? activeDeps[activeDeps.length - 1] : null;
@@ -411,7 +418,10 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     setLoading(true);
     const inserts = [];
     if (cash > 0) inserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: roomId, booking_id: bookingId, transaction_type: 'payment', category: 'cash', amount: -cash });
-    if (transfer > 0) inserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: roomId, booking_id: bookingId, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: paymentTime ? `โอนเวลา: ${paymentTime.replace('T', ' ')}` : undefined });
+    if (transfer > 0) {
+      const transferNote = `[BANK:${selectedBank || 'SCB'}]${paymentTime ? ` โอนเวลา: ${paymentTime.replace('T', ' ')}` : ''}`;
+      inserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: roomId, booking_id: bookingId, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: transferNote });
+    }
     if (credit > 0) inserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: roomId, booking_id: bookingId, transaction_type: 'payment', category: 'credit_card', amount: -credit });
     
     const { error } = await supabase.from('ledger_transactions').insert(inserts);
@@ -839,6 +849,23 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                   </div>
                   {(Number(payTransfer) > 0 || isScanningSlip) && (
                     <div className="flex flex-col gap-2 pl-2 pr-2 pt-2 border-t border-slate-200 mt-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[11px] font-bold text-blue-800 mr-1">เข้าบัญชี:</span>
+                        {bankAccounts.map(bank => (
+                          <button
+                            key={bank}
+                            type="button"
+                            onClick={() => setSelectedBank(bank)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-black border transition-all ${
+                              selectedBank === bank
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50'
+                            }`}
+                          >
+                            {bank}
+                          </button>
+                        ))}
+                      </div>
                       <div className="flex items-center gap-2">
                         <input 
                           type="datetime-local" 
