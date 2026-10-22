@@ -194,9 +194,9 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           }
 
           setShortStayBase3Hr(base3Hr);
-          const numHours = Math.max(1, Number(hours) || 3);
-          const rawTarget = (base3Hr / 3) * numHours;
-          const calcTarget = numHours === 3 ? base3Hr : roundUpToEasyChange(rawTarget);
+          const numHours = Math.max(3, Number(hours) || 3);
+          const extraHourRate = roundUpToEasyChange(base3Hr / 3);
+          const calcTarget = base3Hr + (numHours - 3) * extraHourRate;
 
           const isUnchangedExistingShortStay =
             isExistingBooking &&
@@ -394,8 +394,8 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   };
 
   const handleHoursChange = (delta: number) => {
-    const current = Number(hours) || 1;
-    const nextVal = Math.max(1, current + delta);
+    const current = Number(hours) || 3;
+    const nextVal = Math.max(3, current + delta);
     setHours(nextVal);
   };
   
@@ -1988,7 +1988,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                       </p>
                     ) : (
                       <p className="text-[11px] text-slate-400 font-medium">
-                        ออก: {new Date(((isExistingBooking && room.check_in_time) ? new Date(room.check_in_time) : getNow()).getTime() + (Number(hours) || 3) * 3600000).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น. • เรทตั้งต้น 3 ชม. ฿{shortStayBase3Hr.toLocaleString()} (ปัดลงท้าย 00/30/50/80)
+                        ออก: {new Date(((isExistingBooking && room.check_in_time) ? new Date(room.check_in_time) : getNow()).getTime() + (Number(hours) || 3) * 3600000).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น. • 3 ชม. แรก ฿{shortStayBase3Hr.toLocaleString()} (+฿{roundUpToEasyChange(shortStayBase3Hr / 3).toLocaleString()}/ชม.)
                       </p>
                     )}
                   </div>
@@ -1996,13 +1996,13 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     <button 
                       type="button"
                       onClick={() => activeTab === 'overnight' ? handleNightsChange(-1) : handleHoursChange(-1)}
-                      disabled={isBookingLocked || (activeTab === 'overnight' ? (Number(nights) <= (dateOffset === 0 ? 0 : 1)) : Number(hours) <= 1)}
+                      disabled={isBookingLocked || (activeTab === 'overnight' ? (Number(nights) <= (dateOffset === 0 ? 0 : 1)) : Number(hours) <= 3)}
                       className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-indigo-50 text-indigo-700 font-bold text-xl flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none transition-colors"
                     >
                       -
                     </button>
                     <span className="w-10 text-center text-xl font-black text-slate-900">
-                      {activeTab === 'overnight' ? (nights === '' ? 0 : nights) : (hours === '' ? 1 : hours)}
+                      {activeTab === 'overnight' ? (nights === '' ? 0 : nights) : (hours === '' ? 3 : hours)}
                     </span>
                     <button 
                       type="button"
