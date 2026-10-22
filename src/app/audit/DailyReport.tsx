@@ -888,7 +888,7 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
                   <span className="font-bold text-slate-700">{fmt(earlyLateTotal)}</span>
                 </div>
                 <div className="flex justify-between items-center pl-4 text-xs text-slate-600">
-                  <span>1.2.2 ส่วนต่างปรับเพิ่มราคา</span>
+                  <span>1.2.2 ส่วนเพิ่มค่าห้อง</span>
                   <span className="font-bold text-slate-700">{fmt(upsellTotal)}</span>
                 </div>
               </div>
