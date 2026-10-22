@@ -150,6 +150,7 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
         allLedgerRes,
         bookingsRes,
         dailyRatesRes,
+        dailyExtrasRes,
         roomsRes,
         extraSettingsRes,
         posItemsRes,
@@ -173,6 +174,9 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
           .from("booking_daily_rates")
           .select("id, booking_id, target_date, amount, is_manual_override"),
         supabase
+          .from("booking_daily_extras")
+          .select("id, booking_id, target_date, category, description, amount"),
+        supabase
           .from("rooms")
           .select("id, room_no, price_night, price_temp"),
         supabase
@@ -191,6 +195,7 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
       const allLedger: LedgerTransaction[] = (allLedgerRes.data as LedgerTransaction[]) || [];
       const allBookings: BookingRow[] = (bookingsRes.data as BookingRow[]) || [];
       const allDailyRates: DailyRateRow[] = (dailyRatesRes.data as DailyRateRow[]) || [];
+      const allDailyExtras: any[] = (dailyExtrasRes.data as any[]) || [];
       const allRooms: RoomRow[] = (roomsRes.data as RoomRow[]) || [];
       const extraNames = new Set((extraSettingsRes.data || []).map((e: any) => e.name));
       const posNames = new Set((posItemsRes.data || []).map((p: any) => p.name));
@@ -212,6 +217,15 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
       });
       Object.values(dailyRatesByBooking).forEach((arr) =>
         arr.sort((a, b) => a.target_date.localeCompare(b.target_date))
+      );
+
+      const dailyExtrasByBooking: Record<string, any[]> = {};
+      allDailyExtras.forEach((de) => {
+        if (!dailyExtrasByBooking[de.booking_id]) dailyExtrasByBooking[de.booking_id] = [];
+        dailyExtrasByBooking[de.booking_id].push(de);
+      });
+      Object.values(dailyExtrasByBooking).forEach((arr) =>
+        arr.sort((a, b) => String(a.target_date).localeCompare(String(b.target_date)))
       );
 
       let configuredBanks = ["SCB", "KBANK"];
@@ -500,6 +514,35 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
         }
       });
 
+      // 1D. บริการเสริมรายวัน (booking_daily_extras) ของวันนี้ที่ยังไม่ได้ถูกสร้างเป็นแถวใน ledger_transactions
+      allDailyExtras.forEach((de) => {
+        if (de.target_date !== reportDateStr) return;
+        const b = bookingMap[de.booking_id];
+        if (!b || b.status === "cancelled" || b.status === "reserved") return;
+        const isVoid = String(de.category || "").includes("(Voided)");
+        const baseCat = String(de.category || "").replace(" (Voided)", "").trim();
+        const ratesForBooking = dailyRatesByBooking[de.booking_id] || [];
+        const extrasForBooking = dailyExtrasByBooking[de.booking_id] || [];
+        const firstDate = ratesForBooking[0]?.target_date || extrasForBooking[0]?.target_date || "";
+
+        const alreadyInLedgerToday = txsIn0645Window.some(
+          (tx) =>
+            tx.booking_id === de.booking_id &&
+            tx.transaction_type === "revenue" &&
+            String(tx.category || "").replace(" (Voided)", "").trim() === baseCat &&
+            (String(tx.notes || "").includes(de.target_date) ||
+              (de.target_date === firstDate && !String(tx.notes || "").includes("ประจำวันที่ ")))
+        );
+        if (alreadyInLedgerToday) return;
+
+        const amt = Number(de.amount || 0);
+        if (isVoid) {
+          revVoid += Math.abs(amt);
+        } else {
+          revAddon += amt;
+        }
+      });
+
       setRoomTargetTotal(rTarget);
       setRoomTargetOvernight(rTargetOvernight);
       setRoomTargetShortStay(rTargetShortStay);
@@ -541,6 +584,23 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
 
         const rates = dailyRatesByBooking[bId] || [];
         const totalRatesAmt = rates.reduce((s, r) => s + Number(r.amount || 0), 0);
+        const extrasForB = dailyExtrasByBooking[bId] || [];
+        const firstStayDate = rates[0]?.target_date || extrasForB[0]?.target_date || "";
+        const unpostedExtrasAmt = extrasForB
+          .filter((de) => {
+            if (String(de.category || "").includes("(Voided)")) return false;
+            const baseCat = String(de.category || "").replace(" (Voided)", "").trim();
+            const isPosted = validTxs.some(
+              (t) =>
+                t.transaction_type === "revenue" &&
+                String(t.category || "").trim() === baseCat &&
+                (String(t.notes || "").includes(de.target_date) ||
+                  (de.target_date === firstStayDate && !String(t.notes || "").includes("ประจำวันที่ ")))
+            );
+            return !isPosted;
+          })
+          .reduce((s, de) => s + Number(de.amount || 0), 0);
+
         const postedNonRoomCharges = validTxs
           .filter(
             (t) =>
@@ -561,7 +621,7 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
           .reduce((s, t) => s + Number(t.amount), 0);
 
         const totalBookingCharges =
-          (totalRatesAmt > 0 ? totalRatesAmt : postedRoomCharges) + postedNonRoomCharges;
+          (totalRatesAmt > 0 ? totalRatesAmt : postedRoomCharges) + postedNonRoomCharges + unpostedExtrasAmt;
 
         let cumulativePaid = 0;
         let cumulativeDepHeld = 0;
@@ -683,8 +743,8 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
         const bTxs = (txsByBooking[b.id] || []).filter((t) => !t.category.includes("(Voided)"));
         const bRates = dailyRatesByBooking[b.id] || [];
 
-        // ยอดรับชำระสะสม (หักส่วนที่เป็นมัดจำกุญแจออก)
-        const paidBeforeToday = bTxs
+        // ยอดรับชำระสะสม (หักส่วนที่เป็นมัดจำกุญแจ และหักส่วนที่คืนเงินทอนทันทีออก)
+        const rawPaidBeforeToday = bTxs
           .filter(
             (t) =>
               t.transaction_type === "payment" &&
@@ -692,8 +752,17 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
               new Date(t.created_at).getTime() < start0645.getTime()
           )
           .reduce((s, t) => s + Math.max(0, Math.abs(Number(t.amount)) - (depositPortionByPaymentTxId[t.id] || 0)), 0);
+        const refundedChangeBeforeToday = bTxs
+          .filter(
+            (t) =>
+              t.category.includes("คืนเงินทอน") &&
+              Number(t.amount) < 0 &&
+              new Date(t.created_at).getTime() < start0645.getTime()
+          )
+          .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+        const paidBeforeToday = Math.max(0, rawPaidBeforeToday - refundedChangeBeforeToday);
 
-        const paidToday = bTxs
+        const rawPaidToday = bTxs
           .filter(
             (t) =>
               t.transaction_type === "payment" &&
@@ -702,6 +771,16 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
               new Date(t.created_at).getTime() < end0645.getTime()
           )
           .reduce((s, t) => s + Math.max(0, Math.abs(Number(t.amount)) - (depositPortionByPaymentTxId[t.id] || 0)), 0);
+        const refundedChangeToday = bTxs
+          .filter(
+            (t) =>
+              t.category.includes("คืนเงินทอน") &&
+              Number(t.amount) < 0 &&
+              new Date(t.created_at).getTime() >= start0645.getTime() &&
+              new Date(t.created_at).getTime() < end0645.getTime()
+          )
+          .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+        const paidToday = Math.max(0, rawPaidToday - refundedChangeToday);
 
         if (paidBeforeToday === 0 && paidToday === 0) return;
 

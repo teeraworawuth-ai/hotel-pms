@@ -17,7 +17,7 @@ interface Props {
 type DepositMode = 'full' | 'partial' | 'forfeit';
 
 export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClose, onConfirmed }: Props) {
-  const { activeShift, refreshShift } = useShift();
+  const { activeShift, operatorName, refreshShift } = useShift();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [txs, setTxs] = useState<Tx[]>([]);
@@ -93,8 +93,8 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
         return;
       }
       const base = {
-        shift_id: isTester ? null : activeShift.id,
-        staff_name: activeShift.staff_name,
+        shift_id: activeShift.id === 'dummy-shift-id' ? null : activeShift.id,
+        staff_name: operatorName || activeShift.staff_name,
         room_id: roomId,
         booking_id: bookingId,
       };

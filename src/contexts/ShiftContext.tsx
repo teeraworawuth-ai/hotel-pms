@@ -7,6 +7,7 @@ export interface Shift {
   id: string;
   staff_id: string;
   staff_name: string;
+  operator_name?: string;
   staff_role?: string;
   housekeeper_only?: boolean;
   can_clean?: boolean;
@@ -21,14 +22,26 @@ export interface Shift {
   signature_data: string | null;
 }
 
+export interface LoggedInUser {
+  id: string;
+  name: string;
+  role: string;
+  locations?: string[];
+  can_clean?: boolean;
+}
+
 type ShiftContextType = {
   activeShift: Shift | null;
+  currentUser: LoggedInUser | null;
+  operatorName: string;
   loading: boolean;
   refreshShift: () => Promise<void>;
 };
 
 const ShiftContext = createContext<ShiftContextType>({
   activeShift: null,
+  currentUser: null,
+  operatorName: "",
   loading: true,
   refreshShift: async () => {},
 });
@@ -37,22 +50,27 @@ export const useShift = () => useContext(ShiftContext);
 
 export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
   const [activeShift, setActiveShift] = useState<Shift | null>(null);
+  const [currentUser, setCurrentUser] = useState<LoggedInUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refreshShift = async () => {
     setLoading(true);
 
-    // Check AuthUser for Housekeeper Dummy Shift
+    // Check AuthUser for logged-in user and Housekeeper Dummy Shift
     const saved = localStorage.getItem('auth_user');
+    let parsedUser: LoggedInUser | null = null;
     if (saved) {
       try {
         const user = JSON.parse(saved);
+        parsedUser = user;
+        setCurrentUser(user);
         if (user.role === 'housekeeper') {
           // Dummy shift for housekeeper so cleaning is never blocked
           setActiveShift({
             id: 'dummy-shift-id',
             staff_id: user.id,
             staff_name: user.name,
+            operator_name: user.name,
             staff_role: 'housekeeper',
             housekeeper_only: true,
             can_clean: true,
@@ -70,6 +88,8 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
           return;
         }
       } catch (e) {}
+    } else {
+      setCurrentUser(null);
     }
 
     // หา shift ที่กำลังเปิดอยู่ (ล่าสุด)
@@ -87,7 +107,7 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
       
       const shiftData = data as Shift;
 
-      // ดึง Role ของพนักงาน
+      // ดึง Role ของพนักงานที่เปิดกะ
       const { data: staffData } = await supabase
         .from('staff')
         .select('role')
@@ -98,13 +118,14 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
         shiftData.staff_role = staffData.role;
       }
 
-      // แนบสิทธิ์ของ staff ที่ล็อกอินอยู่ปัจจุบัน
-      if (saved) {
-        try {
-          const user = JSON.parse(saved);
-          if (user.locations) shiftData.locations = user.locations;
-          if (user.can_clean !== undefined) shiftData.can_clean = user.can_clean;
-        } catch (e) {}
+      // แนบสิทธิ์และชื่อของ staff ที่ล็อกอินอยู่ปัจจุบัน (ซับของกะ)
+      if (parsedUser) {
+        shiftData.operator_name = parsedUser.name;
+        if (parsedUser.role) shiftData.staff_role = parsedUser.role;
+        if (parsedUser.locations) shiftData.locations = parsedUser.locations;
+        if (parsedUser.can_clean !== undefined) shiftData.can_clean = parsedUser.can_clean;
+      } else {
+        shiftData.operator_name = shiftData.staff_name;
       }
 
       // คำนวณยอดเงินสดจาก Ledger
@@ -142,8 +163,10 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
     refreshShift();
   }, []);
 
+  const operatorName = currentUser?.name || activeShift?.operator_name || activeShift?.staff_name || "";
+
   return (
-    <ShiftContext.Provider value={{ activeShift, loading, refreshShift }}>
+    <ShiftContext.Provider value={{ activeShift, currentUser, operatorName, loading, refreshShift }}>
       {children}
     </ShiftContext.Provider>
   );

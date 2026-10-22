@@ -271,11 +271,17 @@ export default function CheckinPage() {
       }
       
       if (activeBookingIds.length > 0) {
-        // 1. Fetch all daily rates to calculate C_all (total expected room charge)
-        const { data: allDailyRates } = await supabase
-          .from('booking_daily_rates')
-          .select('booking_id, amount, target_date')
-          .in('booking_id', activeBookingIds);
+        // 1. Fetch all daily rates and daily extras to calculate C_all (total expected charge)
+        const [{ data: allDailyRates }, { data: allDailyExtras }] = await Promise.all([
+          supabase
+            .from('booking_daily_rates')
+            .select('booking_id, amount, target_date')
+            .in('booking_id', activeBookingIds),
+          supabase
+            .from('booking_daily_extras')
+            .select('booking_id, amount, target_date, category')
+            .in('booking_id', activeBookingIds)
+        ]);
 
         if (allDailyRates) {
           allDailyRates.forEach(dr => {
@@ -291,31 +297,55 @@ export default function CheckinPage() {
           });
         }
 
+        if (allDailyExtras) {
+          allDailyExtras.forEach(de => {
+            if (String(de.category || '').includes('(Voided)')) return;
+            if (!financialSummary[de.booking_id]) {
+              financialSummary[de.booking_id] = { charges: 0, payments: 0, balance: 0, c_all: 0, c_today: 0 };
+            }
+            if (String(de.target_date || '') > targetDateStr) {
+              financialSummary[de.booking_id].c_all += Number(de.amount);
+            }
+          });
+        }
+
         // 2. Fetch ledgers for C_today, P_all, and extra charges
         const { data: ledgers, error: ledgerError } = await supabase
           .from('ledger_transactions')
-          .select('booking_id, amount, category')
+          .select('booking_id, amount, category, transaction_type')
           .in('booking_id', activeBookingIds);
           
         if (!ledgerError && ledgers) {
           ledgers.forEach(tx => {
             if (tx.booking_id) {
+              const cat = String(tx.category || '');
+              if (cat.includes('(Voided)')) return;
               if (!financialSummary[tx.booking_id]) {
                 financialSummary[tx.booking_id] = { charges: 0, payments: 0, balance: 0, c_all: 0, c_today: 0, has_key_deposit: false };
               }
               const amt = Number(tx.amount);
-              const isDepositRow = amt > 0 && (tx.category === 'key_deposit' || (tx.category || '').includes('มัดจำกุญแจ'));
+              const isDepositRow = amt > 0 && (cat === 'key_deposit' || cat.includes('มัดจำกุญแจ'));
+              const isDepositRefund = amt < 0 && cat.includes('คืนมัดจำกุญแจ');
+              const isChangeRefund = amt < 0 && cat.includes('คืนเงินทอน');
+              if (isDepositRefund) return;
+
+              if (isChangeRefund) {
+                financialSummary[tx.booking_id].payments = Math.max(0, financialSummary[tx.booking_id].payments - Math.abs(amt));
+                financialSummary[tx.booking_id].balance += Math.abs(amt);
+                return;
+              }
+
               if (!isDepositRow) financialSummary[tx.booking_id].balance += amt; // ยอดมัดจำกุญแจไม่ใช่ค่าใช้จ่าย จึงไม่นับเป็นหนี้ค้างชำระ
               
               if (amt > 0) {
                 // ค่ามัดจำกุญแจไม่ใช่ค่าใช้จ่าย: ไม่รวมในยอดค่าใช้จ่าย
-                const isKeyDeposit = tx.category === 'key_deposit' || (tx.category || '').includes('มัดจำกุญแจ');
+                const isKeyDeposit = cat === 'key_deposit' || cat.includes('มัดจำกุญแจ');
                 if (isKeyDeposit) {
                   financialSummary[tx.booking_id].has_key_deposit = true;
                 } else {
                   financialSummary[tx.booking_id].charges += amt;
                   financialSummary[tx.booking_id].c_today += amt; // C_today = all posted charges
-                  if (tx.category !== 'ค่าห้องพัก' && tx.category !== 'room_charge') {
+                  if (cat !== 'ค่าห้องพัก' && cat !== 'room_charge') {
                     financialSummary[tx.booking_id].c_all += amt;
                   }
                 }

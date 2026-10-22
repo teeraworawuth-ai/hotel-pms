@@ -49,7 +49,7 @@ interface ModalProps {
 
 export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }: ModalProps) {
   const { getNow } = useSimulatedTime();
-  const { activeShift } = useShift();
+  const { activeShift, operatorName } = useShift();
   const displayDate = getNow();
   displayDate.setDate(displayDate.getDate() + dateOffset);
   const displayDateStr = displayDate.toLocaleDateString('en-CA');
@@ -361,7 +361,17 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [discount, setDiscount] = useState<number | ''>('');
   const [isScanningSlip, setIsScanningSlip] = useState(false);
   const [pastPayments, setPastPayments] = useState<LedgerTransaction[]>([]);
-  const [staffName, setStaffName] = useState<string>(room.staff_name || '');
+  const [staffName, setStaffName] = useState<string>(room.staff_name || operatorName || activeShift?.staff_name || '');
+
+  useEffect(() => {
+    if (!isExistingBooking && !staffName && (operatorName || activeShift?.staff_name)) {
+      setStaffName(operatorName || activeShift?.staff_name || '');
+    }
+  }, [operatorName, activeShift?.staff_name, isExistingBooking]);
+
+  const effectiveStaffName = (staffName && staffName.trim())
+    ? staffName.trim()
+    : (operatorName || activeShift?.staff_name || 'Admin');
 
   const handleDiscountChange = (newDiscountStr: string) => {
     const disc = newDiscountStr === '' ? '' : Number(newDiscountStr);
@@ -415,19 +425,79 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [extraForm, setExtraForm] = useState({ category: 'เตียงเสริม/อุปกรณ์', description: '', amount: 0, applyToAll: false, targetDate: '' });
   const [paymentTime, setPaymentTime] = useState<string>('');
   
-    const extraLineTotal = (ext: any) => {
-    if (ext.isSaved && ext.savedAmount !== undefined && !ext.isModified) return ext.savedAmount;
-    const q = ext.qty || 1;
-    return ext.isPerNight ? (ext.price * q * (Number(nights) || 1)) : (ext.price * q);
+  const extraLineTotal = (ext: any) => {
+    if (ext.isPerNight && Array.isArray(ext.dailySchedule) && ext.dailySchedule.length > 0) {
+      return ext.dailySchedule.reduce((sum: number, day: any) => {
+        if (!day.enabled || day.isVoided) return sum;
+        return sum + Number(ext.price || 0) * (Number(day.qty) || 1);
+      }, 0);
+    }
+    if (ext.isSaved && ext.savedAmount !== undefined && !ext.isModified) return Number(ext.savedAmount);
+    const q = Number(ext.qty) || 1;
+    return ext.isPerNight ? (Number(ext.price) * q * Math.max(1, Number(nights) || 1)) : (Number(ext.price) * q);
   };
+
+  // Sync per-night extra schedules whenever dailyBreakdown changes
+  useEffect(() => {
+    if (activeTab !== 'overnight' || dailyBreakdown.length === 0) return;
+    const currentDates = dailyBreakdown.map(d => d.date);
+    setDailyExtras(prev => prev.map(ext => {
+      if (!ext.isPerNight) return ext;
+      const existingSchedule: any[] = Array.isArray(ext.dailySchedule) ? ext.dailySchedule : [];
+      const nextSchedule = currentDates.map(dateStr => {
+        const found = existingSchedule.find(s => s.date === dateStr);
+        if (found) return found;
+        return {
+          date: dateStr,
+          enabled: true,
+          qty: Number(ext.qty) || 1,
+          isSaved: false,
+          isVoided: false
+        };
+      });
+      return {
+        ...ext,
+        dailySchedule: nextSchedule
+      };
+    }));
+  }, [dailyBreakdown, activeTab]);
 
   const handleChangeExtraQty = (id: string, delta: number) => {
     setDailyExtras(prev => prev.map(e => {
       if (e.id === id) {
         const newQty = Math.max(1, (e.qty || 1) + delta);
-        return { ...e, qty: newQty, isModified: e.isSaved ? true : undefined };
+        const updatedSchedule = Array.isArray(e.dailySchedule)
+          ? e.dailySchedule.map((d: any) => d.isVoided ? d : { ...d, qty: newQty })
+          : undefined;
+        return { ...e, qty: newQty, dailySchedule: updatedSchedule, isModified: e.isSaved ? true : undefined };
       }
       return e;
+    }));
+  };
+
+  const handleToggleExtraDay = (extraId: string, dateStr: string) => {
+    setDailyExtras(prev => prev.map(ext => {
+      if (ext.id !== extraId || !Array.isArray(ext.dailySchedule)) return ext;
+      return {
+        ...ext,
+        isModified: ext.isSaved ? true : undefined,
+        dailySchedule: ext.dailySchedule.map((d: any) =>
+          d.date === dateStr ? { ...d, enabled: !d.enabled } : d
+        )
+      };
+    }));
+  };
+
+  const handleChangeExtraDayQty = (extraId: string, dateStr: string, delta: number) => {
+    setDailyExtras(prev => prev.map(ext => {
+      if (ext.id !== extraId || !Array.isArray(ext.dailySchedule)) return ext;
+      return {
+        ...ext,
+        isModified: ext.isSaved ? true : undefined,
+        dailySchedule: ext.dailySchedule.map((d: any) =>
+          d.date === dateStr ? { ...d, qty: Math.max(1, (Number(d.qty) || 1) + delta) } : d
+        )
+      };
     }));
   };
 
@@ -449,17 +519,38 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
   const handleAddExtra = (setting: any) => {
     const qty = 1;
-    const n = Number(nights) || 1;
     const isPerNight = setting.charge_type === 'per_night';
-    const total = isPerNight ? setting.price * qty * n : setting.price * qty;
-    
+    const currentDates = dailyBreakdown.length > 0
+      ? dailyBreakdown.map(d => d.date)
+      : [displayDateStr];
+
+    if (isPerNight) {
+      const existingIdx = dailyExtras.findIndex(e => e.name === setting.name && e.isPerNight);
+      if (existingIdx !== -1) {
+        setDailyExtras(prev => prev.map((e, idx) => {
+          if (idx !== existingIdx) return e;
+          const sched = (Array.isArray(e.dailySchedule) && e.dailySchedule.length > 0
+            ? e.dailySchedule
+            : currentDates.map(d => ({ date: d, enabled: true, qty: 1 })))
+            .map((day: any) => day.isVoided ? day : { ...day, enabled: true, qty: (Number(day.qty) || 1) + 1 });
+          return { ...e, qty: (Number(e.qty) || 1) + 1, dailySchedule: sched, isModified: e.isSaved ? true : undefined };
+        }));
+        return;
+      }
+    }
+
+    const dailySchedule = isPerNight
+      ? currentDates.map(d => ({ date: d, enabled: true, qty: 1, isSaved: false, isVoided: false }))
+      : undefined;
+
     setDailyExtras([...dailyExtras, {
       id: Date.now().toString(),
       name: setting.name,
-      price: setting.price,
+      price: Number(setting.price),
       qty,
       isPerNight,
-      amount: total
+      dailySchedule,
+      amount: isPerNight ? Number(setting.price) * currentDates.length : Number(setting.price)
     }]);
   };
   
@@ -467,11 +558,12 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     setDailyExtras(dailyExtras.filter(e => e.id !== id));
   };
 
-    const getTotalExtrasAmount = () => dailyExtras.reduce((sum, ext) => {
-    return sum + (ext.isPerNight ? (ext.price * ext.qty * (Number(nights) || 1)) : (ext.price * ext.qty));
-  }, 0);
+  const getTotalExtrasAmount = () => dailyExtras.reduce((sum, ext) => sum + extraLineTotal(ext), 0);
   const totalToPay = Number(actualPrice || 0) + (keyDepositEnabled ? Number(keyDepositAmount || 0) : 0) + getTotalExtrasAmount();
-  const totalPaid = pastPayments.reduce((sum, p) => sum + Math.abs(p.amount), 0);
+  const totalPaid = Math.max(0, pastPayments.reduce((sum, p) => {
+    if (String(p.category || '').includes('คืนเงินทอน')) return sum - Math.abs(Number(p.amount));
+    return sum + Math.abs(Number(p.amount));
+  }, 0));
   const remainingBalance = totalToPay - totalPaid;
 
   const renderFieldHistory = (fieldKey: string) => {
@@ -711,7 +803,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         actual_check_in_time: (dateOffset === 0 && !isReservationForToday) ? startDate.toISOString() : null,
         guest_count: Number(guestCount) || 1,
         actual_price: actualPrice === '' ? null : Number(actualPrice),
-        staff_name: staffName || null
+        staff_name: effectiveStaffName
       })
       .select('id')
       .single();
@@ -722,7 +814,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         if (keyDepositEnabled && Number(keyDepositAmount) > 0) {
           await supabase.from('ledger_transactions').insert({
             shift_id: activeShift.id,
-            staff_name: activeShift.staff_name,
+            staff_name: effectiveStaffName,
             room_id: room.id,
             booking_id: insertedBooking.id,
             transaction_type: 'deposit',
@@ -732,19 +824,61 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         }
 
         if (type === 'overnight') {
-          // --- 1.6 บันทึก Extra Charges (ถ้ามี) ---
+          const firstNightDate = dailyBreakdown.length > 0 ? dailyBreakdown[0].date : startDate.toLocaleDateString('en-CA');
+
+          // --- 1.6 บันทึก Extra Charges (แยกบริการเสริมรายวันลง booking_daily_extras และตัดเข้าบิลเฉพาะคืนแรก) ---
           if (dailyExtras.length > 0) {
-            const ledgerExtras = dailyExtras.map(ext => ({
-              shift_id: activeShift.id,
-              staff_name: activeShift.staff_name,
-              room_id: room.id,
-              booking_id: insertedBooking.id,
-              transaction_type: 'revenue',
-              category: ext.name,
-              notes: ext.isPerNight ? '(' + (nights || 1) + ' คืน)' : null,
-              amount: extraLineTotal(ext)
-            }));
-            await supabase.from('ledger_transactions').insert(ledgerExtras);
+            const dailyExtraInserts: any[] = [];
+            const firstNightLedgerExtras: any[] = [];
+
+            dailyExtras.forEach(ext => {
+              if (ext.isPerNight && Array.isArray(ext.dailySchedule) && ext.dailySchedule.length > 0) {
+                const activeDays = ext.dailySchedule.filter((d: any) => d.enabled && !d.isVoided && (Number(d.qty) || 0) > 0);
+                activeDays.forEach((d: any) => {
+                  const dayAmt = Number(ext.price || 0) * (Number(d.qty) || 1);
+                  dailyExtraInserts.push({
+                    booking_id: insertedBooking.id,
+                    target_date: d.date,
+                    category: ext.name,
+                    description: `บริการเสริมรายวัน (${d.date})${(Number(d.qty) || 1) > 1 ? ` x${d.qty}` : ''}`,
+                    amount: dayAmt
+                  });
+                  if (d.date === firstNightDate && dayAmt > 0) {
+                    firstNightLedgerExtras.push({
+                      shift_id: activeShift.id,
+                      staff_name: effectiveStaffName,
+                      room_id: room.id,
+                      booking_id: insertedBooking.id,
+                      transaction_type: 'revenue',
+                      category: ext.name,
+                      notes: `ประจำวันที่ ${d.date}${(Number(d.qty) || 1) > 1 ? ` (x${d.qty})` : ''}`,
+                      amount: dayAmt
+                    });
+                  }
+                });
+              } else {
+                const amt = extraLineTotal(ext);
+                if (amt > 0) {
+                  firstNightLedgerExtras.push({
+                    shift_id: activeShift.id,
+                    staff_name: effectiveStaffName,
+                    room_id: room.id,
+                    booking_id: insertedBooking.id,
+                    transaction_type: 'revenue',
+                    category: ext.name,
+                    notes: ext.isPerNight ? '(' + (nights || 1) + ' คืน)' : ((Number(ext.qty) || 1) > 1 ? `(x${ext.qty})` : null),
+                    amount: amt
+                  });
+                }
+              }
+            });
+
+            if (dailyExtraInserts.length > 0) {
+              await supabase.from('booking_daily_extras').insert(dailyExtraInserts);
+            }
+            if (firstNightLedgerExtras.length > 0) {
+              await supabase.from('ledger_transactions').insert(firstNightLedgerExtras);
+            }
           }
 
           if (dailyBreakdown.length > 0) {
@@ -764,7 +898,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
             if (firstNightPrice > 0) {
               await supabase.from('ledger_transactions').insert({
                 shift_id: activeShift.id,
-                staff_name: activeShift.staff_name,
+                staff_name: effectiveStaffName,
                 room_id: room.id,
                 booking_id: insertedBooking.id,
                 transaction_type: 'revenue',
@@ -778,7 +912,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           if (actualPrice !== '') {
             await supabase.from('ledger_transactions').insert({
               shift_id: activeShift.id,
-              staff_name: activeShift.staff_name,
+              staff_name: effectiveStaffName,
               room_id: room.id,
               booking_id: insertedBooking.id,
               transaction_type: 'revenue',
@@ -806,12 +940,12 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         
     
         const paymentInserts = [];
-        if (cash > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'cash', amount: -cash });
+        if (cash > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'cash', amount: -cash });
         if (transfer > 0) {
           const transferNote = `[BANK:${selectedBank || 'SCB'}]${paymentTime ? ` โอนเวลา: ${paymentTime.replace('T', ' ')}` : ''}`;
-          paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: transferNote });
+          paymentInserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: transferNote });
         }
-        if (credit > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'credit_card', amount: -credit });
+        if (credit > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'credit_card', amount: -credit });
         
         if (paymentInserts.length > 0) {
           await supabase.from('ledger_transactions').insert(paymentInserts);
@@ -849,7 +983,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           guest_count: Number(guestCount) || 1,
           current_status: `มีแขก (${type === 'overnight' ? 'ค้างคืน' : 'ชั่วคราว'})`,
           actual_price: actualPrice === '' ? null : Number(actualPrice),
-          staff_name: staffName || null
+          staff_name: effectiveStaffName
         })
         .eq('id', room.id);
     }
@@ -876,7 +1010,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
     setLoading(true);
     const nowIso = getNow().toISOString();
-    const editor = extrasManagerName || activeShift?.staff_name || 'Admin';
+    const editor = extrasManagerName || effectiveStaffName;
     const nextHistory: Record<string, FieldEditEntry[]> = { ...(bookingMeta.history || {}) };
     const pushHist = (key: string, oldVal: string, newVal: string) => {
       if (oldVal === newVal) return;
@@ -941,6 +1075,36 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       }));
       await supabase.from('booking_daily_rates').insert(rateInserts);
       setSavedDailyRates(rateInserts);
+
+      // Sync per-night extras in booking_daily_extras when edited by Manager/Admin
+      const perNightExtras = dailyExtras.filter(e => e.isPerNight && Array.isArray(e.dailySchedule));
+      for (const ext of perNightExtras) {
+        for (const day of ext.dailySchedule) {
+          const dayAmt = Number(ext.price || 0) * (Number(day.qty) || 1);
+          if (day.dbId) {
+            if (!day.enabled && !day.isVoided) {
+              await supabase.from('booking_daily_extras').update({
+                category: `${ext.name} (Voided)`,
+                description: `ยกเลิกโดย ${editor} (${day.date})`
+              }).eq('id', day.dbId);
+              pushHist(`extra_${day.date}`, `${ext.name} (${day.date}) ฿${dayAmt.toLocaleString()}`, `ยกเลิก ฿0`);
+            } else if (day.enabled && !day.isVoided) {
+              await supabase.from('booking_daily_extras').update({
+                amount: dayAmt,
+                description: `บริการเสริมรายวัน (${day.date})${(Number(day.qty) || 1) > 1 ? ` x${day.qty}` : ''}`
+              }).eq('id', day.dbId);
+            }
+          } else if (day.enabled && !day.isVoided && dayAmt > 0) {
+            await supabase.from('booking_daily_extras').insert({
+              booking_id: room.booking_id,
+              target_date: day.date,
+              category: ext.name,
+              description: `บริการเสริมรายวัน (${day.date})${(Number(day.qty) || 1) > 1 ? ` x${day.qty}` : ''}`,
+              amount: dayAmt
+            });
+          }
+        }
+      }
     }
 
     const expectedFirstCharge = activeTab === 'overnight' && dailyBreakdown.length > 0
@@ -1064,11 +1228,11 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     if (oldDepAmt !== newDepAmt) {
       if (newDepAmt > 0) {
         if (existingDepositTx) {
-          await supabase.from('ledger_transactions').update({ amount: newDepAmt, notes: `แก้มัดจำจาก ฿${oldDepAmt.toLocaleString()} โดย ${activeShift.staff_name}` }).eq('id', existingDepositTx.id);
+          await supabase.from('ledger_transactions').update({ amount: newDepAmt, notes: `แก้มัดจำจาก ฿${oldDepAmt.toLocaleString()} โดย ${effectiveStaffName}` }).eq('id', existingDepositTx.id);
           setExistingDepositTx({ id: existingDepositTx.id, amount: newDepAmt });
         } else {
           const { data: insDep } = await supabase.from('ledger_transactions').insert({
-            shift_id: activeShift.id, staff_name: activeShift.staff_name,
+            shift_id: activeShift.id, staff_name: effectiveStaffName,
             room_id: room.id, booking_id: room.booking_id,
             transaction_type: 'deposit', category: 'ค่ามัดจำกุญแจ', amount: newDepAmt
           }).select('id, amount').single();
@@ -1077,7 +1241,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         setInitialKeyDepositStatus(true);
       } else {
         if (existingDepositTx) {
-          await supabase.from('ledger_transactions').update({ category: 'ค่ามัดจำกุญแจ (Voided)', notes: `ยกเลิกมัดจำโดย ${activeShift.staff_name}` }).eq('id', existingDepositTx.id);
+          await supabase.from('ledger_transactions').update({ category: 'ค่ามัดจำกุญแจ (Voided)', notes: `ยกเลิกมัดจำโดย ${effectiveStaffName}` }).eq('id', existingDepositTx.id);
           setExistingDepositTx(null);
         }
         setInitialKeyDepositStatus(false);
@@ -1091,7 +1255,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         {
           oldValue: oldDepAmt > 0 ? `฿${oldDepAmt.toLocaleString()}` : 'ไม่เก็บมัดจำ (฿0)',
           newValue: newDepAmt > 0 ? `฿${newDepAmt.toLocaleString()}` : 'ไม่เก็บมัดจำ (฿0)',
-          by: activeShift.staff_name,
+          by: effectiveStaffName,
           at: nowIso
         }
       ];
@@ -1099,25 +1263,57 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       await supabase.from('system_settings').upsert({ key: `booking_meta_${room.booking_id}`, value: updatedMeta }, { onConflict: 'key' });
       setBookingMeta(updatedMeta);
     }
-    const paymentInserts = [];
+    const paymentInserts: any[] = [];
     let newExtrasTotal = 0;
+    const firstNightDate = dailyBreakdown.length > 0 ? dailyBreakdown[0].date : displayDateStr;
     
     // Process new extras
     const newExtras = dailyExtras.filter(e => !e.isSaved);
     if (newExtras.length > 0) {
+      const dailyExtraInserts: any[] = [];
       newExtras.forEach(ext => {
-        paymentInserts.push({
-          shift_id: activeShift.id,
-          staff_name: activeShift.staff_name,
-          room_id: room.id,
-          booking_id: room.booking_id,
-          transaction_type: 'revenue',
-          category: ext.name,
-          notes: ext.isPerNight ? '(' + (nights || 1) + ' คืน)' : null,
-          amount: extraLineTotal(ext)
-        });
-        newExtrasTotal += extraLineTotal(ext);
+        if (ext.isPerNight && Array.isArray(ext.dailySchedule) && ext.dailySchedule.length > 0) {
+          const activeDays = ext.dailySchedule.filter((d: any) => d.enabled && !d.isVoided && (Number(d.qty) || 0) > 0);
+          activeDays.forEach((d: any) => {
+            const dayAmt = Number(ext.price || 0) * (Number(d.qty) || 1);
+            dailyExtraInserts.push({
+              booking_id: room.booking_id,
+              target_date: d.date,
+              category: ext.name,
+              description: `บริการเสริมรายวัน (${d.date})${(Number(d.qty) || 1) > 1 ? ` x${d.qty}` : ''}`,
+              amount: dayAmt
+            });
+            if (d.date === firstNightDate && dayAmt > 0) {
+              paymentInserts.push({
+                shift_id: activeShift.id,
+                staff_name: effectiveStaffName,
+                room_id: room.id,
+                booking_id: room.booking_id,
+                transaction_type: 'revenue',
+                category: ext.name,
+                notes: `ประจำวันที่ ${d.date}${(Number(d.qty) || 1) > 1 ? ` (x${d.qty})` : ''}`,
+                amount: dayAmt
+              });
+            }
+          });
+          newExtrasTotal += extraLineTotal(ext);
+        } else {
+          paymentInserts.push({
+            shift_id: activeShift.id,
+            staff_name: effectiveStaffName,
+            room_id: room.id,
+            booking_id: room.booking_id,
+            transaction_type: 'revenue',
+            category: ext.name,
+            notes: ext.isPerNight ? '(' + (nights || 1) + ' คืน)' : null,
+            amount: extraLineTotal(ext)
+          });
+          newExtrasTotal += extraLineTotal(ext);
+        }
       });
+      if (dailyExtraInserts.length > 0) {
+        await supabase.from('booking_daily_extras').insert(dailyExtraInserts);
+      }
     }
 
     // Process manager modified saved extras
@@ -1132,7 +1328,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           // 2. Insert new entry
           paymentInserts.push({
             shift_id: activeShift.id,
-            staff_name: activeShift.staff_name,
+            staff_name: effectiveStaffName,
             room_id: room.id,
             booking_id: room.booking_id,
             transaction_type: 'revenue',
@@ -1144,12 +1340,12 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         }
       }
     }
-    if (cash > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'cash', amount: -cash });
+    if (cash > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'cash', amount: -cash });
     if (transfer > 0) {
       const transferNote = `[BANK:${selectedBank || 'SCB'}]${paymentTime ? ` โอนเวลา: ${paymentTime.replace('T', ' ')}` : ''}`;
-      paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: transferNote });
+      paymentInserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: transferNote });
     }
-    if (credit > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'credit_card', amount: -credit });
+    if (credit > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'credit_card', amount: -credit });
     
     if (paymentInserts.length > 0) {
       await supabase.from('ledger_transactions').insert(paymentInserts);
@@ -1178,20 +1374,27 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     if (room.booking_id) {
       Promise.all([
         supabase.from('ledger_transactions').select('id, category, amount, created_at, notes, transaction_type').eq('booking_id', room.booking_id).order('created_at', { ascending: true }),
-        supabase.from('booking_daily_rates').select('target_date, amount, is_manual_override').eq('booking_id', room.booking_id),
+        supabase.from('booking_daily_rates').select('target_date, amount, is_manual_override').eq('booking_id', room.booking_id).order('target_date', { ascending: true }),
+        supabase.from('booking_daily_extras').select('*').eq('booking_id', room.booking_id).order('target_date', { ascending: true }),
         supabase.from('bookings').select('guest_name, guest_phone, check_in_time, check_out_time, actual_price, guest_count, staff_name').eq('id', room.booking_id).maybeSingle(),
         supabase.from('system_settings').select('value').eq('key', `booking_meta_${room.booking_id}`).maybeSingle()
-      ]).then(([txRes, ratesRes, bookingRes, metaRes]) => {
+      ]).then(([txRes, ratesRes, extrasRes, bookingRes, metaRes]) => {
         const data = txRes.data || [];
         const ratesData = ratesRes.data || [];
+        const extrasData = extrasRes.data || [];
         const bRow = bookingRes.data;
         const meta: BookingMeta = (metaRes.data?.value as BookingMeta) || {};
 
         setBookingMeta(meta);
         setSavedDailyRates(ratesData);
 
-        const payments = data.filter(d => d.transaction_type === 'payment' && !d.category.includes('Voided'));
-        setPastPayments(payments);
+        if (bRow?.staff_name) {
+          setStaffName(bRow.staff_name);
+        }
+
+        const rawPayments = data.filter(d => d.transaction_type === 'payment' && !d.category.includes('Voided'));
+        const changeRefunds = data.filter(d => d.category.includes('คืนเงินทอน') && !d.category.includes('Voided') && Number(d.amount) < 0);
+        setPastPayments([...rawPayments, ...changeRefunds]);
         
         // Check if active key deposit charge exists
         const activeDeposits = data.filter(d => !d.category.includes('Voided') && Number(d.amount) > 0 && (d.transaction_type === 'deposit' || d.category === 'ค่ามัดจำกุญแจ' || d.category === 'key_deposit'));
@@ -1209,12 +1412,66 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           setExistingDepositTx(null);
         }
         
-        // Load existing extra charges using whitelist
+        // Load existing extra charges from booking_daily_extras (per-night) + ledger_transactions (one-time)
+        const stayDates = ratesData.length > 0
+          ? ratesData.map(r => r.target_date)
+          : Array.from(new Set(extrasData.map((e: any) => e.target_date)));
+
+        const groupedByCat: Record<string, any[]> = {};
+        extrasData.forEach((row: any) => {
+          const baseName = String(row.category || '').replace(' (Voided)', '').trim();
+          if (!baseName) return;
+          if (!groupedByCat[baseName]) groupedByCat[baseName] = [];
+          groupedByCat[baseName].push(row);
+        });
+
+        const reconstructedPerNightExtras: any[] = Object.entries(groupedByCat).map(([baseName, rows]) => {
+          const matchedSetting = extraSettings.find(s => s.name === baseName);
+          const firstRowAmt = Number(rows[0]?.amount || 0);
+          const qtyMatch = rows[0]?.description?.match(/x(\d+)/);
+          const firstRowQty = qtyMatch ? Math.max(1, Number(qtyMatch[1])) : 1;
+          const unitPrice = matchedSetting ? Number(matchedSetting.price) : Math.round(firstRowAmt / firstRowQty);
+
+          const allDates = stayDates.length > 0 ? stayDates : Array.from(new Set(rows.map(r => r.target_date)));
+          const dailySchedule = allDates.map(d => {
+            const r = rows.find(row => row.target_date === d);
+            if (!r) {
+              return { date: d, enabled: false, qty: 1, isSaved: true, isVoided: false };
+            }
+            const isVoid = String(r.category || '').includes('(Voided)');
+            const rQtyMatch = r.description?.match(/x(\d+)/);
+            const rQty = rQtyMatch ? Math.max(1, Number(rQtyMatch[1])) : (unitPrice > 0 ? Math.max(1, Math.round(Number(r.amount) / unitPrice)) : 1);
+            return {
+              date: d,
+              enabled: !isVoid,
+              qty: rQty,
+              dbId: r.id,
+              isSaved: true,
+              isVoided: isVoid,
+              voidNote: r.description
+            };
+          });
+
+          const savedTotal = dailySchedule.reduce((s, d) => (!d.enabled || d.isVoided) ? s : s + unitPrice * d.qty, 0);
+          return {
+            id: `daily_ext_${baseName}`,
+            name: baseName,
+            price: unitPrice,
+            qty: 1,
+            isPerNight: true,
+            dailySchedule,
+            savedAmount: savedTotal,
+            isSaved: true
+          };
+        });
+
+        const perNightCategorySet = new Set(Object.keys(groupedByCat));
         const allowedExtraNames = extraSettings.map(s => s.name);
-        const existingExtras = data.filter(d => 
+        const existingOneTimeExtras = data.filter(d => 
           d.transaction_type === 'revenue' && 
           !d.category.includes('(Voided)') &&
-          (allowedExtraNames.includes(d.category) || (!['room_charge', 'ค่าห้องพัก', 'ค่ามัดจำกุญแจ', 'key_deposit', 'early_in_fee', 'late_out_fee'].includes(d.category) && !d.category.includes('ค่าห้องพัก')))
+          !perNightCategorySet.has(d.category.trim()) &&
+          (allowedExtraNames.includes(d.category) || (!['room_charge', 'ค่าห้องพัก', 'ค่ามัดจำกุญแจ', 'key_deposit', 'early_in_fee', 'late_out_fee'].includes(d.category) && !d.category.includes('ค่าห้องพัก') && !d.category.includes('ออกช้า')))
         ).map(d => ({
           id: d.id,
           name: d.category,
@@ -1224,8 +1481,10 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           savedAmount: d.amount,
           isSaved: true
         }));
-        if (existingExtras.length > 0) {
-          setDailyExtras(existingExtras);
+
+        const allLoadedExtras = [...reconstructedPerNightExtras, ...existingOneTimeExtras];
+        if (allLoadedExtras.length > 0) {
+          setDailyExtras(allLoadedExtras);
         }
 
         const resolvedStayType: 'overnight' | 'short_stay' = meta.targetPrices?.stayType || (room.stay_type === 'short_stay' ? 'short_stay' : 'overnight');
@@ -2165,19 +2424,129 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                   )}
 
                   {dailyExtras.length > 0 && (
-                    <div className="mt-2 space-y-1 bg-slate-50/80 p-2 rounded-xl border border-slate-100 text-xs">
-                      {dailyExtras.map(ext => (
-                        <div key={ext.id} className="flex justify-between items-center bg-white p-1.5 px-2 rounded-lg border border-slate-200">
-                          <span className="font-semibold text-slate-700">{ext.name} {ext.isPerNight ? '(ต่อคืน)' : ''}</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-slate-500 font-bold">x{ext.qty || 1}</span>
-                            <span className="font-black text-indigo-900">฿{extraLineTotal(ext)}</span>
-                            {(room.status !== 'occupied' || extrasManagerUnlocked) && (
-                              <button type="button" onClick={() => handleRemoveExtra(ext.id)} className="text-rose-500 font-bold ml-1 hover:text-rose-700">✕</button>
+                    <div className="mt-2 space-y-2 bg-slate-50/80 p-2 rounded-xl border border-slate-100 text-xs">
+                      {dailyExtras.map(ext => {
+                        const hasMultiDaySchedule = ext.isPerNight && Array.isArray(ext.dailySchedule) && ext.dailySchedule.length > 1;
+                        const activeDaysCount = hasMultiDaySchedule
+                          ? ext.dailySchedule.filter((d: any) => d.enabled && !d.isVoided).length
+                          : 1;
+
+                        return (
+                          <div key={ext.id} className="bg-white p-2 rounded-lg border border-slate-200 space-y-1.5">
+                            <div className="flex justify-between items-center">
+                              <div className="flex flex-col">
+                                <span className="font-bold text-slate-800">
+                                  {ext.name} {ext.isPerNight ? <span className="text-[11px] font-semibold text-indigo-600">(฿{Number(ext.price).toLocaleString()}/คืน)</span> : ''}
+                                </span>
+                                {hasMultiDaySchedule && (
+                                  <span className="text-[10px] text-slate-500">
+                                    เลือก {activeDaysCount} จาก {ext.dailySchedule.length} คืน (ติ๊กเลือก/ยกเลิกรายวันได้)
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {!hasMultiDaySchedule && (
+                                  <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-md px-1 py-0.5">
+                                    <button
+                                      type="button"
+                                      disabled={isBookingLocked || (Number(ext.qty) || 1) <= 1}
+                                      onClick={() => handleChangeExtraQty(ext.id, -1)}
+                                      className="w-4 h-4 flex items-center justify-center text-slate-600 hover:text-indigo-700 font-bold disabled:opacity-30"
+                                    >
+                                      -
+                                    </button>
+                                    <span className="w-4 text-center font-bold text-slate-800">{ext.qty || 1}</span>
+                                    <button
+                                      type="button"
+                                      disabled={isBookingLocked}
+                                      onClick={() => handleChangeExtraQty(ext.id, 1)}
+                                      className="w-4 h-4 flex items-center justify-center text-slate-600 hover:text-indigo-700 font-bold disabled:opacity-30"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                )}
+                                <span className="font-black text-indigo-900">฿{extraLineTotal(ext).toLocaleString()}</span>
+                                {(room.status !== 'occupied' || extrasManagerUnlocked) && (
+                                  <button type="button" onClick={() => handleRemoveExtra(ext.id)} className="text-rose-500 font-bold ml-1 hover:text-rose-700">✕</button>
+                                )}
+                              </div>
+                            </div>
+
+                            {hasMultiDaySchedule && (
+                              <div className="pt-1.5 border-t border-slate-100 space-y-1">
+                                {ext.dailySchedule.map((day: any, dIdx: number) => {
+                                  const dObj = new Date(day.date);
+                                  const dateLabel = dObj.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' });
+                                  const dayTotal = day.enabled && !day.isVoided ? Number(ext.price) * (Number(day.qty) || 1) : 0;
+                                  const isFutureDay = dIdx > 0;
+                                  return (
+                                    <div
+                                      key={day.date}
+                                      className={`flex items-center justify-between px-2 py-1 rounded-md text-[11px] ${
+                                        day.isVoided
+                                          ? 'bg-rose-50/60 text-slate-400'
+                                          : day.enabled
+                                          ? 'bg-indigo-50/40 text-slate-700'
+                                          : 'bg-slate-50 text-slate-400'
+                                      }`}
+                                    >
+                                      <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                                        <input
+                                          type="checkbox"
+                                          checked={Boolean(day.enabled && !day.isVoided)}
+                                          disabled={isBookingLocked || Boolean(day.isVoided)}
+                                          onChange={() => handleToggleExtraDay(ext.id, day.date)}
+                                          className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                        />
+                                        <span className={`font-semibold ${day.isVoided ? 'line-through text-slate-400' : ''}`}>
+                                          คืนที่ {dIdx + 1} ({dateLabel})
+                                        </span>
+                                        {isFutureDay && day.enabled && !day.isVoided && (
+                                          <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">
+                                            รอตัดบิลวันจริง
+                                          </span>
+                                        )}
+                                        {day.isVoided && (
+                                          <span className="text-[10px] text-rose-500 font-bold no-underline">
+                                            (ยกเลิกแล้ว)
+                                          </span>
+                                        )}
+                                      </label>
+                                      <div className="flex items-center gap-2">
+                                        {day.enabled && !day.isVoided && (
+                                          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-md px-1 py-0.5">
+                                            <button
+                                              type="button"
+                                              disabled={isBookingLocked || (Number(day.qty) || 1) <= 1}
+                                              onClick={() => handleChangeExtraDayQty(ext.id, day.date, -1)}
+                                              className="w-4 h-4 flex items-center justify-center text-slate-600 hover:text-indigo-700 font-bold disabled:opacity-30"
+                                            >
+                                              -
+                                            </button>
+                                            <span className="w-4 text-center font-bold text-slate-800">{day.qty || 1}</span>
+                                            <button
+                                              type="button"
+                                              disabled={isBookingLocked}
+                                              onClick={() => handleChangeExtraDayQty(ext.id, day.date, 1)}
+                                              className="w-4 h-4 flex items-center justify-center text-slate-600 hover:text-indigo-700 font-bold disabled:opacity-30"
+                                            >
+                                              +
+                                            </button>
+                                          </div>
+                                        )}
+                                        <span className={`w-14 text-right font-bold ${day.isVoided ? 'line-through text-slate-400' : day.enabled ? 'text-indigo-900' : 'text-slate-400'}`}>
+                                          ฿{dayTotal.toLocaleString()}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             )}
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -2474,13 +2843,13 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
               {/* พนักงานผู้ทำรายการ */}
               <div className="flex items-center justify-between gap-2 px-1 text-xs">
-                <span className="text-slate-500">พนักงาน:</span>
+                <span className="text-slate-500">พนักงานผู้ทำรายการ:</span>
                 <input 
                   type="text" 
                   value={staffName} 
                   onChange={(e) => setStaffName(e.target.value)} 
                   disabled={isBookingLocked}
-                  placeholder={activeShift?.staff_name || "ชื่อพนักงาน"}
+                  placeholder={operatorName || activeShift?.staff_name || "ชื่อพนักงาน"}
                   className="border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 bg-white max-w-[160px] text-right"
                 />
               </div>

@@ -34,9 +34,15 @@ export function computeDeposit(txs: LedgerLike[]): DepositSummary {
     .filter(t => Number(t.amount) > 0 && !isDepositCat(t))
     .reduce((s, t) => s + Number(t.amount), 0);
 
-  const cash = valid
+  const rawCash = valid
     .filter(t => t.transaction_type === 'payment' && Number(t.amount) < 0)
     .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+
+  const changeRefunded = valid
+    .filter(t => t.category.includes('คืนเงินทอน') && Number(t.amount) < 0)
+    .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+
+  const cash = Math.max(0, rawCash - changeRefunded);
 
   const refunded = valid
     .filter(t => t.category.includes('คืนมัดจำกุญแจ'))

@@ -26,7 +26,8 @@ interface BillingModalProps {
 }
 
 export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuccess }: BillingModalProps) {
-  const { activeShift, refreshShift } = useShift();
+  const { activeShift, operatorName, refreshShift } = useShift();
+  const effectiveStaffName = operatorName || activeShift?.staff_name || 'Admin';
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [posItems, setPosItems] = useState<PosItem[]>([]);
@@ -62,6 +63,12 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   const [roomPinError, setRoomPinError] = useState<string>('');
   const [editingRoomTxAmounts, setEditingRoomTxAmounts] = useState<Record<string, number | ''>>({});
 
+  // Admin/Manager PIN modal for cancelling future extra charges (with Option A: refund cash today vs keep credit)
+  const [cancellingExtra, setCancellingExtra] = useState<any | null>(null);
+  const [cancelExtraPin, setCancelExtraPin] = useState<string>('');
+  const [cancelExtraError, setCancelExtraError] = useState<string>('');
+  const [cancelExtraRefundMode, setCancelExtraRefundMode] = useState<'refund_now' | 'keep_credit'>('refund_now');
+
   const { getNow } = useSimulatedTime();
 
   useEffect(() => {
@@ -80,11 +87,55 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
       supabase.from('system_settings').select('value').eq('key', 'bank_accounts').maybeSingle()
     ]);
     
-    const txs = txRes.data || [];
+    const txs = [...(txRes.data || [])];
+    const ratesList = ratesRes?.data || [];
+    const extrasList = extrasRes?.data || [];
+
+    // Auto-post any due booking_daily_extras (target_date <= current business date) that haven't been posted to ledger yet
+    const nowDt = getNow();
+    const cutoffDt = new Date(nowDt);
+    if (nowDt.getHours() < 9 || (nowDt.getHours() === 9 && nowDt.getMinutes() < 45)) {
+      cutoffDt.setDate(cutoffDt.getDate() - 1);
+    }
+    const currentBizDateStr = cutoffDt.toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+    const allStayDates = [
+      ...ratesList.map((r: any) => String(r.target_date)),
+      ...extrasList.map((e: any) => String(e.target_date))
+    ].filter(Boolean).sort();
+    const firstStayDate = allStayDates[0] || '';
+
+    for (const ext of extrasList) {
+      const isVoid = String(ext.category || '').includes('(Voided)');
+      if (isVoid || !ext.target_date || String(ext.target_date) > currentBizDateStr || Number(ext.amount) <= 0) continue;
+      const baseCat = String(ext.category || '').replace(' (Voided)', '').trim();
+      const alreadyPosted = txs.some(t =>
+        t.transaction_type === 'revenue' &&
+        String(t.category || '').replace(' (Voided)', '').trim() === baseCat &&
+        (String(t.notes || '').includes(ext.target_date) || (ext.target_date === firstStayDate && !String(t.notes || '').includes('ประจำวันที่ ')))
+      );
+      if (!alreadyPosted) {
+        const qtyMatch = String(ext.description || '').match(/x(\d+)/);
+        const qtySuffix = qtyMatch ? ` (x${qtyMatch[1]})` : '';
+        const { data: newExtraTx } = await supabase.from('ledger_transactions').insert({
+          shift_id: activeShift?.id && activeShift.id !== 'dummy-shift-id' ? activeShift.id : null,
+          staff_name: effectiveStaffName || 'SYSTEM',
+          room_id: roomId,
+          booking_id: bookingId,
+          transaction_type: 'revenue',
+          category: baseCat,
+          notes: `ประจำวันที่ ${ext.target_date}${qtySuffix}`,
+          amount: Number(ext.amount)
+        }).select('*').single();
+        if (newExtraTx) {
+          txs.push(newExtraTx);
+        }
+      }
+    }
+
     setTransactions(txs);
     if (posRes.data) setPosItems(posRes.data);
-    if (ratesRes?.data) setDailyRates(ratesRes.data);
-    if (extrasRes?.data) setDailyExtras(extrasRes.data);
+    setDailyRates(ratesList);
+    setDailyExtras(extrasList);
     if (metaRes?.data?.value) setBookingMeta(metaRes.data.value as BookingMeta);
     if (bankRes?.data && Array.isArray(bankRes.data.value) && bankRes.data.value.length > 0) {
       setBankAccounts(bankRes.data.value);
@@ -163,22 +214,33 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
 
   // --- PROJECTED TOTAL CALCULATION ---
   const validTxs = transactions.filter(t => !t.category.includes('Voided'));
-  const totalPaid = validTxs.filter(t => t.amount < 0 && t.transaction_type === 'payment').reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  const rawPaid = validTxs.filter(t => t.amount < 0 && t.transaction_type === 'payment').reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  const changeRefundedTotal = validTxs.filter(t => t.amount < 0 && t.category.includes('คืนเงินทอน')).reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  const totalPaid = Math.max(0, rawPaid - changeRefundedTotal);
   const totalPostedCharges = validTxs.filter(t => t.amount > 0 && !t.category.includes('มัดจำกุญแจ')).reduce((sum, t) => sum + Number(t.amount), 0);
   const totalKeyDeposit = validTxs.filter(t => t.category.includes('มัดจำกุญแจ')).reduce((sum, t) => sum + Number(t.amount), 0);
   const depositReceivedTotal = validTxs.filter(t => t.category.includes('มัดจำกุญแจ') && Number(t.amount) > 0).reduce((sum, t) => sum + Number(t.amount), 0);
-  // สูตรกลาง: ค่าใช้จ่ายชำระครบก่อน เงินที่เหลือจึงนับเป็นมัดจำ (ดู src/lib/depositMath.ts)
-  const dep = computeDeposit(transactions);
-  const depositHeldNow = dep.held;
-  const depositRefundedTotal = dep.refunded;
-  const depositAppliedTotal = 0;
 
-  // Date in YYYY-MM-DD for Asia/Bangkok
-  const todayStr = getNow().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+  // Date in YYYY-MM-DD for Asia/Bangkok (based on 09:45 business cutoff)
+  const todayStr = businessCutoff.toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
 
   // Calculate future unposted charges
   const futureRates = dailyRates.filter(r => r.target_date > todayStr).reduce((sum, r) => sum + Number(r.amount), 0);
-  const futureExtras = dailyExtras.filter(e => e.target_date > todayStr).reduce((sum, e) => sum + Number(e.amount), 0);
+  const allDailyExtraRows = [...dailyExtras].sort((a, b) => String(a.target_date).localeCompare(String(b.target_date)));
+  const futureExtraRows = allDailyExtraRows.filter(e => e.target_date > todayStr);
+  const activeFutureExtraRows = futureExtraRows.filter(e => !String(e.category || '').includes('(Voided)'));
+  const futureExtras = activeFutureExtraRows.reduce((sum, e) => sum + Number(e.amount), 0);
+
+  // สูตรกลาง: ค่าใช้จ่ายชำระครบก่อน (รวมรายการล่วงหน้าที่ยังไม่ถึงวัน) เงินที่เหลือจึงนับเป็นมัดจำ (ดู src/lib/depositMath.ts)
+  const dep = computeDeposit([
+    ...transactions,
+    ...(futureRates + futureExtras > 0
+      ? [{ transaction_type: 'revenue', category: 'future_scheduled', amount: futureRates + futureExtras }]
+      : []),
+  ]);
+  const depositHeldNow = dep.held;
+  const depositRefundedTotal = dep.refunded;
+  const depositAppliedTotal = 0;
   
     // To avoid duplicate counting if someone clicks POS repeatedly, 
   // we count all past/today posted charges from ledger, plus ONLY future unposted from daily tables.
@@ -214,7 +276,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     
     const { error } = await supabase.from('ledger_transactions').insert({
       shift_id: activeShift.id,
-      staff_name: activeShift.staff_name,
+      staff_name: effectiveStaffName,
       room_id: roomId,
       booking_id: bookingId,
       transaction_type: 'revenue',
@@ -232,7 +294,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     setLoading(true);
     const { error } = await supabase.from('ledger_transactions').insert({
       shift_id: activeShift.id,
-      staff_name: activeShift.staff_name,
+      staff_name: effectiveStaffName,
       room_id: roomId,
       booking_id: bookingId,
       transaction_type: 'revenue',
@@ -256,7 +318,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     if (oldDepAmt === newDepAmt) return;
 
     setLoading(true);
-    const editor = activeShift.staff_name;
+    const editor = effectiveStaffName;
     const nowIso = getNow().toISOString();
 
     if (newDepAmt > 0) {
@@ -268,7 +330,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
         if (error) { alert('แก้ไขมัดจำไม่สำเร็จ: ' + error.message); setLoading(false); return; }
       } else {
         const { error } = await supabase.from('ledger_transactions').insert({
-          shift_id: activeShift.staff_role === 'staff' ? null : activeShift.id,
+          shift_id: activeShift.id === 'dummy-shift-id' ? null : activeShift.id,
           staff_name: editor,
           room_id: roomId,
           booking_id: bookingId,
@@ -372,6 +434,128 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     setLoading(false);
   };
 
+  const extraAmtToCancel = Number(cancellingExtra?.amount || 0);
+  const totalObligationsBeforeCancel = totalPostedCharges + futureRates + futureExtras + dep.held;
+  const chargesAfterCancellingExtra = Math.max(0, totalObligationsBeforeCancel - extraAmtToCancel);
+  const prepaidRefundableForCancelling = Math.min(extraAmtToCancel, Math.max(0, totalPaid - chargesAfterCancellingExtra));
+
+  const openCancelFutureExtraModal = (extRow: any) => {
+    setCancellingExtra(extRow);
+    setCancelExtraPin('');
+    setCancelExtraError('');
+    setCancelExtraRefundMode('refund_now');
+  };
+
+  const handleConfirmCancelFutureExtra = async () => {
+    if (!cancellingExtra) return;
+    if (!cancelExtraPin) {
+      setCancelExtraError('กรุณากรอกรหัส PIN ผู้จัดการ/Admin');
+      return;
+    }
+    if (!activeShift) {
+      alert('กรุณาเปิดกะก่อนทำรายการ');
+      return;
+    }
+    setLoading(true);
+    setCancelExtraError('');
+    const { data: staffData, error: staffErr } = await supabase
+      .from('staff')
+      .select('role, name')
+      .eq('pin', cancelExtraPin)
+      .maybeSingle();
+
+    if (staffErr || !staffData || (staffData.role !== 'admin' && staffData.role !== 'manager')) {
+      setLoading(false);
+      setCancelExtraError('รหัส PIN ไม่ถูกต้อง หรือไม่มีสิทธิ์ (ต้องเป็น Admin/Manager)');
+      return;
+    }
+
+    const approverName = staffData.name || staffData.role || 'Admin';
+    const baseCat = String(cancellingExtra.category || '').replace(' (Voided)', '').trim();
+    const targetDate = String(cancellingExtra.target_date || '');
+    const cancelAmt = Number(cancellingExtra.amount || 0);
+    const refundAmt = prepaidRefundableForCancelling;
+    const isRefundingCashNow = refundAmt > 0 && cancelExtraRefundMode === 'refund_now';
+
+    const statusTag = refundAmt > 0
+      ? (isRefundingCashNow ? `คืนเงินสดทันที ฿${refundAmt.toLocaleString()}` : `พักเครดิตไว้หักลบ ฿${refundAmt.toLocaleString()}`)
+      : 'ยังไม่ได้รับชำระล่วงหน้า';
+
+    // 1. Mark booking_daily_extras row as (Voided)
+    await supabase
+      .from('booking_daily_extras')
+      .update({
+        category: `${baseCat} (Voided)`,
+        description: `${cancellingExtra.description || `บริการเสริมรายวัน (${targetDate})`} [ยกเลิกโดย ${approverName} • ${statusTag}]`
+      })
+      .eq('id', cancellingExtra.id);
+
+    // 2. If this daily extra was already posted to ledger_transactions, void that ledger row too
+    const allStayDates = [
+      ...dailyRates.map((r: any) => String(r.target_date)),
+      ...dailyExtras.map((e: any) => String(e.target_date))
+    ].filter(Boolean).sort();
+    const firstStayDate = allStayDates[0] || '';
+
+    const matchingPostedTx = transactions.find(t =>
+      t.transaction_type === 'revenue' &&
+      !String(t.category || '').includes('(Voided)') &&
+      String(t.category || '').trim() === baseCat &&
+      (
+        String(t.notes || '').includes(targetDate) ||
+        (targetDate === firstStayDate && !String(t.notes || '').includes('ประจำวันที่ ') && Number(t.amount) === cancelAmt)
+      )
+    );
+
+    if (matchingPostedTx) {
+      await supabase
+        .from('ledger_transactions')
+        .update({
+          category: `${baseCat} (Voided)`,
+          notes: `${matchingPostedTx.notes ? matchingPostedTx.notes + ' • ' : ''}ยกเลิกโดย ${approverName} (${statusTag})`
+        })
+        .eq('id', matchingPostedTx.id);
+    }
+
+    // 3. Option A1: If customer prepaid and Admin chose immediate cash refund, record negative deposit ('คืนเงินทอน')
+    if (isRefundingCashNow) {
+      await supabase.from('ledger_transactions').insert({
+        shift_id: activeShift.id === 'dummy-shift-id' ? null : activeShift.id,
+        staff_name: effectiveStaffName,
+        room_id: roomId,
+        booking_id: bookingId,
+        transaction_type: 'deposit',
+        category: `คืนเงินทอน (ยกเลิก${baseCat} ${targetDate})`,
+        amount: -refundAmt,
+        notes: `คืนเงินสดทันทีจากการยกเลิก ${baseCat} วันที่ ${targetDate} (อนุมัติโดย ${approverName} / ทำรายการโดย ${effectiveStaffName})`
+      });
+    }
+
+    // 4. Save audit history in booking_meta
+    const nowIso = getNow().toISOString();
+    const nextHistory: Record<string, FieldEditEntry[]> = { ...(bookingMeta.history || {}) };
+    const histKey = `extra_${targetDate}`;
+    nextHistory[histKey] = [
+      ...(nextHistory[histKey] || []),
+      {
+        oldValue: `${baseCat} (${targetDate}) ฿${cancelAmt.toLocaleString()}`,
+        newValue: `ยกเลิก ฿0 (${statusTag})`,
+        by: approverName,
+        at: nowIso
+      }
+    ];
+    const updatedMeta: BookingMeta = { ...bookingMeta, history: nextHistory };
+    await supabase.from('system_settings').upsert({ key: `booking_meta_${bookingId}`, value: updatedMeta }, { onConflict: 'key' });
+    setBookingMeta(updatedMeta);
+
+    setCancellingExtra(null);
+    setCancelExtraPin('');
+    setCancelExtraError('');
+    refreshShift();
+    await fetchData();
+    setLoading(false);
+  };
+
   const handleScanSlip = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -417,12 +601,12 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     
     setLoading(true);
     const inserts = [];
-    if (cash > 0) inserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: roomId, booking_id: bookingId, transaction_type: 'payment', category: 'cash', amount: -cash });
+    if (cash > 0) inserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: roomId, booking_id: bookingId, transaction_type: 'payment', category: 'cash', amount: -cash });
     if (transfer > 0) {
       const transferNote = `[BANK:${selectedBank || 'SCB'}]${paymentTime ? ` โอนเวลา: ${paymentTime.replace('T', ' ')}` : ''}`;
-      inserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: roomId, booking_id: bookingId, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: transferNote });
+      inserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: roomId, booking_id: bookingId, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: transferNote });
     }
-    if (credit > 0) inserts.push({ shift_id: activeShift.id, staff_name: activeShift.staff_name, room_id: roomId, booking_id: bookingId, transaction_type: 'payment', category: 'credit_card', amount: -credit });
+    if (credit > 0) inserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: roomId, booking_id: bookingId, transaction_type: 'payment', category: 'credit_card', amount: -credit });
     
     const { error } = await supabase.from('ledger_transactions').insert(inserts);
     
@@ -599,6 +783,77 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                     })()
                   )}
                 </div>
+
+              {allDailyExtraRows.length > 0 && (
+                <div className="mx-2 mb-2 p-2.5 text-xs border border-indigo-200 bg-indigo-50/70 rounded-xl space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <p className="font-black text-indigo-900 flex items-center gap-1.5">
+                      <span>⏳</span> รายการบริการเสริมรายวัน / ล่วงหน้า
+                    </p>
+                    <span className="text-[10px] font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full">
+                      รอตัดบิล ฿{futureExtras.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    {allDailyExtraRows.map((extRow: any) => {
+                      const isVoid = String(extRow.category || '').includes('(Voided)');
+                      const isFuture = String(extRow.target_date || '') > todayStr;
+                      const baseCat = String(extRow.category || '').replace(' (Voided)', '').trim();
+                      const formattedDate = extRow.target_date
+                        ? new Date(`${extRow.target_date}T00:00:00`).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                        : '-';
+                      return (
+                        <div
+                          key={extRow.id}
+                          className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border ${
+                            isVoid
+                              ? 'bg-slate-100/80 border-slate-200 text-slate-400'
+                              : isFuture
+                              ? 'bg-white border-indigo-200 text-slate-800'
+                              : 'bg-slate-50 border-slate-200 text-slate-700'
+                          }`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`font-bold ${isVoid ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+                                {formattedDate}: {baseCat}
+                              </span>
+                              <span
+                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                  isVoid
+                                    ? 'bg-rose-100 text-rose-700'
+                                    : isFuture
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-emerald-100 text-emerald-800'
+                                }`}
+                              >
+                                {isVoid ? 'ยกเลิกแล้ว' : isFuture ? 'รอตัดเข้าบิล' : 'ตัดเข้าบิลแล้ว'}
+                              </span>
+                            </div>
+                            {extRow.description && (
+                              <p className="text-[10px] text-slate-500 truncate mt-0.5">{extRow.description}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className={`font-black ${isVoid ? 'line-through text-slate-400' : 'text-indigo-900'}`}>
+                              ฿{Number(extRow.amount || 0).toLocaleString()}
+                            </span>
+                            {!isVoid && (
+                              <button
+                                type="button"
+                                onClick={() => openCancelFutureExtraModal(extRow)}
+                                className="px-2 py-1 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-bold text-[11px] transition-colors"
+                              >
+                                ❌ ยกเลิก
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               
               {dep.target > 0 && (
                 <div className="mx-2 mb-2 p-2 text-xs border border-amber-200 bg-amber-50 rounded-lg space-y-0.5">
@@ -764,6 +1019,120 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                     <div className="flex gap-2 pt-2">
                       <button type="button" onClick={() => { setShowRoomPinPrompt(false); setRoomPinError(''); setRoomPin(''); }} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl transition-colors">ยกเลิก</button>
                       <button type="button" onClick={handleVerifyRoomPin} disabled={loading || !roomPin} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-bold py-3 px-4 rounded-xl transition-colors">ยืนยัน</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {cancellingExtra && (
+              <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[75] backdrop-blur-sm p-4" onClick={() => setCancellingExtra(null)}>
+                <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+                  <div className="bg-rose-600 p-4 text-white">
+                    <h3 className="font-black text-base flex items-center gap-2">
+                      <span>❌</span> ยกเลิกรายการบริการเสริมรายวัน (Admin/Manager)
+                    </h3>
+                    <p className="text-xs text-rose-100 mt-0.5">
+                      {String(cancellingExtra.category || '').replace(' (Voided)', '').trim()} • วันที่{' '}
+                      {cancellingExtra.target_date
+                        ? new Date(`${cancellingExtra.target_date}T00:00:00`).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                        : '-'}{' '}
+                      (฿{Number(cancellingExtra.amount || 0).toLocaleString()})
+                    </p>
+                  </div>
+
+                  <div className="p-4 space-y-4">
+                    {prepaidRefundableForCancelling > 0 ? (
+                      <div className="space-y-2 bg-amber-50 border border-amber-200 rounded-xl p-3">
+                        <p className="text-xs font-black text-amber-900">
+                          💡 ลูกค้าได้ชำระเงินล่วงหน้าครอบคลุมรายการนี้ไว้แล้ว ฿{prepaidRefundableForCancelling.toLocaleString()}
+                        </p>
+                        <p className="text-[11px] font-bold text-amber-800">กรุณาเลือกวิธีจัดการยอดเงิน ฿{prepaidRefundableForCancelling.toLocaleString()}:</p>
+                        <label
+                          className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors ${
+                            cancelExtraRefundMode === 'refund_now'
+                              ? 'bg-white border-emerald-500 ring-2 ring-emerald-500/20'
+                              : 'bg-white/70 border-amber-200 hover:bg-white'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="cancelExtraRefundMode"
+                            checked={cancelExtraRefundMode === 'refund_now'}
+                            onChange={() => setCancelExtraRefundMode('refund_now')}
+                            className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
+                          />
+                          <div className="text-xs">
+                            <p className="font-black text-slate-800">💵 คืนเงินสดให้ลูกค้าวันนี้ทันที (฿{prepaidRefundableForCancelling.toLocaleString()})</p>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              ระบบจะลงบันทึกจ่ายเงินสดคืนลูกค้า (-฿{prepaidRefundableForCancelling.toLocaleString()}) เพื่อตัดยอดเงินสดในลิ้นชักกะปัจจุบันให้ตรงกับเงินจริง
+                            </p>
+                          </div>
+                        </label>
+
+                        <label
+                          className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors ${
+                            cancelExtraRefundMode === 'keep_credit'
+                              ? 'bg-white border-blue-500 ring-2 ring-blue-500/20'
+                              : 'bg-white/70 border-amber-200 hover:bg-white'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="cancelExtraRefundMode"
+                            checked={cancelExtraRefundMode === 'keep_credit'}
+                            onChange={() => setCancelExtraRefundMode('keep_credit')}
+                            className="mt-0.5 text-blue-600 focus:ring-blue-500"
+                          />
+                          <div className="text-xs">
+                            <p className="font-black text-slate-800">🏦 พักยอดเครดิตไว้หักลบค่าใช้จ่ายอื่น / คืนตอนเช็คเอาท์</p>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              ยังไม่หยิบเงินสดออกจากลิ้นชักตอนนี้ (เก็บเครดิต ฿{prepaidRefundableForCancelling.toLocaleString()} ไว้หักลบ POS หรือคืนพร้อมมัดจำตอนเช็คเอาท์)
+                            </p>
+                          </div>
+                        </label>
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 font-medium">
+                        รายการนี้ยังไม่ได้รับชำระเงินล่วงหน้า เมื่อยกเลิกแล้วระบบจะตัดยอดที่ต้องชำระลดลง ฿{Number(cancellingExtra.amount || 0).toLocaleString()} ทันที
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">รหัส PIN ผู้จัดการ/Admin (กรอกทุกครั้งเพื่อยืนยัน)</label>
+                      <input
+                        type="password"
+                        value={cancelExtraPin}
+                        onChange={e => setCancelExtraPin(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg p-3 text-center text-xl font-mono tracking-widest focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                        placeholder="****"
+                        autoFocus
+                        maxLength={6}
+                      />
+                    </div>
+
+                    {cancelExtraError && (
+                      <div className="p-3 bg-red-50 text-red-600 text-xs rounded-lg border border-red-100 font-bold">
+                        {cancelExtraError}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => { setCancellingExtra(null); setCancelExtraPin(''); setCancelExtraError(''); }}
+                        className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl transition-colors text-sm"
+                      >
+                        ปิด
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleConfirmCancelFutureExtra}
+                        disabled={loading || !cancelExtraPin}
+                        className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white font-black py-3 px-4 rounded-xl transition-colors text-sm shadow-sm"
+                      >
+                        {loading ? 'กำลังบันทึก...' : 'ยืนยันยกเลิกรายการ'}
+                      </button>
                     </div>
                   </div>
                 </div>

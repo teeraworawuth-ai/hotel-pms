@@ -56,13 +56,20 @@ export async function POST(req: Request) {
         }
       }
 
-      const chargeAmount = room.actual_price || room.price_night || 0;
-      if (chargeAmount <= 0) continue;
+      // Check if a daily rate is defined for todayStr
+      const { data: todayRateRow } = await supabase
+        .from('booking_daily_rates')
+        .select('amount')
+        .eq('booking_id', booking.id)
+        .eq('target_date', todayStr)
+        .maybeSingle();
+
+      const chargeAmount = todayRateRow?.amount != null ? Number(todayRateRow.amount) : (room.actual_price || room.price_night || 0);
 
       // Check if a room_charge has already been posted TODAY for this booking
       const { data: existingCharges, error: txError } = await supabase
         .from('ledger_transactions')
-        .select('id, category')
+        .select('id, category, notes')
         .eq('booking_id', booking.id)
         .gte('created_at', `${todayStr}T00:00:00.000Z`)
         .lte('created_at', `${todayStr}T23:59:59.999Z`);
@@ -87,10 +94,52 @@ export async function POST(req: Request) {
             amount: chargeAmount
           });
   
-                if (insertError) {
+        if (insertError) {
           console.error('Error posting charge:', insertError);
         } else {
           postedCount++;
+        }
+      }
+
+      // Also post any active booking_daily_extras scheduled for todayStr
+      const { data: todayExtras } = await supabase
+        .from('booking_daily_extras')
+        .select('*')
+        .eq('booking_id', booking.id)
+        .eq('target_date', todayStr);
+
+      if (todayExtras && todayExtras.length > 0) {
+        const { data: allBookingRevenueTxs } = await supabase
+          .from('ledger_transactions')
+          .select('id, category, notes')
+          .eq('booking_id', booking.id)
+          .eq('transaction_type', 'revenue');
+
+        for (const ext of todayExtras) {
+          if (String(ext.category || '').includes('(Voided)') || Number(ext.amount) <= 0) continue;
+          const baseCat = String(ext.category || '').replace(' (Voided)', '').trim();
+          const alreadyPosted = (allBookingRevenueTxs || []).some(tx =>
+            String(tx.category || '').replace(' (Voided)', '').trim() === baseCat &&
+            String(tx.notes || '').includes(todayStr)
+          );
+          if (!alreadyPosted) {
+            const qtyMatch = String(ext.description || '').match(/x(\d+)/);
+            const qtySuffix = qtyMatch ? ` (x${qtyMatch[1]})` : '';
+            const { error: extraInsErr } = await supabase
+              .from('ledger_transactions')
+              .insert({
+                staff_name: simulatedDate ? 'SYSTEM (Simulated)' : 'SYSTEM (Night Audit)',
+                room_id: booking.room_id,
+                booking_id: booking.id,
+                transaction_type: 'revenue',
+                category: baseCat,
+                notes: `ประจำวันที่ ${todayStr}${qtySuffix}`,
+                amount: Number(ext.amount)
+              });
+            if (!extraInsErr) {
+              postedCount++;
+            }
+          }
         }
       }
     }

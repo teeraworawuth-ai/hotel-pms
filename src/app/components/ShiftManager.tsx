@@ -10,7 +10,7 @@ interface ShiftManagerProps {
 }
 
 export default function ShiftManager({ compact = false, hideExpense = false }: ShiftManagerProps = {}) {
-  const { activeShift, loading, refreshShift } = useShift();
+  const { activeShift, currentUser, operatorName, loading, refreshShift } = useShift();
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
   
@@ -232,7 +232,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
 
     const { error } = await supabase.from('ledger_transactions').insert({
       shift_id: activeShift.id,
-      staff_name: activeShift.staff_name,
+      staff_name: operatorName || activeShift.staff_name,
       transaction_type: 'expense',
       category: expenseReason.trim(),
       amount: -Number(expenseAmount) // Expense removes cash from drawer
@@ -277,7 +277,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
         <div className="flex items-center gap-1.5 sm:gap-2 text-xs">
           <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 px-2 sm:px-2.5 py-1 rounded-xl">
             <span className="text-slate-500 font-medium">กะ:</span>
-            <span className="font-bold text-slate-800">{activeShift.staff_name}</span>
+            <span className="font-bold text-slate-800">{activeShift.staff_name}</span>{currentUser?.name && currentUser.name !== activeShift.staff_name && <span className="text-indigo-700 font-bold">({currentUser.name})</span>}
             <span className="text-slate-300">|</span>
             <span className="text-emerald-600 font-bold">฿{activeShift.expected_cash.toLocaleString()}</span>
           </div>
@@ -299,7 +299,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       ) : (
         <div className="flex items-center gap-3">
           <div className="text-right hidden sm:block">
-            <div className="text-xs text-slate-500 font-medium">กะปัจจุบัน: <span className="text-slate-800 font-bold">{activeShift.staff_name}</span></div>
+            <div className="text-xs text-slate-500 font-medium">กะปัจจุบัน: <span className="text-slate-800 font-bold">{activeShift.staff_name}</span>{currentUser?.name && currentUser.name !== activeShift.staff_name && <span className="text-indigo-700 font-bold ml-1">(ผู้ใช้: {currentUser.name})</span>}</div>
             <div className="text-[10px] text-emerald-600 font-bold">เงินในลิ้นชัก: ฿{activeShift.expected_cash.toLocaleString()}</div>
           </div>
           <button 
