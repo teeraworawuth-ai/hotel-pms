@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { useShift } from '@/contexts/ShiftContext';
 import { useSimulatedTime } from '@/contexts/SimulatedTimeContext';
 import { computeDeposit } from '@/lib/depositMath';
+import { logActivity } from '@/lib/activityLog';
 
 type PosItem = { id: string, name: string, default_price: number };
 type Transaction = { id: string, transaction_type: string, category: string, amount: number, created_at: string, staff_name: string, notes?: string };
@@ -284,13 +285,26 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
       amount: item.default_price
     });
     
-    if (!error) fetchData();
+    if (!error) {
+      await logActivity({
+        category: 'billing',
+        action: 'create',
+        staffName: effectiveStaffName,
+        shiftName: activeShift?.staff_name || null,
+        roomNo,
+        target: `ห้อง ${roomNo} • ${item.name}`,
+        details: `เพิ่มรายการ POS "${item.name}" ราคา ฿${Number(item.default_price).toLocaleString()} เข้าบิลห้อง ${roomNo}`
+      });
+      fetchData();
+    }
   };
 
   const handleAddCustomPos = async () => {
     if (!activeShift) { alert('กรุณาเปิดกะก่อนทำรายการ'); return; }
     if (!customItemName.trim() || !customItemPrice || Number(customItemPrice) <= 0) return;
     
+    const itemName = customItemName.trim();
+    const itemAmt = Number(customItemPrice);
     setLoading(true);
     const { error } = await supabase.from('ledger_transactions').insert({
       shift_id: activeShift.id,
@@ -298,11 +312,20 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
       room_id: roomId,
       booking_id: bookingId,
       transaction_type: 'revenue',
-      category: customItemName.trim(),
-      amount: Number(customItemPrice)
+      category: itemName,
+      amount: itemAmt
     });
     
     if (!error) {
+      await logActivity({
+        category: 'billing',
+        action: 'create',
+        staffName: effectiveStaffName,
+        shiftName: activeShift?.staff_name || null,
+        roomNo,
+        target: `ห้อง ${roomNo} • ${itemName}`,
+        details: `เพิ่มรายการอื่นๆ (POS) "${itemName}" ราคา ฿${itemAmt.toLocaleString()} เข้าบิลห้อง ${roomNo}`
+      });
       setCustomItemName('');
       setCustomItemPrice('');
       fetchData();
@@ -363,6 +386,16 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     const updatedMeta: BookingMeta = { ...bookingMeta, history: nextHistory };
     await supabase.from('system_settings').upsert({ key: `booking_meta_${bookingId}`, value: updatedMeta }, { onConflict: 'key' });
     setBookingMeta(updatedMeta);
+
+    await logActivity({
+      category: 'billing',
+      action: 'update',
+      staffName: editor,
+      shiftName: activeShift?.staff_name || null,
+      roomNo,
+      target: `ห้อง ${roomNo} • มัดจำกุญแจ`,
+      details: `แก้ไขค่ามัดจำกุญแจห้อง ${roomNo} จาก ฿${oldDepAmt.toLocaleString()} -> ฿${newDepAmt.toLocaleString()}`
+    });
 
     await fetchData();
     setLoading(false);
@@ -430,6 +463,15 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     await supabase.from('system_settings').upsert({ key: `booking_meta_${bookingId}`, value: updatedMeta }, { onConflict: 'key' });
     setBookingMeta(updatedMeta);
     setRoomPriceUnlocked(false);
+    await logActivity({
+      category: 'billing',
+      action: 'update',
+      staffName: editor,
+      shiftName: activeShift?.staff_name || null,
+      roomNo,
+      target: `ห้อง ${roomNo} • ราคาค่าห้อง`,
+      details: `แก้ไขราคาค่าห้องในบิลห้อง ${roomNo} จาก ฿${oldAmt.toLocaleString()} -> ฿${newAmt.toLocaleString()}`
+    });
     await fetchData();
     setLoading(false);
   };
@@ -548,6 +590,16 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     await supabase.from('system_settings').upsert({ key: `booking_meta_${bookingId}`, value: updatedMeta }, { onConflict: 'key' });
     setBookingMeta(updatedMeta);
 
+    await logActivity({
+      category: 'addons',
+      action: 'cancel',
+      staffName: effectiveStaffName,
+      shiftName: activeShift?.staff_name || null,
+      roomNo,
+      target: `ห้อง ${roomNo} • ${baseCat} (${targetDate})`,
+      details: `ยกเลิกบริการเสริมรายวัน "${baseCat}" วันที่ ${targetDate} ยอด ฿${cancelAmt.toLocaleString()} (${statusTag}) อนุมัติโดย ${approverName}`
+    });
+
     setCancellingExtra(null);
     setCancelExtraPin('');
     setCancelExtraError('');
@@ -611,6 +663,19 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     const { error } = await supabase.from('ledger_transactions').insert(inserts);
     
     if (!error) {
+      await logActivity({
+        category: 'billing',
+        action: 'payment',
+        staffName: effectiveStaffName,
+        shiftName: activeShift?.staff_name || null,
+        roomNo,
+        target: `ห้อง ${roomNo}`,
+        details: `รับชำระเงินห้อง ${roomNo} รวม ฿${(cash + transfer + credit).toLocaleString()} (${[
+          cash > 0 ? `เงินสด ฿${cash.toLocaleString()}` : '',
+          transfer > 0 ? `โอน ฿${transfer.toLocaleString()}` : '',
+          credit > 0 ? `บัตร ฿${credit.toLocaleString()}` : ''
+        ].filter(Boolean).join(', ')})`
+      });
       setPayCash('');
       setPayTransfer('');
       setPayCredit('');

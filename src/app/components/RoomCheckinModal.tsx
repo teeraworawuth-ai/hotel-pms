@@ -9,6 +9,7 @@ import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
 import BillingModal from "./BillingModal";
 import CheckoutSummaryModal from "./CheckoutSummaryModal";
 import { useShift } from "@/contexts/ShiftContext";
+import { logActivity, fetchActivityLogs, ActivityLogEntry, ACTIVITY_ACTION_LABELS } from "@/lib/activityLog";
 
 
 export type RatePlan = {
@@ -408,11 +409,222 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [existingDepositTx, setExistingDepositTx] = useState<{ id: string; amount: number } | null>(null);
   const [keyDepositAmount, setKeyDepositAmount] = useState<number | ''>(room.key_deposit !== undefined && room.key_deposit !== null ? room.key_deposit : 200);
   
-    const [extraSettings, setExtraSettings] = useState<any[]>([]);
+  const [extraSettings, setExtraSettings] = useState<any[]>([]);
+  const refreshExtraSettings = async () => {
+    const { data } = await supabase
+      .from('extra_charge_settings')
+      .select('*')
+      .eq('is_active', true)
+      .order('created_at', { ascending: true });
+    if (data) setExtraSettings(data);
+  };
   useEffect(() => {
-    supabase.from('extra_charge_settings').select('*').eq('is_active', true).order('created_at', { ascending: true })
-      .then(({ data }) => { if (data) setExtraSettings(data); });
+    refreshExtraSettings();
   }, []);
+
+  const syncExtraPosCategoryMap = async (name: string, oldName?: string) => {
+    try {
+      const { data } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'pos_category_map')
+        .maybeSingle();
+      const currentMap: Record<string, string> = (data?.value as Record<string, string>) || {};
+      if (oldName && oldName !== name && currentMap[oldName]) {
+        delete currentMap[oldName];
+      }
+      currentMap[name] = 'เตียงเสริม/อุปกรณ์';
+      await supabase
+        .from('system_settings')
+        .upsert({ key: 'pos_category_map', value: currentMap }, { onConflict: 'key' });
+    } catch (e) {
+      console.error('Failed to sync pos_category_map:', e);
+    }
+  };
+
+  // States for managing extra_charge_settings directly inside "+ รายการอื่นๆ / จัดการ ▾"
+  const [showOtherExtrasMenu, setShowOtherExtrasMenu] = useState(false);
+  const [showManageQuickButtonsInMenu, setShowManageQuickButtonsInMenu] = useState(false);
+  const [editingExtraSettingId, setEditingExtraSettingId] = useState<string | null>(null);
+  const [editExtraSettingName, setEditExtraSettingName] = useState('');
+  const [editExtraSettingPrice, setEditExtraSettingPrice] = useState<number | ''>('');
+  const [editExtraSettingChargeType, setEditExtraSettingChargeType] = useState<'one_time' | 'per_night'>('one_time');
+  const [editExtraSettingUiType, setEditExtraSettingUiType] = useState<'quick_button' | 'dropdown'>('dropdown');
+  const [showAddNewExtraSettingForm, setShowAddNewExtraSettingForm] = useState(false);
+  const [newExtraSettingName, setNewExtraSettingName] = useState('');
+  const [newExtraSettingPrice, setNewExtraSettingPrice] = useState<number | ''>('');
+  const [newExtraSettingChargeType, setNewExtraSettingChargeType] = useState<'one_time' | 'per_night'>('one_time');
+  const [newExtraSettingUiType, setNewExtraSettingUiType] = useState<'quick_button' | 'dropdown'>('dropdown');
+  const [extraSettingSaving, setExtraSettingSaving] = useState(false);
+  const [showAddonRecentLogs, setShowAddonRecentLogs] = useState(false);
+  const [addonRecentLogs, setAddonRecentLogs] = useState<ActivityLogEntry[]>([]);
+  const [loadingAddonLogs, setLoadingAddonLogs] = useState(false);
+
+  const loadRecentAddonLogs = async () => {
+    setLoadingAddonLogs(true);
+    try {
+      const logs = await fetchActivityLogs(7);
+      setAddonRecentLogs(logs.filter(l => l.category === 'addons').slice(0, 15));
+    } finally {
+      setLoadingAddonLogs(false);
+    }
+  };
+
+  const handleCreateExtraSetting = async () => {
+    const trimmed = newExtraSettingName.trim();
+    const numPrice = Number(newExtraSettingPrice);
+    if (!trimmed || !numPrice || numPrice <= 0) return;
+    setExtraSettingSaving(true);
+    try {
+      const { error } = await supabase.from('extra_charge_settings').insert({
+        name: trimmed,
+        price: numPrice,
+        charge_type: newExtraSettingChargeType,
+        ui_type: newExtraSettingUiType,
+        is_active: true
+      });
+      if (!error) {
+        await syncExtraPosCategoryMap(trimmed);
+        await logActivity({
+          category: 'addons',
+          action: 'create',
+          staffName: effectiveStaffName,
+          shiftName: activeShift?.staff_name || null,
+          target: trimmed,
+          details: `เพิ่มบริการเสริม "${trimmed}" ราคา ฿${numPrice.toLocaleString()} (${newExtraSettingChargeType === 'per_night' ? 'ระบุวัน/รายคืน' : 'ครั้งเดียว'} • ${newExtraSettingUiType === 'quick_button' ? 'ปุ่มลัดด้านบน' : 'ในตัวเลือก'})`
+        });
+        await refreshExtraSettings();
+        if (showAddonRecentLogs) await loadRecentAddonLogs();
+        setNewExtraSettingName('');
+        setNewExtraSettingPrice('');
+        setShowAddNewExtraSettingForm(false);
+      } else {
+        alert('ไม่สามารถเพิ่มรายการได้: ' + error.message);
+      }
+    } finally {
+      setExtraSettingSaving(false);
+    }
+  };
+
+  const handleStartEditExtraSetting = (item: any) => {
+    setEditingExtraSettingId(item.id);
+    setEditExtraSettingName(item.name);
+    setEditExtraSettingPrice(Number(item.price));
+    setEditExtraSettingChargeType(item.charge_type === 'per_night' ? 'per_night' : 'one_time');
+    setEditExtraSettingUiType(item.ui_type === 'quick_button' ? 'quick_button' : 'dropdown');
+  };
+
+  const handleSaveEditExtraSetting = async (oldItem: any) => {
+    const trimmed = editExtraSettingName.trim();
+    const numPrice = Number(editExtraSettingPrice);
+    if (!trimmed || !numPrice || numPrice <= 0) return;
+    setExtraSettingSaving(true);
+    try {
+      const { error } = await supabase
+        .from('extra_charge_settings')
+        .update({
+          name: trimmed,
+          price: numPrice,
+          charge_type: editExtraSettingChargeType,
+          ui_type: editExtraSettingUiType
+        })
+        .eq('id', oldItem.id);
+      if (!error) {
+        await syncExtraPosCategoryMap(trimmed, oldItem.name);
+        await logActivity({
+          category: 'addons',
+          action: 'update',
+          staffName: effectiveStaffName,
+          shiftName: activeShift?.staff_name || null,
+          target: trimmed,
+          details: `แก้ไขบริการเสริม "${oldItem.name}" (฿${Number(oldItem.price).toLocaleString()}) -> "${trimmed}" (฿${numPrice.toLocaleString()}) [${editExtraSettingChargeType === 'per_night' ? 'ระบุวัน/รายคืน' : 'ครั้งเดียว'} • ${editExtraSettingUiType === 'quick_button' ? 'ปุ่มลัดด้านบน' : 'ในตัวเลือก'}]`
+        });
+        await refreshExtraSettings();
+        if (showAddonRecentLogs) await loadRecentAddonLogs();
+        setEditingExtraSettingId(null);
+      } else {
+        alert('ไม่สามารถแก้ไขรายการได้: ' + error.message);
+      }
+    } finally {
+      setExtraSettingSaving(false);
+    }
+  };
+
+  const handleToggleExtraSettingUiType = async (item: any) => {
+    const nextUi = item.ui_type === 'quick_button' ? 'dropdown' : 'quick_button';
+    setExtraSettingSaving(true);
+    try {
+      const { error } = await supabase
+        .from('extra_charge_settings')
+        .update({ ui_type: nextUi })
+        .eq('id', item.id);
+      if (!error) {
+        await logActivity({
+          category: 'addons',
+          action: 'toggle',
+          staffName: effectiveStaffName,
+          shiftName: activeShift?.staff_name || null,
+          target: item.name,
+          details: `ย้ายปุ่ม "${item.name}" จาก ${item.ui_type === 'quick_button' ? 'ปุ่มลัดด้านบน' : 'ในตัวเลือก (+ รายการอื่นๆ)'} -> ${nextUi === 'quick_button' ? 'ปุ่มลัดด้านบน' : 'ในตัวเลือก (+ รายการอื่นๆ)'}`
+        });
+        await refreshExtraSettings();
+        if (showAddonRecentLogs) await loadRecentAddonLogs();
+      }
+    } finally {
+      setExtraSettingSaving(false);
+    }
+  };
+
+  const handleToggleExtraSettingDefaultChargeType = async (item: any) => {
+    const nextCharge = item.charge_type === 'per_night' ? 'one_time' : 'per_night';
+    setExtraSettingSaving(true);
+    try {
+      const { error } = await supabase
+        .from('extra_charge_settings')
+        .update({ charge_type: nextCharge })
+        .eq('id', item.id);
+      if (!error) {
+        await logActivity({
+          category: 'addons',
+          action: 'toggle',
+          staffName: effectiveStaffName,
+          shiftName: activeShift?.staff_name || null,
+          target: item.name,
+          details: `เปลี่ยนค่าเริ่มต้น "${item.name}" เป็นแบบ ${nextCharge === 'per_night' ? 'ระบุวัน (รายคืน)' : 'ครั้งเดียว'}`
+        });
+        await refreshExtraSettings();
+        if (showAddonRecentLogs) await loadRecentAddonLogs();
+      }
+    } finally {
+      setExtraSettingSaving(false);
+    }
+  };
+
+  const handleDeleteExtraSetting = async (item: any) => {
+    if (!window.confirm(`ยืนยันการลบรายการบริการเสริม "${item.name}" (฿${Number(item.price).toLocaleString()}) ออกจากตัวเลือก?`)) return;
+    setExtraSettingSaving(true);
+    try {
+      const { error } = await supabase
+        .from('extra_charge_settings')
+        .update({ is_active: false })
+        .eq('id', item.id);
+      if (!error) {
+        await logActivity({
+          category: 'addons',
+          action: 'delete',
+          staffName: effectiveStaffName,
+          shiftName: activeShift?.staff_name || null,
+          target: item.name,
+          details: `ลบรายการบริการเสริม "${item.name}" (ราคาเดิม ฿${Number(item.price).toLocaleString()})`
+        });
+        await refreshExtraSettings();
+        if (showAddonRecentLogs) await loadRecentAddonLogs();
+      }
+    } finally {
+      setExtraSettingSaving(false);
+    }
+  };
+
   const [dailyExtras, setDailyExtras] = useState<any[]>([]);
   const [isExtraModalOpen, setIsExtraModalOpen] = useState(false);
   const [extraForm, setExtraForm] = useState({ category: 'เตียงเสริม/อุปกรณ์', description: '', amount: 0, applyToAll: false, targetDate: '' });
@@ -454,6 +666,43 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       };
     }));
   }, [dailyBreakdown, activeTab]);
+
+  // สลับรูปแบบการคิดเงินของรายการเสริมที่เพิ่มลงบิลแล้ว: ครั้งเดียว <-> ระบุวัน (รายคืน)
+  const handleToggleExtraChargeMode = (extraId: string, toPerNight: boolean) => {
+    const currentDates = dailyBreakdown.length > 0
+      ? dailyBreakdown.map(d => d.date)
+      : [displayDateStr];
+    setDailyExtras(prev => prev.map(ext => {
+      if (ext.id !== extraId) return ext;
+      if (toPerNight) {
+        const baseQty = Math.max(1, Number(ext.qty) || 1);
+        const existingSchedule: any[] = Array.isArray(ext.dailySchedule) ? ext.dailySchedule : [];
+        const nextSchedule = currentDates.map(dateStr => {
+          const found = existingSchedule.find(s => s.date === dateStr);
+          if (found) return found;
+          return {
+            date: dateStr,
+            enabled: true,
+            qty: baseQty,
+            isSaved: false,
+            isVoided: false
+          };
+        });
+        return {
+          ...ext,
+          isPerNight: true,
+          dailySchedule: nextSchedule,
+          isModified: ext.isSaved ? true : undefined
+        };
+      } else {
+        return {
+          ...ext,
+          isPerNight: false,
+          isModified: ext.isSaved ? true : undefined
+        };
+      }
+    }));
+  };
 
   const handleChangeExtraQty = (id: string, delta: number) => {
     setDailyExtras(prev => prev.map(e => {
@@ -1012,6 +1261,19 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
     setLoading(false);
     if (!bookingError && insertedBooking) {
+      const actionType = (dateOffset === 0 && !isReservationForToday) ? 'checkin' : 'reserve';
+      const extrasDesc = dailyExtras.length > 0
+        ? ` | บริการเสริม: ${dailyExtras.map(e => `${e.name}(฿${extraLineTotal(e)})`).join(', ')}`
+        : '';
+      await logActivity({
+        category: 'checkin',
+        action: actionType,
+        staffName: effectiveStaffName,
+        shiftName: activeShift?.staff_name || null,
+        roomNo: room.room_no,
+        target: `ห้อง ${room.room_no} (${guestName.trim() || 'ไม่ระบุชื่อ'})`,
+        details: `${actionType === 'checkin' ? 'เช็คอิน' : 'จองห้องพัก'} ห้อง ${room.room_no} (${type === 'overnight' ? `ค้างคืน ${nights} คืน` : `ชั่วคราว ${hours} ชม.`}) ราคาค่าห้อง ฿${Number(actualPrice || 0).toLocaleString()}${keyDepositEnabled && Number(keyDepositAmount) > 0 ? ` + มัดจำ ฿${Number(keyDepositAmount).toLocaleString()}` : ''}${extrasDesc}`
+      });
       setNewBookingId(insertedBooking.id);
       onClose();
     } else {
@@ -1213,6 +1475,15 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       keyDepositAmount: newDepAmt
     });
     setExtrasManagerUnlocked(false);
+    await logActivity({
+      category: 'checkin',
+      action: 'update',
+      staffName: editor,
+      shiftName: activeShift?.staff_name || null,
+      roomNo: room.room_no,
+      target: `ห้อง ${room.room_no} (${guestName.trim() || 'ไม่ระบุชื่อ'})`,
+      details: `แก้ไขข้อมูลการเข้าพักห้อง ${room.room_no} (ราคาค่าห้อง: ฿${Number(actualPrice || 0).toLocaleString()}, มัดจำ: ฿${newDepAmt.toLocaleString()}${extrasEditNote.trim() ? `, หมายเหตุ: ${extrasEditNote.trim()}` : ''})`
+    });
     setLoading(false);
     onUpdate();
   };
@@ -1684,6 +1955,15 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       booking_id: null
     }).eq('id', room.id);
     
+    await logActivity({
+      category: 'checkin',
+      action: 'cancel',
+      staffName: effectiveStaffName,
+      shiftName: activeShift?.staff_name || null,
+      roomNo: room.room_no,
+      target: `ห้อง ${room.room_no}`,
+      details: `ยกเลิกการเข้าพัก (Void) ห้อง ${room.room_no} คืนเงิน ฿${refundAmt.toLocaleString()} (สาเหตุ: ${voidReason.trim()})`
+    });
     setLoading(false);
     onUpdate();
     onClose();
@@ -1901,6 +2181,15 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
     setLoading(false);
     if (!updateError) {
+      await logActivity({
+        category: 'checkin',
+        action: 'move',
+        staffName: effectiveStaffName,
+        shiftName: activeShift?.staff_name || null,
+        roomNo: room.room_no,
+        target: `ห้อง ${room.room_no} -> ${targetRoom.room_no}`,
+        details: `เลื่อนวัน/ย้ายห้องจองจาก ${room.room_no} ไป ${targetRoom.room_no} (${rescheduleCheckIn} ถึง ${rescheduleCheckOut})`
+      });
       alert("ย้ายการจองสำเร็จ");
       onUpdate();
     } else {
@@ -1987,6 +2276,15 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         .eq('id', booking.id);
     }
 
+    await logActivity({
+      category: 'checkin',
+      action: 'move',
+      staffName: effectiveStaffName,
+      shiftName: activeShift?.staff_name || null,
+      roomNo: room.room_no,
+      target: `ห้อง ${room.room_no} -> ${targetRoom.room_no}`,
+      details: `ย้ายห้องพักจาก ${room.room_no} ไปยังห้อง ${targetRoom.room_no} (ราคา: ฿${Number(newActualPrice || 0).toLocaleString()})`
+    });
     setLoading(false);
     onUpdate();
   };
@@ -2411,44 +2709,96 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                 <div className="pt-1">
                   <div className="flex justify-between items-center mb-1.5">
                     <label className="text-xs font-bold text-slate-600">บริการเสริม (Add-ons)</label>
-                    <a
-                      href="/settings?tab=extras"
-                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1"
-                    >
-                      ⚙️ ตั้งค่าปุ่มบริการเสริม
-                    </a>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !showAddonRecentLogs;
+                          setShowAddonRecentLogs(next);
+                          if (next) loadRecentAddonLogs();
+                        }}
+                        className="text-[11px] font-bold text-slate-500 hover:text-indigo-700 flex items-center gap-1"
+                      >
+                        🕒 ประวัติแก้ไขรายการเสริม
+                      </button>
+                    </div>
                   </div>
+
+                  {showAddonRecentLogs && (
+                    <div className="mb-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[11px] space-y-1.5">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-1">
+                        <span className="font-bold text-slate-700">📜 ประวัติการเพิ่ม/แก้ไขบริการเสริมล่าสุด</span>
+                        <div className="flex items-center gap-2">
+                          <a
+                            href="/activity-log"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-indigo-600 hover:underline font-bold"
+                          >
+                            ดู Log ทั้งหมด (30 วัน) ↗
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => setShowAddonRecentLogs(false)}
+                            className="text-slate-400 hover:text-slate-600 font-bold"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                      {loadingAddonLogs ? (
+                        <div className="text-slate-400 py-2 text-center">กำลังโหลดประวัติ...</div>
+                      ) : addonRecentLogs.length === 0 ? (
+                        <div className="text-slate-400 py-2 text-center">ยังไม่มีประวัติการแก้ไขบริการเสริม</div>
+                      ) : (
+                        <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
+                          {addonRecentLogs.map(log => {
+                            const dt = new Date(log.timestamp);
+                            const timeLabel = dt.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }) + ' ' + dt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+                            return (
+                              <div key={log.id} className="bg-white px-2 py-1 rounded border border-slate-100 flex flex-col gap-0.5">
+                                <div className="flex items-center justify-between text-[10px] text-slate-500">
+                                  <span className="font-bold text-indigo-700">👤 {log.staffName}{log.shiftName && log.shiftName !== log.staffName ? ` (กะ ${log.shiftName})` : ''}</span>
+                                  <span>{timeLabel}</span>
+                                </div>
+                                <div className="text-slate-700 font-medium">{log.details}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {(room.status !== 'occupied' || extrasManagerUnlocked) && (
                     <>
-                      <div className="flex flex-wrap gap-1.5">
+                      <div className="flex flex-wrap gap-1.5 items-center">
                         {extraSettings.filter(e => e.ui_type === 'quick_button').map(e => (
                           <button 
                             key={e.id}
                             type="button"
                             onClick={() => handleAddExtra(e)}
-                            className="bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 text-slate-700 border border-slate-200 px-2.5 py-1 rounded-xl text-xs font-bold transition-colors"
+                            className="bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 text-slate-700 border border-slate-200 px-2.5 py-1 rounded-xl text-xs font-bold transition-colors flex items-center gap-1"
+                            title={e.charge_type === 'per_night' ? 'ค่าเริ่มต้น: ระบุวัน (รายคืน)' : 'ค่าเริ่มต้น: ครั้งเดียว'}
                           >
-                            + {e.name} ({e.price}บ.)
+                            <span>+ {e.name} ({e.price}บ.)</span>
+                            <span className="text-[10px] opacity-65">{e.charge_type === 'per_night' ? '📅' : '1️⃣'}</span>
                           </button>
                         ))}
-                        {extraSettings.filter(e => e.ui_type === 'dropdown').length > 0 && (
-                          <select 
-                            onChange={(e) => {
-                              const setting = extraSettings.find(s => s.id === e.target.value);
-                              if (setting) {
-                                handleAddExtra(setting);
-                                e.target.value = "";
-                              }
-                            }}
-                            className="border border-slate-200 rounded-xl px-2 py-1 text-xs font-medium bg-slate-50"
-                            defaultValue=""
-                          >
-                            <option value="" disabled>+ รายการอื่นๆ</option>
-                            {extraSettings.filter(e => e.ui_type === 'dropdown').map(e => (
-                              <option key={e.id} value={e.id}>{e.name} (฿{e.price})</option>
-                            ))}
-                          </select>
-                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => setShowOtherExtrasMenu(prev => !prev)}
+                          className={`px-2.5 py-1 rounded-xl text-xs font-bold border transition-colors flex items-center gap-1 ${
+                            showOtherExtrasMenu
+                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                              : 'bg-slate-50 hover:bg-indigo-50 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          <span>+ รายการอื่นๆ / จัดการ</span>
+                          <span className="text-[10px]">{showOtherExtrasMenu ? '▴' : '▾'}</span>
+                        </button>
+
                         <button
                           type="button"
                           onClick={() => setShowCustomExtraForm(prev => !prev)}
@@ -2458,11 +2808,340 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                         </button>
                       </div>
 
+                      {/* แผง "+ รายการอื่นๆ / จัดการ" สำหรับเลือกเพิ่มเข้าบิล หรือ เพิ่ม/แก้ไข/ลบ/สลับปุ่มลัด ได้ทันที */}
+                      {showOtherExtrasMenu && (
+                        <div className="mt-2 p-3 bg-white border-2 border-indigo-200 rounded-xl shadow-md space-y-2.5 text-xs">
+                          <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                            <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                              📂 รายการอื่นๆ & ตั้งค่าบริการเสริม
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setShowManageQuickButtonsInMenu(prev => !prev)}
+                                className={`px-2 py-0.5 rounded-lg text-[11px] font-bold border transition-colors ${
+                                  showManageQuickButtonsInMenu
+                                    ? 'bg-amber-50 border-amber-300 text-amber-800'
+                                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                                }`}
+                              >
+                                ⚡ จัดการปุ่มลัดด้านบน ({extraSettings.filter(e => e.ui_type === 'quick_button').length})
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setShowOtherExtrasMenu(false)}
+                                className="text-slate-400 hover:text-slate-600 font-bold px-1"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* รายการในตัวเลือก (+ รายการอื่นๆ) */}
+                          <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
+                            {extraSettings.filter(e => e.ui_type === 'dropdown').length === 0 && (
+                              <div className="text-center text-slate-400 py-2 text-[11px]">
+                                ไม่มีรายการในตัวเลือกย่อย (สามารถกด + เพิ่มรายการใหม่ด้านล่างได้เลย)
+                              </div>
+                            )}
+                            {extraSettings.filter(e => e.ui_type === 'dropdown').map(item => (
+                              <div key={item.id} className="p-1.5 rounded-lg border border-slate-200 bg-slate-50/70 hover:bg-slate-50">
+                                {editingExtraSettingId === item.id ? (
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <input
+                                      type="text"
+                                      value={editExtraSettingName}
+                                      onChange={e => setEditExtraSettingName(e.target.value)}
+                                      className="flex-1 min-w-[110px] border border-slate-300 rounded px-2 py-1 bg-white font-bold text-slate-800 text-xs"
+                                      placeholder="ชื่อรายการ"
+                                    />
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      value={editExtraSettingPrice}
+                                      onChange={e => setEditExtraSettingPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                                      className="w-20 border border-slate-300 rounded px-2 py-1 bg-white font-bold text-slate-800 text-right text-xs"
+                                      placeholder="ราคา"
+                                    />
+                                    <select
+                                      value={editExtraSettingChargeType}
+                                      onChange={e => setEditExtraSettingChargeType(e.target.value as 'one_time' | 'per_night')}
+                                      className="border border-slate-300 rounded px-1.5 py-1 bg-white font-bold text-slate-700 text-[11px]"
+                                    >
+                                      <option value="one_time">1️⃣ ครั้งเดียว</option>
+                                      <option value="per_night">📅 ระบุวัน (รายคืน)</option>
+                                    </select>
+                                    <select
+                                      value={editExtraSettingUiType}
+                                      onChange={e => setEditExtraSettingUiType(e.target.value as 'quick_button' | 'dropdown')}
+                                      className="border border-slate-300 rounded px-1.5 py-1 bg-white font-bold text-slate-700 text-[11px]"
+                                    >
+                                      <option value="dropdown">📂 ในตัวเลือก</option>
+                                      <option value="quick_button">⚡ ปุ่มลัดด้านบน</option>
+                                    </select>
+                                    <button
+                                      type="button"
+                                      disabled={extraSettingSaving}
+                                      onClick={() => handleSaveEditExtraSetting(item)}
+                                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1 rounded text-[11px]"
+                                    >
+                                      บันทึก
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingExtraSettingId(null)}
+                                      className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-2 py-1 rounded text-[11px]"
+                                    >
+                                      ยกเลิก
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-between gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAddExtra(item)}
+                                      className="flex-1 text-left font-bold text-slate-800 hover:text-indigo-700 flex items-center gap-1.5 py-0.5"
+                                    >
+                                      <span className="bg-indigo-600 text-white w-4 h-4 rounded-full inline-flex items-center justify-center text-[11px] font-black">+</span>
+                                      <span>{item.name}</span>
+                                      <span className="text-indigo-700 font-extrabold">(฿{Number(item.price).toLocaleString()})</span>
+                                    </button>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <button
+                                        type="button"
+                                        disabled={extraSettingSaving}
+                                        onClick={() => handleToggleExtraSettingDefaultChargeType(item)}
+                                        title="สลับค่าเริ่มต้น: คิดครั้งเดียว หรือ ระบุวัน (รายคืน)"
+                                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold border transition-colors ${
+                                          item.charge_type === 'per_night'
+                                            ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                                        }`}
+                                      >
+                                        {item.charge_type === 'per_night' ? '📅 รายคืน' : '1️⃣ ครั้งเดียว'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={extraSettingSaving}
+                                        onClick={() => handleToggleExtraSettingUiType(item)}
+                                        title="ย้ายไปแสดงเป็นปุ่มลัดด้านบน"
+                                        className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-colors"
+                                      >
+                                        ⚡ ขึ้นปุ่มลัด
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStartEditExtraSetting(item)}
+                                        title="แก้ไขชื่อ/ราคา"
+                                        className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-white hover:bg-slate-100 text-slate-600 border border-slate-200"
+                                      >
+                                        ✏️
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={extraSettingSaving}
+                                        onClick={() => handleDeleteExtraSetting(item)}
+                                        title="ลบรายการนี้"
+                                        className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200"
+                                      >
+                                        🗑️
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* ส่วนจัดการปุ่มลัดด้านบน (กรณีต้องการแก้ราคา/ลบ หรือย้ายปุ่มลัดลงมาไว้ในตัวเลือก) */}
+                          {showManageQuickButtonsInMenu && (
+                            <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                              <div className="text-[11px] font-bold text-amber-800 flex items-center justify-between">
+                                <span>⚡ รายการที่เป็นปุ่มลัดด้านบน (คลิกเพื่อแก้ไข หรือย้ายเข้าตัวเลือก)</span>
+                              </div>
+                              {extraSettings.filter(e => e.ui_type === 'quick_button').map(item => (
+                                <div key={item.id} className="p-1.5 rounded-lg border border-amber-200 bg-amber-50/40">
+                                  {editingExtraSettingId === item.id ? (
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <input
+                                        type="text"
+                                        value={editExtraSettingName}
+                                        onChange={e => setEditExtraSettingName(e.target.value)}
+                                        className="flex-1 min-w-[110px] border border-slate-300 rounded px-2 py-1 bg-white font-bold text-slate-800 text-xs"
+                                      />
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        value={editExtraSettingPrice}
+                                        onChange={e => setEditExtraSettingPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                                        className="w-20 border border-slate-300 rounded px-2 py-1 bg-white font-bold text-slate-800 text-right text-xs"
+                                      />
+                                      <select
+                                        value={editExtraSettingChargeType}
+                                        onChange={e => setEditExtraSettingChargeType(e.target.value as 'one_time' | 'per_night')}
+                                        className="border border-slate-300 rounded px-1.5 py-1 bg-white font-bold text-slate-700 text-[11px]"
+                                      >
+                                        <option value="one_time">1️⃣ ครั้งเดียว</option>
+                                        <option value="per_night">📅 ระบุวัน (รายคืน)</option>
+                                      </select>
+                                      <select
+                                        value={editExtraSettingUiType}
+                                        onChange={e => setEditExtraSettingUiType(e.target.value as 'quick_button' | 'dropdown')}
+                                        className="border border-slate-300 rounded px-1.5 py-1 bg-white font-bold text-slate-700 text-[11px]"
+                                      >
+                                        <option value="quick_button">⚡ ปุ่มลัดด้านบน</option>
+                                        <option value="dropdown">📂 ในตัวเลือก</option>
+                                      </select>
+                                      <button
+                                        type="button"
+                                        disabled={extraSettingSaving}
+                                        onClick={() => handleSaveEditExtraSetting(item)}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1 rounded text-[11px]"
+                                      >
+                                        บันทึก
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingExtraSettingId(null)}
+                                        className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-2 py-1 rounded text-[11px]"
+                                      >
+                                        ยกเลิก
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center justify-between gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAddExtra(item)}
+                                        className="flex-1 text-left font-bold text-slate-800 hover:text-indigo-700 flex items-center gap-1.5 py-0.5"
+                                      >
+                                        <span className="text-amber-600">⚡</span>
+                                        <span>{item.name}</span>
+                                        <span className="text-indigo-700 font-extrabold">(฿{Number(item.price).toLocaleString()})</span>
+                                      </button>
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        <button
+                                          type="button"
+                                          disabled={extraSettingSaving}
+                                          onClick={() => handleToggleExtraSettingDefaultChargeType(item)}
+                                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold border transition-colors ${
+                                            item.charge_type === 'per_night'
+                                              ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                                          }`}
+                                        >
+                                          {item.charge_type === 'per_night' ? '📅 รายคืน' : '1️⃣ ครั้งเดียว'}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={extraSettingSaving}
+                                          onClick={() => handleToggleExtraSettingUiType(item)}
+                                          title="ย้ายลงมาไว้ในตัวเลือก (+ รายการอื่นๆ)"
+                                          className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200"
+                                        >
+                                          📂 ลงตัวเลือก
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleStartEditExtraSetting(item)}
+                                          className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-white hover:bg-slate-100 text-slate-600 border border-slate-200"
+                                        >
+                                          ✏️
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={extraSettingSaving}
+                                          onClick={() => handleDeleteExtraSetting(item)}
+                                          className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200"
+                                        >
+                                          🗑️
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* ฟอร์มเพิ่มรายการบริการเสริมใหม่ถาวร */}
+                          <div className="pt-2 border-t border-slate-100">
+                            {!showAddNewExtraSettingForm ? (
+                              <button
+                                type="button"
+                                onClick={() => setShowAddNewExtraSettingForm(true)}
+                                className="w-full py-1.5 rounded-lg border border-dashed border-indigo-300 bg-indigo-50/50 hover:bg-indigo-50 text-indigo-700 font-bold text-xs transition-colors"
+                              >
+                                + เพิ่มรายการบริการเสริมใหม่ (บันทึกไว้ใช้ตลอด)
+                              </button>
+                            ) : (
+                              <div className="p-2 bg-indigo-50/60 border border-indigo-200 rounded-lg space-y-2">
+                                <div className="text-[11px] font-bold text-indigo-900">✨ เพิ่มรายการบริการเสริมใหม่</div>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <input
+                                    type="text"
+                                    placeholder="ชื่อบริการเสริม (เช่น เช่าเตาปิ้งย่าง)"
+                                    value={newExtraSettingName}
+                                    onChange={e => setNewExtraSettingName(e.target.value)}
+                                    className="flex-1 min-w-[130px] border border-slate-300 rounded-lg px-2 py-1 bg-white font-bold text-slate-800 text-xs"
+                                  />
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    placeholder="ราคา (บาท)"
+                                    value={newExtraSettingPrice}
+                                    onChange={e => setNewExtraSettingPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                                    className="w-24 border border-slate-300 rounded-lg px-2 py-1 bg-white font-bold text-slate-800 text-right text-xs"
+                                  />
+                                </div>
+                                <div className="flex flex-wrap items-center justify-between gap-1.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <select
+                                      value={newExtraSettingChargeType}
+                                      onChange={e => setNewExtraSettingChargeType(e.target.value as 'one_time' | 'per_night')}
+                                      className="border border-slate-300 rounded-lg px-2 py-1 bg-white font-bold text-slate-700 text-[11px]"
+                                    >
+                                      <option value="one_time">1️⃣ คิดครั้งเดียว</option>
+                                      <option value="per_night">📅 ระบุวัน (รายคืน)</option>
+                                    </select>
+                                    <select
+                                      value={newExtraSettingUiType}
+                                      onChange={e => setNewExtraSettingUiType(e.target.value as 'quick_button' | 'dropdown')}
+                                      className="border border-slate-300 rounded-lg px-2 py-1 bg-white font-bold text-slate-700 text-[11px]"
+                                    >
+                                      <option value="dropdown">📂 ไว้ใน + รายการอื่นๆ</option>
+                                      <option value="quick_button">⚡ แสดงเป็นปุ่มลัดด้านบน</option>
+                                    </select>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      disabled={extraSettingSaving || !newExtraSettingName.trim() || !newExtraSettingPrice || Number(newExtraSettingPrice) <= 0}
+                                      onClick={handleCreateExtraSetting}
+                                      className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold px-3 py-1 rounded-lg text-xs"
+                                    >
+                                      บันทึก
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowAddNewExtraSettingForm(false)}
+                                      className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-2.5 py-1 rounded-lg text-xs"
+                                    >
+                                      ยกเลิก
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
                       {showCustomExtraForm && (
                         <div className="mt-2 p-2.5 bg-indigo-50/60 border border-indigo-200 rounded-xl flex flex-wrap items-center gap-1.5 text-xs">
                           <input
                             type="text"
-                            placeholder="ชื่อรายการเสริม..."
+                            placeholder="ชื่อรายการเสริม (เฉพาะบิลนี้)..."
                             value={customExtraName}
                             onChange={e => setCustomExtraName(e.target.value)}
                             className="flex-1 min-w-[120px] border border-slate-300 rounded-lg px-2 py-1.5 bg-white font-bold text-slate-800"
@@ -2480,8 +3159,8 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                             onChange={e => setCustomExtraChargeType(e.target.value as 'one_time' | 'per_night')}
                             className="border border-slate-300 rounded-lg px-2 py-1.5 bg-white font-bold text-slate-700"
                           >
-                            <option value="one_time">ครั้งเดียว</option>
-                            <option value="per_night">ตามจำนวนคืน</option>
+                            <option value="one_time">1️⃣ ครั้งเดียว</option>
+                            <option value="per_night">📅 ระบุวัน (รายคืน)</option>
                           </select>
                           <button
                             type="button"
@@ -2489,7 +3168,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                             disabled={!customExtraName.trim() || !customExtraPrice || Number(customExtraPrice) <= 0}
                             className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold px-3 py-1.5 rounded-lg transition-colors"
                           >
-                            เพิ่ม
+                            เพิ่มลงบิล
                           </button>
                         </div>
                       )}
@@ -2499,26 +3178,58 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                   {dailyExtras.length > 0 && (
                     <div className="mt-2 space-y-2 bg-slate-50/80 p-2 rounded-xl border border-slate-100 text-xs">
                       {dailyExtras.map(ext => {
-                        const hasMultiDaySchedule = ext.isPerNight && Array.isArray(ext.dailySchedule) && ext.dailySchedule.length > 1;
-                        const activeDaysCount = hasMultiDaySchedule
+                        const showDaySchedule = Boolean(ext.isPerNight && Array.isArray(ext.dailySchedule) && ext.dailySchedule.length >= 1);
+                        const activeDaysCount = showDaySchedule
                           ? ext.dailySchedule.filter((d: any) => d.enabled && !d.isVoided).length
                           : 1;
 
                         return (
                           <div key={ext.id} className="bg-white p-2 rounded-lg border border-slate-200 space-y-1.5">
-                            <div className="flex justify-between items-center">
+                            <div className="flex flex-wrap justify-between items-center gap-1.5">
                               <div className="flex flex-col">
-                                <span className="font-bold text-slate-800">
-                                  {ext.name} {ext.isPerNight ? <span className="text-[11px] font-semibold text-indigo-600">(฿{Number(ext.price).toLocaleString()}/คืน)</span> : ''}
-                                </span>
-                                {hasMultiDaySchedule && (
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="font-bold text-slate-800">
+                                    {ext.name}
+                                  </span>
+                                  <span className="text-[11px] font-semibold text-indigo-600">
+                                    (฿{Number(ext.price).toLocaleString()}{ext.isPerNight ? '/คืน' : '/หน่วย'})
+                                  </span>
+                                  {/* ปุ่มสลับ 1️⃣ ครั้งเดียว <-> 📅 ระบุวัน ได้อิสระในทุกรายการ */}
+                                  {!isBookingLocked && (
+                                    <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-[10px] font-bold">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleExtraChargeMode(ext.id, false)}
+                                        className={`px-1.5 py-0.5 rounded-md transition-colors ${
+                                          !ext.isPerNight
+                                            ? 'bg-white text-indigo-700 shadow-sm font-extrabold'
+                                            : 'text-slate-500 hover:text-slate-800'
+                                        }`}
+                                      >
+                                        1️⃣ ครั้งเดียว
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleExtraChargeMode(ext.id, true)}
+                                        className={`px-1.5 py-0.5 rounded-md transition-colors ${
+                                          ext.isPerNight
+                                            ? 'bg-indigo-600 text-white shadow-sm font-extrabold'
+                                            : 'text-slate-500 hover:text-slate-800'
+                                        }`}
+                                      >
+                                        📅 ระบุวัน
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                                {showDaySchedule && (
                                   <span className="text-[10px] text-slate-500">
-                                    เลือก {activeDaysCount} จาก {ext.dailySchedule.length} คืน (ติ๊กเลือก/ยกเลิกรายวันได้)
+                                    เลือก {activeDaysCount} จาก {ext.dailySchedule.length} คืน (ติ๊กเลือกวันและปรับจำนวนรายวันได้)
                                   </span>
                                 )}
                               </div>
                               <div className="flex items-center gap-2">
-                                {!hasMultiDaySchedule && (
+                                {!showDaySchedule && (
                                   <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-md px-1 py-0.5">
                                     <button
                                       type="button"
@@ -2546,7 +3257,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                               </div>
                             </div>
 
-                            {hasMultiDaySchedule && (
+                            {showDaySchedule && (
                               <div className="pt-1.5 border-t border-slate-100 space-y-1">
                                 {ext.dailySchedule.map((day: any, dIdx: number) => {
                                   const dObj = new Date(day.date);

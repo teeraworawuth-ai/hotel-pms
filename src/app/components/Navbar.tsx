@@ -9,6 +9,7 @@ const navLinks = [
   { href: "/", label: "Dashboard" },
   { href: "/manager", label: "Manager" },
   { href: "/audit", label: "Audit" },
+  { href: "/activity-log", label: "Log (30 วัน)" },
   { href: "/energy", label: "Energy" },
   { href: "/bookings", label: "Booking" },
   { href: "/checkin", label: "Check-in" },

@@ -7,7 +7,7 @@ import { AVAILABLE_ICONS, renderIcon } from "../components/RoomIcons";
 import PosSettings from "@/app/components/PosSettings";
 import TuyaApiSettings from "@/app/components/TuyaApiSettings";
 import RatePlanSettings from "@/app/components/RatePlanSettings";
-import ExtraChargesSettings from "@/app/components/ExtraChargesSettings";
+import { logActivity } from "@/lib/activityLog";
 
 type Room = {
   id: string;
@@ -208,6 +208,15 @@ export default function SettingsPage() {
       // Update
       const { error } = await supabase.from("rooms").update(payload).eq("id", editingRoom.id);
       if (error) alert("Error updating room: " + error.message);
+      else {
+        await logActivity({
+          category: "settings",
+          action: "UPDATE",
+          target: `ห้อง ${payload.room_no}`,
+          details: `แก้ไขข้อมูลห้องพัก ${payload.room_no} (${payload.room_type}, ค้างคืน ฿${payload.price_night}, ชั่วคราว ฿${payload.price_temp}, มัดจำ ฿${payload.key_deposit})`,
+          roomNo: payload.room_no,
+        });
+      }
     } else {
       // Insert
       const { data, error } = await supabase.from("rooms").insert([payload]).select().single();
@@ -215,6 +224,13 @@ export default function SettingsPage() {
         alert("Error adding room: " + error.message);
       } else if (data) {
         savedRoomId = data.id;
+        await logActivity({
+          category: "settings",
+          action: "CREATE",
+          target: `ห้อง ${payload.room_no}`,
+          details: `เพิ่มห้องพักใหม่ ${payload.room_no} (${payload.room_type}, ค้างคืน ฿${payload.price_night}, ชั่วคราว ฿${payload.price_temp})`,
+          roomNo: payload.room_no,
+        });
       }
     }
 
@@ -253,7 +269,16 @@ export default function SettingsPage() {
     if (confirm(`คุณต้องการลบห้อง ${roomNo} ใช่หรือไม่?`)) {
       const { error } = await supabase.from("rooms").delete().eq("id", id);
       if (error) alert("Error deleting room");
-      else fetchRooms();
+      else {
+        await logActivity({
+          category: "settings",
+          action: "DELETE",
+          target: `ห้อง ${roomNo}`,
+          details: `ลบห้องพัก ${roomNo} ออกจากระบบ`,
+          roomNo,
+        });
+        fetchRooms();
+      }
     }
   }
 
@@ -278,12 +303,6 @@ export default function SettingsPage() {
             แผนราคา (Rate Plans)
           </button>
           <button 
-            onClick={() => setActiveTab('extras')} 
-            className={`whitespace-nowrap px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${activeTab === 'extras' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
-          >
-            บริการเสริม (Add-ons)
-          </button>
-          <button 
             onClick={() => setActiveTab('pos')} 
             className={`whitespace-nowrap px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${activeTab === 'pos' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
           >
@@ -306,8 +325,6 @@ export default function SettingsPage() {
 
             {activeTab === 'pos' ? (
         <PosSettings />
-      ) : activeTab === 'extras' ? (
-        <ExtraChargesSettings />
       ) : activeTab === 'tuya' ? (
         <TuyaApiSettings />
       ) : activeTab === 'rate-plans' ? (

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useShift } from "@/contexts/ShiftContext";
 import { supabase } from "@/lib/supabase";
+import { logActivity } from "@/lib/activityLog";
 
 interface ShiftManagerProps {
   compact?: boolean;
@@ -151,6 +152,15 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       return;
     }
 
+    await logActivity({
+      category: 'shift',
+      action: 'create',
+      staffName: staffData.name,
+      shiftName: staffData.name,
+      target: `เปิดกะ ${staffData.name}`,
+      details: `เปิดกะการทำงานโดย ${staffData.name} (เงินทอนเริ่มต้นในลิ้นชัก ฿${Number(initialCash || 0).toLocaleString()})`
+    });
+
     setShowOpenModal(false);
     setName("");
     setPin("");
@@ -213,6 +223,15 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       }
     }
 
+    await logActivity({
+      category: 'shift',
+      action: 'update',
+      staffName: operatorName || activeShift.staff_name,
+      shiftName: activeShift.staff_name,
+      target: `ปิดกะ ${activeShift.staff_name}`,
+      details: `ปิดกะการทำงาน ${activeShift.staff_name} (ยอดคาดหวัง ฿${Number(activeShift.expected_cash || 0).toLocaleString()}, นับจริง ฿${countedCash.toLocaleString()}, ส่วนต่าง ฿${discrepancy.toLocaleString()}${isEndOfDay ? ' • ปิดรอบวัน EOD' : ''})`
+    });
+
     setShowCloseModal(false);
     setClosePin("");
     setFinalCash(0);
@@ -253,6 +272,15 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
         await supabase.from('system_settings').insert({ key: 'expense_presets', value: newPresets });
       }
     }
+
+    await logActivity({
+      category: 'shift',
+      action: 'create',
+      staffName: operatorName || activeShift.staff_name,
+      shiftName: activeShift.staff_name,
+      target: `เบิกเงินสดย่อย • ${expenseReason.trim()}`,
+      details: `เบิกเงินสดย่อย "${expenseReason.trim()}" จำนวน ฿${Number(expenseAmount || 0).toLocaleString()}`
+    });
 
     setShowExpenseModal(false);
     setExpenseAmount('');
