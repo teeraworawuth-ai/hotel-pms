@@ -110,6 +110,21 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [selectedRatePlanId, setSelectedRatePlanId] = useState<string>('');
   const [dailyBreakdown, setDailyBreakdown] = useState<DailyRate[]>([]);
   const [totalTargetPrice, setTotalTargetPrice] = useState(0);
+  const [ratePlanTempPrices, setRatePlanTempPrices] = useState<Record<string, Record<string, number>>>({});
+  const [shortStayBase3Hr, setShortStayBase3Hr] = useState<number>(room.price_temp || 350);
+
+  // ปัดเศษขึ้นให้ลงท้ายด้วย 00, 30, 50, 80 เพื่อให้ทอนเงินง่ายด้วยแบงก์ 20 / 50
+  const roundUpToEasyChange = (rawVal: number): number => {
+    if (rawVal <= 0) return 0;
+    const ceilVal = Math.ceil(rawVal);
+    const hundreds = Math.floor(ceilVal / 100) * 100;
+    const rem = ceilVal - hundreds;
+    if (rem === 0) return hundreds;
+    if (rem <= 30) return hundreds + 30;
+    if (rem <= 50) return hundreds + 50;
+    if (rem <= 80) return hundreds + 80;
+    return hundreds + 100;
+  };
 
   // Fetch Base Data on Mount
     const [yieldRules, setYieldRules] = useState<any>(null);
@@ -121,15 +136,19 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         const { data: plans } = await supabase.from('rate_plans').select('id, name').order('created_at', { ascending: true });
         if (plans) setRatePlans(plans);
 
-        // 2. Fetch Global Yield Rules & Bank Accounts
-        const [rulesRes, bankRes] = await Promise.all([
+        // 2. Fetch Global Yield Rules, Bank Accounts & Short-Stay Temp Prices
+        const [rulesRes, bankRes, tempPricesRes] = await Promise.all([
           supabase.from('system_settings').select('value').eq('key', 'yield_management_rules').maybeSingle(),
-          supabase.from('system_settings').select('value').eq('key', 'bank_accounts').maybeSingle()
+          supabase.from('system_settings').select('value').eq('key', 'bank_accounts').maybeSingle(),
+          supabase.from('system_settings').select('value').eq('key', 'rate_plan_temp_prices').maybeSingle()
         ]);
         if (rulesRes.data && rulesRes.data.value) setYieldRules(rulesRes.data.value);
         if (bankRes.data && Array.isArray(bankRes.data.value) && bankRes.data.value.length > 0) {
           setBankAccounts(bankRes.data.value);
           setSelectedBank(bankRes.data.value[0]);
+        }
+        if (tempPricesRes.data && tempPricesRes.data.value) {
+          setRatePlanTempPrices(tempPricesRes.data.value as Record<string, Record<string, number>>);
         }
 
         // 3. Fetch Occupancy
@@ -142,19 +161,64 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       fetchBaseData();
     }, []);
 
-    // Recalculate Daily Breakdown when Dates change
+    // Recalculate Daily Breakdown / Short-Stay Target Price when Dates, Hours, or Tab change
     useEffect(() => {
       const generateBreakdown = async () => {
-        if (activeTab !== 'overnight') {
+        const startDate = (isExistingBooking && room.check_in_time) ? new Date(room.check_in_time) : new Date(displayDateStr);
+        if (!isExistingBooking && dateOffset > 0) startDate.setHours(14, 0, 0, 0);
+        const todayDateStr = startDate.toLocaleDateString('en-CA');
+        const fallbackPlanId = ratePlans.length > 0 ? ratePlans[0].id : null;
+
+        if (activeTab === 'short_stay') {
           setDailyBreakdown([]);
+          const { data: todaySetting } = await supabase
+            .from('daily_pricing_settings')
+            .select('rate_plan_id')
+            .eq('target_date', todayDateStr)
+            .maybeSingle();
+
+          const activePlanId = todaySetting?.rate_plan_id || fallbackPlanId;
+          let base3Hr = Number(room.price_temp || 350);
+
+          if (activePlanId && ratePlanTempPrices?.[activePlanId]?.[room.room_type] && Number(ratePlanTempPrices[activePlanId][room.room_type]) > 0) {
+            base3Hr = Number(ratePlanTempPrices[activePlanId][room.room_type]);
+          } else {
+            // ค้นหาจาก Rate Plan อื่นที่มีการตั้งราคาชั่วคราวของประเภทห้องนี้ไว้
+            for (const p of ratePlans) {
+              const pTemp = ratePlanTempPrices?.[p.id]?.[room.room_type];
+              if (pTemp && Number(pTemp) > 0) {
+                base3Hr = Number(pTemp);
+                break;
+              }
+            }
+          }
+
+          setShortStayBase3Hr(base3Hr);
+          const numHours = Math.max(1, Number(hours) || 3);
+          const rawTarget = (base3Hr / 3) * numHours;
+          const calcTarget = numHours === 3 ? base3Hr : roundUpToEasyChange(rawTarget);
+
+          const isUnchangedExistingShortStay =
+            isExistingBooking &&
+            bookingMeta?.targetPrices?.stayType === 'short_stay' &&
+            numHours === (initialSnapshot?.hours || 3);
+
+          const effectiveTarget =
+            isUnchangedExistingShortStay && bookingMeta?.targetPrices?.totalTargetPrice
+              ? Number(bookingMeta.targetPrices.totalTargetPrice)
+              : calcTarget;
+
+          setTotalTargetPrice(effectiveTarget);
+
+          if (isUnchangedExistingShortStay && room.actual_price !== undefined && room.actual_price !== null) {
+            setActualPrice(Number(room.actual_price));
+          } else {
+            setActualPrice(effectiveTarget);
+          }
           return;
         }
         
-        const numNights = Number(nights) || 0;
-        if (numNights <= 0) return;
-
-        const startDate = (isExistingBooking && room.check_in_time) ? new Date(room.check_in_time) : new Date(displayDateStr);
-        if (!isExistingBooking && dateOffset > 0) startDate.setHours(14, 0, 0, 0);
+        const numNights = Math.max(1, Number(nights) || 0);
         const targetDates: string[] = [];
         for (let i = 0; i < numNights; i++) {
           const d = new Date(startDate);
@@ -166,9 +230,6 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           .from('daily_pricing_settings')
           .select('*')
           .in('target_date', targetDates);
-
-        // 2. Fallback Rate Plan (if missing)
-        let fallbackPlanId = ratePlans.length > 0 ? ratePlans[0].id : null;
 
         // 3. Fetch Base Prices and Calendar Prices for all relevant rate plans
         const relevantPlanIds = new Set(dailySettings?.map(s => s.rate_plan_id) || []);
@@ -268,7 +329,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       };
       
       generateBreakdown();
-    }, [activeTab, nights, displayDateStr, dateOffset, room, yieldRules, ratePlans, availablePercent, savedDailyRates, bookingMeta]);
+    }, [activeTab, nights, hours, displayDateStr, dateOffset, room, yieldRules, ratePlans, ratePlanTempPrices, availablePercent, savedDailyRates, bookingMeta]);
 
   useEffect(() => {
     if (activeTab === 'overnight') {
@@ -450,7 +511,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [availableRoomsForReschedule, setAvailableRoomsForReschedule] = useState<{id: string, room_no: string, price_night: number, price_temp: number, location?: string}[]>([]);
   const [rescheduleTargetRoomId, setRescheduleTargetRoomId] = useState<string>('');
 
-  const [dynamicPricingDetails, setDynamicPricingDetails] = useState<{
+  const [dynamicPricingDetails] = useState<{
     base: number;
     weekendSurcharge: number;
     holidaySurcharge: number;
@@ -459,76 +520,6 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     isSurgeDisabled: boolean;
     surgeDisableTimeString?: string;
   } | null>(null);
-
-  useEffect(() => {
-    async function calculateDynamicPrice() {
-      if (room.status && room.status !== 'available') {
-        // สำหรับห้องที่มีแขกแล้ว แค่เซ็ตราคาเดิม หรือปล่อยผ่าน
-        return;
-      }
-      
-      const base = activeTab === 'overnight' ? (room.price_night || 0) : (room.price_temp || 0);
-      
-      // ดึงกฎราคาแปรผัน
-      const { data: rulesData } = await supabase.from('system_settings').select('value').eq('key', 'smart_pricing_rules').maybeSingle();
-      const rules = rulesData?.value || { weekend_surcharge: 0, holiday_surcharge: 0, holiday_mode_active: false, low_occupancy_surcharge: 0, low_occupancy_threshold_percent: 0, disable_surge_after_2130: false, surge_disable_time: "21:30" };
-      
-      let weekendSurcharge = 0;
-      let holidaySurcharge = 0;
-      let lowOccupancySurcharge = 0;
-      let isSurgeDisabled = false;
-      let surgeDisableTimeString = rules.surge_disable_time || "21:30";
-
-      // 1. ตรวจสอบวันศุกร์-เสาร์
-      const now = getNow();
-      const currentDay = now.getDay(); // 0 = อาทิตย์, 5 = ศุกร์, 6 = เสาร์
-      if (currentDay === 5 || currentDay === 6) {
-        weekendSurcharge = Number(rules.weekend_surcharge) || 0;
-      }
-      
-      // 2. ตรวจสอบเทศกาล
-      if (rules.holiday_mode_active) {
-        holidaySurcharge = Number(rules.holiday_surcharge) || 0;
-      }
-
-      // 3. ตรวจสอบห้องว่าง (ยกเว้นบ้าน)
-      if (Number(rules.low_occupancy_threshold_percent) > 0) {
-        const { data: rooms } = await supabase.from('rooms').select('status, room_type').neq('room_type', 'บ้าน');
-        if (rooms && rooms.length > 0) {
-          const totalRooms = rooms.length;
-          const availableCount = rooms.filter(r => r.status === 'available' || !r.status || r.status === 'dirty').length;
-          const availablePercent = (availableCount / totalRooms) * 100;
-          
-          if (availablePercent < Number(rules.low_occupancy_threshold_percent)) {
-            // เช็คเวลาหลังที่กำหนด
-            const [disableHour, disableMin] = surgeDisableTimeString.split(':').map(Number);
-            const isLateNight = now.getHours() > disableHour || (now.getHours() === disableHour && now.getMinutes() >= disableMin);
-            if (rules.disable_surge_after_2130 && isLateNight) {
-              isSurgeDisabled = true;
-            } else {
-              lowOccupancySurcharge = Number(rules.low_occupancy_surcharge) || 0;
-            }
-          }
-        }
-      }
-
-      const total = base + weekendSurcharge + holidaySurcharge + lowOccupancySurcharge;
-      
-      setDynamicPricingDetails({
-        base,
-        weekendSurcharge,
-        holidaySurcharge,
-        lowOccupancySurcharge,
-        total,
-        isSurgeDisabled,
-        surgeDisableTimeString
-      });
-      
-      setActualPrice(total);
-    }
-    
-    calculateDynamicPrice();
-  }, [activeTab, room.price_night, room.price_temp, room.status, getNow]);
 
   const [currentLateFee, setCurrentLateFee] = useState<number>(0);
   const [lateCheckoutApplied, setLateCheckoutApplied] = useState(false);
@@ -830,8 +821,8 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         const dailyTargets: Record<string, number> = {};
         dailyBreakdown.forEach(d => { dailyTargets[d.date] = d.targetPrice; });
         const targetTotal = type === 'overnight'
-          ? (dailyBreakdown.length > 0 ? Number(totalTargetPrice || 0) : Number(dynamicPricingDetails?.total || room.price_night || 0))
-          : Number(dynamicPricingDetails?.total || room.price_temp || 0);
+          ? (dailyBreakdown.length > 0 ? Number(totalTargetPrice || 0) : Number(room.price_night || 0))
+          : Number(totalTargetPrice || shortStayBase3Hr || room.price_temp || 0);
         await supabase.from('system_settings').upsert({
           key: `booking_meta_${insertedBooking.id}`,
           value: {
@@ -1010,7 +1001,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       ...bookingMeta,
       history: nextHistory,
       targetPrices: {
-        totalTargetPrice: activeTab === 'overnight' ? Number(totalTargetPrice || 0) : Number(dynamicPricingDetails?.total || room.price_temp || 0),
+        totalTargetPrice: activeTab === 'overnight' ? Number(totalTargetPrice || 0) : Number(totalTargetPrice || shortStayBase3Hr || room.price_temp || 0),
         dailyTargets,
         timeBand: bookingMeta.targetPrices?.timeBand || timeBand,
         stayType: activeTab
@@ -1241,7 +1232,12 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         setActiveTab(resolvedStayType);
 
         let resolvedNights = Number(nights) || 1;
-        if (ratesData.length > 0) {
+        let resolvedHours = Number(hours) || 3;
+        if (resolvedStayType === 'short_stay' && bRow?.check_in_time && bRow?.check_out_time) {
+          const diffHours = Math.max(1, Math.round((new Date(bRow.check_out_time).getTime() - new Date(bRow.check_in_time).getTime()) / (1000 * 60 * 60)));
+          resolvedHours = diffHours;
+          setHours(diffHours);
+        } else if (ratesData.length > 0) {
           resolvedNights = ratesData.length;
           setNights(resolvedNights);
         } else if (bRow?.check_in_time && bRow?.check_out_time) {
@@ -1268,7 +1264,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           guestName: resolvedName,
           stayType: resolvedStayType,
           nights: resolvedNights,
-          hours: Number(hours) || 3,
+          hours: resolvedHours,
           actualPrice: resolvedPrice,
           dailyRates: dailyMap,
           keyDepositEnabled: initDepEnabled,
@@ -1986,9 +1982,13 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     <span className="text-sm font-bold text-slate-800">
                       {activeTab === 'overnight' ? 'จำนวนคืน' : 'จำนวนชั่วโมง'}
                     </span>
-                    {activeTab === 'overnight' && (
+                    {activeTab === 'overnight' ? (
                       <p className="text-[11px] text-slate-400 font-medium">
                         ออก: {getNextNoon((isExistingBooking && room.check_in_time) ? new Date(room.check_in_time) : displayDate, Number(nights) || 0).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })} 12:00 น.
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-slate-400 font-medium">
+                        ออก: {new Date(((isExistingBooking && room.check_in_time) ? new Date(room.check_in_time) : getNow()).getTime() + (Number(hours) || 3) * 3600000).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น. • เรทตั้งต้น 3 ชม. ฿{shortStayBase3Hr.toLocaleString()} (ปัดลงท้าย 00/30/50/80)
                       </p>
                     )}
                   </div>
@@ -2017,22 +2017,29 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                 {renderFieldHistory('nights')}
               </div>
 
-              {/* ค่าห้อง (ตัดช่องส่วนลดออก) */}
+              {/* ค่าห้อง (แสดงราคาเป้าหมายและราคาขายจริง ทั้งค้างคืนและชั่วคราว) */}
               {(() => {
                 const isMultiNight = activeTab === 'overnight' && dailyBreakdown.length > 1;
-                const targetTotal = activeTab === 'overnight' ? Number(totalTargetPrice || 0) : Number(dynamicPricingDetails?.total || 0);
+                const targetTotal = Number(totalTargetPrice || 0);
                 const diff = Number(actualPrice || 0) - targetTotal;
                 return (
                   <div>
-                    <div className="flex justify-between items-center mb-1.5">
+                    <div className="flex justify-between items-center mb-1.5 flex-wrap gap-1">
                       <label className="text-sm font-semibold text-slate-700">
-                        ค่าห้อง {isMultiNight && <span className="text-[11px] font-medium text-slate-400">(รวม {dailyBreakdown.length} คืน — แก้ราคาในตารางรายวัน)</span>}
+                        ค่าห้อง (ราคาขายจริง) {isMultiNight && <span className="text-[11px] font-medium text-slate-400">(รวม {dailyBreakdown.length} คืน — แก้ราคาในตารางรายวัน)</span>}
                       </label>
-                      {targetTotal > 0 && diff !== 0 && actualPrice !== '' && (
-                        <span className={`text-xs font-bold ${diff < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                          {diff < 0 ? '🔻' : '🔺'} ส่วนต่าง {diff > 0 ? '+' : ''}{diff.toLocaleString()} (เป้าหมาย ฿{targetTotal.toLocaleString()})
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5 text-xs">
+                        {targetTotal > 0 && (
+                          <span className="font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200">
+                            ราคาเป้าหมาย: ฿{targetTotal.toLocaleString()}
+                          </span>
+                        )}
+                        {targetTotal > 0 && diff !== 0 && actualPrice !== '' && (
+                          <span className={`font-bold ${diff < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                            {diff < 0 ? '🔻' : '🔺'} ส่วนต่าง {diff > 0 ? '+' : ''}{diff.toLocaleString()}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="relative">
                       <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-indigo-700 font-bold text-lg">
@@ -2402,9 +2409,12 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                         <span className="font-semibold text-slate-600">ค่าห้อง</span>
                         <span className="font-black text-slate-900">฿{Number(actualPrice || 0).toLocaleString()}</span>
                       </div>
-                      {activeTab === 'overnight' && Number(totalTargetPrice) > 0 && Number(actualPrice || 0) !== Number(totalTargetPrice) && (
-                        <p className={`text-[10px] mt-0.5 ${Number(actualPrice || 0) < Number(totalTargetPrice) ? 'text-red-500' : 'text-emerald-600'}`}>
-                          เป้าหมาย ฿{Number(totalTargetPrice).toLocaleString()} ({Number(actualPrice || 0) < Number(totalTargetPrice) ? '🔻' : '🔺'} {(Number(actualPrice || 0) - Number(totalTargetPrice)).toLocaleString()})
+                      {Number(totalTargetPrice) > 0 && (
+                        <p className={`text-[10px] mt-0.5 ${Number(actualPrice || 0) < Number(totalTargetPrice) ? 'text-red-500 font-bold' : Number(actualPrice || 0) > Number(totalTargetPrice) ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}>
+                          เป้าหมาย ฿{Number(totalTargetPrice).toLocaleString()}
+                          {Number(actualPrice || 0) !== Number(totalTargetPrice) && (
+                            <> ({Number(actualPrice || 0) < Number(totalTargetPrice) ? '🔻' : '🔺'} {(Number(actualPrice || 0) - Number(totalTargetPrice) > 0 ? '+' : '') + (Number(actualPrice || 0) - Number(totalTargetPrice)).toLocaleString()})</>
+                          )}
                         </p>
                       )}
                       {renderFieldHistory('actual_price')}

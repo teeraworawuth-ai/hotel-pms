@@ -71,6 +71,8 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
 
   // Left Column: Revenue Breakdown
   const [roomTargetTotal, setRoomTargetTotal] = useState(0); // 1.1 รายได้ค่าห้อง (ตามราคาเป้าหมาย)
+  const [roomTargetOvernight, setRoomTargetOvernight] = useState(0); // 1.1.1 ค้างคืน
+  const [roomTargetShortStay, setRoomTargetShortStay] = useState(0); // 1.1.2 ชั่วคราว
   const [earlyLateTotal, setEarlyLateTotal] = useState(0);   // 1.2.1 เข้าก่อน/ออกช้า (Early-Late)
   const [upsellTotal, setUpsellTotal] = useState(0);         // 1.2.2 ส่วนต่างปรับเพิ่มราคา (ขายสูงกว่าราคาเป้าหมาย)
   const [roomDiscountTotal, setRoomDiscountTotal] = useState(0); // 1.3 ส่วนลด (ขายต่ำกว่าราคาเป้าหมาย)
@@ -276,8 +278,10 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
       // =========================================================================
       // 1. คำนวณฝั่งรายได้ (Left Column)
       // =========================================================================
-      let rTarget = 0;   // 1.1 รายได้ค่าห้อง (ตามราคาเป้าหมาย)
-      let rEarlyLate = 0; // 1.2.1 early-late
+      let rTarget = 0;          // 1.1 รายได้ค่าห้อง (ตามราคาเป้าหมาย)
+      let rTargetOvernight = 0; // 1.1.1 ค้างคืน
+      let rTargetShortStay = 0; // 1.1.2 ชั่วคราว
+      let rEarlyLate = 0;       // 1.2.1 early-late
       let rUpsell = 0;    // 1.2.2 ส่วนต่างปรับเพิ่มราคา
       let rDiscount = 0;  // 1.3 ส่วนลด
       let revAddon = 0;   // 2. ค่าส่วนเสริม
@@ -321,8 +325,9 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
             : Number(room?.price_night || actualNightPrice);
 
         const diff = actualNightPrice - targetNightPrice;
+        rTarget += targetNightPrice;
+        rTargetOvernight += targetNightPrice;
         if (diff >= 0) {
-          rTarget += targetNightPrice;
           if (diff > 0) {
             if (isFirstNight && meta?.targetPrices?.timeBand === "early_in") {
               // กรณีเข้าพักก่อนเวลา (06:45 - 09:44) ส่วนที่บวกเพิ่มจากราคาเป้าหมายเป็นค่า early-in
@@ -336,7 +341,6 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
             }
           }
         } else {
-          rTarget += targetNightPrice;
           rDiscount += Math.abs(diff);
         }
       });
@@ -393,6 +397,15 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
           const meta = tx.booking_id ? bookingMetaMap[tx.booking_id] : undefined;
           const actualAmt = Number(tx.amount || 0);
 
+          const isShortStay =
+            meta?.targetPrices?.stayType === "short_stay" ||
+            (!tx.category.includes("พักต่อ") &&
+              !tx.category.includes("บังคับพักต่อ") &&
+              !!b &&
+              !(dailyRatesByBooking[b.id]?.length) &&
+              new Date(b.check_out_time).getTime() - new Date(b.check_in_time).getTime() <= 10 * 3600 * 1000 &&
+              new Date(b.check_out_time).getHours() !== 12);
+
           let targetAmt = actualAmt;
           if (tx.category.includes("พักต่อ") || tx.category.includes("บังคับพักต่อ")) {
             const matchNights = tx.category.match(/(\d+)\s*คืน/);
@@ -400,17 +413,23 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
             targetAmt = Number(room?.price_night || actualAmt) * extNights;
           } else if (meta?.targetPrices?.totalTargetPrice && meta.targetPrices.totalTargetPrice > 0) {
             targetAmt = Number(meta.targetPrices.totalTargetPrice);
-          } else if (meta?.targetPrices?.stayType === "short_stay") {
+          } else if (isShortStay) {
             targetAmt = Number(room?.price_temp || actualAmt);
           } else if (room?.price_night && actualAmt >= room.price_night * 0.5) {
             targetAmt = Number(room.price_night);
           }
 
           const diff = actualAmt - targetAmt;
+          rTarget += targetAmt;
+          if (isShortStay) {
+            rTargetShortStay += targetAmt;
+          } else {
+            rTargetOvernight += targetAmt;
+          }
+
           if (diff >= 0) {
-            rTarget += targetAmt;
             if (diff > 0) {
-              if (meta?.targetPrices?.timeBand === "early_in") {
+              if (!isShortStay && meta?.targetPrices?.timeBand === "early_in") {
                 const earlyCap = Number(room?.price_temp || diff);
                 const earlyPart = Math.min(diff, earlyCap);
                 const upsellPart = Math.max(0, diff - earlyPart);
@@ -421,7 +440,6 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
               }
             }
           } else {
-            rTarget += targetAmt;
             rDiscount += Math.abs(diff);
           }
         }
@@ -483,6 +501,8 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
       });
 
       setRoomTargetTotal(rTarget);
+      setRoomTargetOvernight(rTargetOvernight);
+      setRoomTargetShortStay(rTargetShortStay);
       setEarlyLateTotal(rEarlyLate);
       setUpsellTotal(rUpsell);
       setRoomDiscountTotal(rDiscount);
@@ -872,9 +892,19 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
               </div>
 
               {/* 1.1 รายได้ค่าห้อง (ตามราคาเป้าหมาย) */}
-              <div className="flex justify-between items-center pl-3 text-slate-700 font-semibold">
-                <span>1.1 รายได้ค่าห้อง (ตามราคาเป้าหมาย)</span>
-                <span className="font-bold text-slate-900">{fmt(roomTargetTotal)}</span>
+              <div className="pl-3 space-y-1">
+                <div className="flex justify-between items-center text-slate-700 font-semibold">
+                  <span>1.1 รายได้ค่าห้อง (ตามราคาเป้าหมาย)</span>
+                  <span className="font-bold text-slate-900">{fmt(roomTargetTotal)}</span>
+                </div>
+                <div className="flex justify-between items-center pl-4 text-xs text-slate-600">
+                  <span>1.1.1 ค้างคืน</span>
+                  <span className="font-bold text-slate-700">{fmt(roomTargetOvernight)}</span>
+                </div>
+                <div className="flex justify-between items-center pl-4 text-xs text-slate-600">
+                  <span>1.1.2 ชั่วคราว</span>
+                  <span className="font-bold text-slate-700">{fmt(roomTargetShortStay)}</span>
+                </div>
               </div>
 
               {/* 1.2 รายได้ส่วนเพิ่ม */}
