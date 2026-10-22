@@ -2839,11 +2839,11 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                 <span className="text-slate-500">พนักงานผู้ทำรายการ:</span>
                 <input 
                   type="text" 
-                  value={staffName} 
-                  onChange={(e) => setStaffName(e.target.value)} 
-                  disabled={isBookingLocked}
+                  value={staffName || operatorName || activeShift?.staff_name || ""} 
+                  readOnly
+                  disabled
                   placeholder={operatorName || activeShift?.staff_name || "ชื่อพนักงาน"}
-                  className="border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 bg-white max-w-[160px] text-right"
+                  className="border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-600 bg-slate-100 max-w-[160px] text-right cursor-not-allowed select-none"
                 />
               </div>
 
