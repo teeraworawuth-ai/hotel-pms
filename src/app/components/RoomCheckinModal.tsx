@@ -113,17 +113,10 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [ratePlanTempPrices, setRatePlanTempPrices] = useState<Record<string, Record<string, number>>>({});
   const [shortStayBase3Hr, setShortStayBase3Hr] = useState<number>(room.price_temp || 350);
 
-  // ปัดเศษขึ้นให้ลงท้ายด้วย 00, 30, 50, 80 เพื่อให้ทอนเงินง่ายด้วยแบงก์ 20 / 50
+  // ปัดเศษขึ้นให้ลงท้ายด้วย 50 หรือ 00 เสมอ (ยึดจากฐาน 3 ชม. แรก)
   const roundUpToEasyChange = (rawVal: number): number => {
     if (rawVal <= 0) return 0;
-    const ceilVal = Math.ceil(rawVal);
-    const hundreds = Math.floor(ceilVal / 100) * 100;
-    const rem = ceilVal - hundreds;
-    if (rem === 0) return hundreds;
-    if (rem <= 30) return hundreds + 30;
-    if (rem <= 50) return hundreds + 50;
-    if (rem <= 80) return hundreds + 80;
-    return hundreds + 100;
+    return Math.ceil(rawVal / 50) * 50;
   };
 
   // Fetch Base Data on Mount
