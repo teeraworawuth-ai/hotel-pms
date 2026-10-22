@@ -510,6 +510,11 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     setExtrasManagerName(staffData.name || staffData.role);
   };
 
+  const [showCustomExtraForm, setShowCustomExtraForm] = useState(false);
+  const [customExtraName, setCustomExtraName] = useState('');
+  const [customExtraPrice, setCustomExtraPrice] = useState<number | ''>('');
+  const [customExtraChargeType, setCustomExtraChargeType] = useState<'one_time' | 'per_night'>('one_time');
+
   const handleAddExtra = (setting: any) => {
     const qty = 1;
     const isPerNight = setting.charge_type === 'per_night';
@@ -530,6 +535,16 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         }));
         return;
       }
+    } else {
+      const existingOneTimeIdx = dailyExtras.findIndex(e => e.name === setting.name && !e.isPerNight);
+      if (existingOneTimeIdx !== -1) {
+        setDailyExtras(prev => prev.map((e, idx) =>
+          idx === existingOneTimeIdx
+            ? { ...e, qty: (Number(e.qty) || 1) + 1, isModified: e.isSaved ? true : undefined }
+            : e
+        ));
+        return;
+      }
     }
 
     const dailySchedule = isPerNight
@@ -545,6 +560,20 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       dailySchedule,
       amount: isPerNight ? Number(setting.price) * currentDates.length : Number(setting.price)
     }]);
+  };
+
+  const handleAddCustomExtraInline = () => {
+    const trimmed = customExtraName.trim();
+    const numPrice = Number(customExtraPrice);
+    if (!trimmed || !numPrice || numPrice <= 0) return;
+    handleAddExtra({
+      name: trimmed,
+      price: numPrice,
+      charge_type: customExtraChargeType
+    });
+    setCustomExtraName('');
+    setCustomExtraPrice('');
+    setShowCustomExtraForm(false);
   };
   
   const handleRemoveExtra = (id: string) => {
@@ -2378,42 +2407,93 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
               )}
 
               {/* บริการเสริม (Add-ons) */}
-              {extraSettings.length > 0 && (
+              {true && (
                 <div className="pt-1">
                   <div className="flex justify-between items-center mb-1.5">
                     <label className="text-xs font-bold text-slate-600">บริการเสริม (Add-ons)</label>
+                    <a
+                      href="/settings?tab=extras"
+                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1"
+                    >
+                      ⚙️ ตั้งค่าปุ่มบริการเสริม
+                    </a>
                   </div>
                   {(room.status !== 'occupied' || extrasManagerUnlocked) && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {extraSettings.filter(e => e.ui_type === 'quick_button').map(e => (
-                        <button 
-                          key={e.id}
+                    <>
+                      <div className="flex flex-wrap gap-1.5">
+                        {extraSettings.filter(e => e.ui_type === 'quick_button').map(e => (
+                          <button 
+                            key={e.id}
+                            type="button"
+                            onClick={() => handleAddExtra(e)}
+                            className="bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 text-slate-700 border border-slate-200 px-2.5 py-1 rounded-xl text-xs font-bold transition-colors"
+                          >
+                            + {e.name} ({e.price}บ.)
+                          </button>
+                        ))}
+                        {extraSettings.filter(e => e.ui_type === 'dropdown').length > 0 && (
+                          <select 
+                            onChange={(e) => {
+                              const setting = extraSettings.find(s => s.id === e.target.value);
+                              if (setting) {
+                                handleAddExtra(setting);
+                                e.target.value = "";
+                              }
+                            }}
+                            className="border border-slate-200 rounded-xl px-2 py-1 text-xs font-medium bg-slate-50"
+                            defaultValue=""
+                          >
+                            <option value="" disabled>+ รายการอื่นๆ</option>
+                            {extraSettings.filter(e => e.ui_type === 'dropdown').map(e => (
+                              <option key={e.id} value={e.id}>{e.name} (฿{e.price})</option>
+                            ))}
+                          </select>
+                        )}
+                        <button
                           type="button"
-                          onClick={() => handleAddExtra(e)}
-                          className="bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 text-slate-700 border border-slate-200 px-2.5 py-1 rounded-xl text-xs font-bold transition-colors"
+                          onClick={() => setShowCustomExtraForm(prev => !prev)}
+                          className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2.5 py-1 rounded-xl text-xs font-bold transition-colors"
                         >
-                          + {e.name} ({e.price}บ.)
+                          {showCustomExtraForm ? '✕ ปิดฟอร์ม' : '+ พิมพ์รายการเอง'}
                         </button>
-                      ))}
-                      {extraSettings.filter(e => e.ui_type === 'dropdown').length > 0 && (
-                        <select 
-                          onChange={(e) => {
-                            const setting = extraSettings.find(s => s.id === e.target.value);
-                            if (setting) {
-                              handleAddExtra(setting);
-                              e.target.value = "";
-                            }
-                          }}
-                          className="border border-slate-200 rounded-xl px-2 py-1 text-xs font-medium bg-slate-50"
-                          defaultValue=""
-                        >
-                          <option value="" disabled>+ รายการอื่นๆ</option>
-                          {extraSettings.filter(e => e.ui_type === 'dropdown').map(e => (
-                            <option key={e.id} value={e.id}>{e.name} (฿{e.price})</option>
-                          ))}
-                        </select>
+                      </div>
+
+                      {showCustomExtraForm && (
+                        <div className="mt-2 p-2.5 bg-indigo-50/60 border border-indigo-200 rounded-xl flex flex-wrap items-center gap-1.5 text-xs">
+                          <input
+                            type="text"
+                            placeholder="ชื่อรายการเสริม..."
+                            value={customExtraName}
+                            onChange={e => setCustomExtraName(e.target.value)}
+                            className="flex-1 min-w-[120px] border border-slate-300 rounded-lg px-2 py-1.5 bg-white font-bold text-slate-800"
+                          />
+                          <input
+                            type="number"
+                            min={1}
+                            placeholder="ราคา"
+                            value={customExtraPrice}
+                            onChange={e => setCustomExtraPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                            className="w-20 border border-slate-300 rounded-lg px-2 py-1.5 bg-white font-bold text-slate-800 text-right"
+                          />
+                          <select
+                            value={customExtraChargeType}
+                            onChange={e => setCustomExtraChargeType(e.target.value as 'one_time' | 'per_night')}
+                            className="border border-slate-300 rounded-lg px-2 py-1.5 bg-white font-bold text-slate-700"
+                          >
+                            <option value="one_time">ครั้งเดียว</option>
+                            <option value="per_night">ตามจำนวนคืน</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={handleAddCustomExtraInline}
+                            disabled={!customExtraName.trim() || !customExtraPrice || Number(customExtraPrice) <= 0}
+                            className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold px-3 py-1.5 rounded-lg transition-colors"
+                          >
+                            เพิ่ม
+                          </button>
+                        </div>
                       )}
-                    </div>
+                    </>
                   )}
 
                   {dailyExtras.length > 0 && (

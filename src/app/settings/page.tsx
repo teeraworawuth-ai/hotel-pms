@@ -62,6 +62,13 @@ export default function SettingsPage() {
   });
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get("tab");
+      if (tabParam === "rooms" || tabParam === "pos" || tabParam === "tuya" || tabParam === "rate-plans" || tabParam === "extras" || tabParam === "staff") {
+        setActiveTab(tabParam);
+      }
+    }
     fetchRooms();
   }, []);
 
@@ -271,6 +278,12 @@ export default function SettingsPage() {
             แผนราคา (Rate Plans)
           </button>
           <button 
+            onClick={() => setActiveTab('extras')} 
+            className={`whitespace-nowrap px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${activeTab === 'extras' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+          >
+            บริการเสริม (Add-ons)
+          </button>
+          <button 
             onClick={() => setActiveTab('pos')} 
             className={`whitespace-nowrap px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${activeTab === 'pos' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
           >
@@ -293,6 +306,8 @@ export default function SettingsPage() {
 
             {activeTab === 'pos' ? (
         <PosSettings />
+      ) : activeTab === 'extras' ? (
+        <ExtraChargesSettings />
       ) : activeTab === 'tuya' ? (
         <TuyaApiSettings />
       ) : activeTab === 'rate-plans' ? (
