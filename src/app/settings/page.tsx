@@ -287,7 +287,7 @@ export default function SettingsPage() {
       <header className="flex flex-col md:flex-row justify-between md:items-end gap-4 border-b border-slate-200 pb-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-800 tracking-tight">ตั้งค่าระบบ</h1>
-          <p className="text-slate-500 mt-2">ตั้งค่าห้องพัก และจัดการปุ่มรายได้อื่นๆ (POS)</p>
+          <p className="text-slate-500 mt-2">ตั้งค่าห้องพัก, แผนราคา, บัญชีธนาคารรับโอน และจัดการผู้ใช้งาน</p>
         </div>
                 <div className="flex gap-2 bg-slate-100 p-1 rounded-xl overflow-x-auto">
           <button 
@@ -306,7 +306,7 @@ export default function SettingsPage() {
             onClick={() => setActiveTab('pos')} 
             className={`whitespace-nowrap px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${activeTab === 'pos' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
           >
-            จัดการปุ่ม POS
+            🏦 บัญชีธนาคาร
           </button>
           <button 
             onClick={() => setActiveTab('tuya')} 

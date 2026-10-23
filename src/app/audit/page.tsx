@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import DailyReport from "./DailyReport";
 import GuestReport from "./GuestReport";
 import AnomalyReport from "./AnomalyReport";
 import AnomalyHistory from "./AnomalyHistory";
@@ -8,14 +9,14 @@ import HousekeepingOvertime from "./HousekeepingOvertime";
 import ActivityLogView from "./ActivityLogView";
 
 export default function AuditPage() {
-  const [activeTab, setActiveTab] = useState<"guest" | "anomaly" | "history" | "activity_log">("guest");
+  const [activeTab, setActiveTab] = useState<"daily" | "guest" | "anomaly" | "history" | "activity_log">("daily");
   const [dateOffset, setDateOffset] = useState<number>(0);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get("tab");
-      if (tabParam === "activity_log" || tabParam === "guest" || tabParam === "anomaly" || tabParam === "history") {
+      if (tabParam === "daily" || tabParam === "activity_log" || tabParam === "guest" || tabParam === "anomaly" || tabParam === "history") {
         setActiveTab(tabParam);
       }
     }
@@ -35,13 +36,29 @@ export default function AuditPage() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-800 tracking-tight">รายงานการตรวจสอบ (Audit &amp; Activity Log)</h1>
-          <p className="text-slate-500 mt-2">ตรวจสอบความผิดปกติ วิเคราะห์การใช้พลังงาน และดูประวัติการแก้ไขข้อมูลย้อนหลัง 30 วัน</p>
+          <h1 className="text-3xl font-bold text-slate-800 tracking-tight">รายงานประจำวัน &amp; ตรวจสอบ (Daily Report &amp; Audit)</h1>
+          <p className="text-slate-500 mt-2">สรุปรายได้-รับชำระเงินประจำวัน ตรวจสอบความผิดปกติ วิเคราะห์การใช้พลังงาน และดูประวัติการใช้งานย้อนหลัง 30 วัน</p>
         </div>
+        <a
+          href="/simulation-5-days.html"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold shadow-xs transition-all whitespace-nowrap"
+        >
+          🖨️ เปิดเอกสารจำลองสถานการณ์ 5 วัน (พิมพ์ A4)
+        </a>
       </header>
 
       {/* Tabs */}
       <div className="flex bg-white rounded-xl shadow-sm border border-slate-200 p-1 overflow-x-auto">
+        <button
+          onClick={() => setActiveTab("daily")}
+          className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${
+            activeTab === "daily" ? "bg-emerald-50 text-emerald-700" : "text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          📊 รายงานเงินสดประจำวัน
+        </button>
         <button
           onClick={() => setActiveTab("guest")}
           className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${
@@ -96,6 +113,7 @@ export default function AuditPage() {
 
       {/* Content */}
       <div className="mt-6">
+        {activeTab === "daily" && <DailyReport dateOffset={dateOffset} />}
         {activeTab === "guest" && <GuestReport dateOffset={dateOffset} />}
         {activeTab === "anomaly" && <HousekeepingOvertime dateOffset={dateOffset} />}
         {activeTab === "anomaly" && <AnomalyReport dateOffset={dateOffset} />}

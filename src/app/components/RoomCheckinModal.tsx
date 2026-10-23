@@ -413,19 +413,50 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [keyDepositAmount, setKeyDepositAmount] = useState<number | ''>(room.key_deposit !== undefined && room.key_deposit !== null ? room.key_deposit : 200);
   
   const [extraSettings, setExtraSettings] = useState<any[]>([]);
+  const [posCategoryMap, setPosCategoryMap] = useState<Record<string, 'addon' | 'minibar' | 'fine' | 'other'>>({});
   const refreshExtraSettings = async () => {
-    const { data } = await supabase
-      .from('extra_charge_settings')
-      .select('*')
-      .eq('is_active', true)
-      .order('created_at', { ascending: true });
-    if (data) setExtraSettings(data);
+    const [extraRes, posRes, catRes] = await Promise.all([
+      supabase.from('extra_charge_settings').select('*').eq('is_active', true).order('created_at', { ascending: true }),
+      supabase.from('pos_items').select('*').eq('is_active', true),
+      supabase.from('system_settings').select('value').eq('key', 'pos_category_map').maybeSingle()
+    ]);
+
+    let extrasList = extraRes.data || [];
+    const posList = posRes.data || [];
+    const rawCatMap = (catRes.data?.value as Record<string, any>) || {};
+    const normalizedCatMap: Record<string, 'addon' | 'minibar' | 'fine' | 'other'> = {};
+    Object.entries(rawCatMap).forEach(([k, v]) => {
+      if (v === 'minibar' || v === 'addon' || v === 'fine' || v === 'other') {
+        normalizedCatMap[k] = v;
+      } else {
+        normalizedCatMap[k] = 'addon';
+      }
+    });
+    setPosCategoryMap(normalizedCatMap);
+
+    // ซิงค์รายการจาก pos_items เดิมเข้าสู่ extra_charge_settings อัตโนมัติหากยังไม่มีชื่อซ้ำ
+    const existingNames = new Set(extrasList.map((e: any) => String(e.name || '').trim()));
+    const missingPosItems = posList.filter((p: any) => p.name && !existingNames.has(String(p.name).trim()));
+    if (missingPosItems.length > 0) {
+      const inserts = missingPosItems.map((p: any) => ({
+        name: String(p.name).trim(),
+        price: Number(p.default_price || 0),
+        charge_type: 'one_time',
+        ui_type: 'quick_button',
+        is_active: true
+      }));
+      const { data: newlyInserted } = await supabase.from('extra_charge_settings').insert(inserts).select('*');
+      if (newlyInserted && newlyInserted.length > 0) {
+        extrasList = [...extrasList, ...newlyInserted];
+      }
+    }
+    setExtraSettings(extrasList);
   };
   useEffect(() => {
     refreshExtraSettings();
   }, []);
 
-  const syncExtraPosCategoryMap = async (name: string, oldName?: string) => {
+  const syncExtraPosCategoryMap = async (name: string, oldName?: string, reportCategory: 'addon' | 'minibar' | 'fine' | 'other' = 'addon') => {
     try {
       const { data } = await supabase
         .from('system_settings')
@@ -436,10 +467,16 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       if (oldName && oldName !== name && currentMap[oldName]) {
         delete currentMap[oldName];
       }
-      currentMap[name] = 'เตียงเสริม/อุปกรณ์';
+      currentMap[name] = reportCategory;
       await supabase
         .from('system_settings')
         .upsert({ key: 'pos_category_map', value: currentMap }, { onConflict: 'key' });
+      setPosCategoryMap(prev => {
+        const next = { ...prev };
+        if (oldName && oldName !== name) delete next[oldName];
+        next[name] = reportCategory;
+        return next;
+      });
     } catch (e) {
       console.error('Failed to sync pos_category_map:', e);
     }
@@ -453,11 +490,13 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [editExtraSettingPrice, setEditExtraSettingPrice] = useState<number | ''>('');
   const [editExtraSettingChargeType, setEditExtraSettingChargeType] = useState<'one_time' | 'per_night'>('one_time');
   const [editExtraSettingUiType, setEditExtraSettingUiType] = useState<'quick_button' | 'dropdown'>('dropdown');
+  const [editExtraSettingReportCat, setEditExtraSettingReportCat] = useState<'addon' | 'minibar' | 'fine' | 'other'>('addon');
   const [showAddNewExtraSettingForm, setShowAddNewExtraSettingForm] = useState(false);
   const [newExtraSettingName, setNewExtraSettingName] = useState('');
   const [newExtraSettingPrice, setNewExtraSettingPrice] = useState<number | ''>('');
   const [newExtraSettingChargeType, setNewExtraSettingChargeType] = useState<'one_time' | 'per_night'>('one_time');
   const [newExtraSettingUiType, setNewExtraSettingUiType] = useState<'quick_button' | 'dropdown'>('dropdown');
+  const [newExtraSettingReportCat, setNewExtraSettingReportCat] = useState<'addon' | 'minibar' | 'fine' | 'other'>('addon');
   const [extraSettingSaving, setExtraSettingSaving] = useState(false);
   const [showAddonRecentLogs, setShowAddonRecentLogs] = useState(false);
   const [addonRecentLogs, setAddonRecentLogs] = useState<ActivityLogEntry[]>([]);
@@ -487,14 +526,14 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         is_active: true
       });
       if (!error) {
-        await syncExtraPosCategoryMap(trimmed);
+        await syncExtraPosCategoryMap(trimmed, undefined, newExtraSettingReportCat);
         await logActivity({
           category: 'addons',
           action: 'create',
           staffName: actorName,
           shiftName: activeShift?.staff_name || null,
           target: trimmed,
-          details: `เพิ่มบริการเสริม "${trimmed}" ราคา ฿${numPrice.toLocaleString()} (${newExtraSettingChargeType === 'per_night' ? 'ระบุวัน/รายคืน' : 'ครั้งเดียว'} • ${newExtraSettingUiType === 'quick_button' ? 'ปุ่มลัดด้านบน' : 'ในตัวเลือก'})`
+          details: `เพิ่มรายการ "${trimmed}" ราคา ฿${numPrice.toLocaleString()} (${newExtraSettingChargeType === 'per_night' ? 'ระบุวัน/รายคืน' : 'ครั้งเดียว'} • ${newExtraSettingUiType === 'quick_button' ? 'ปุ่มลัดด้านบน' : 'ในตัวเลือก'})`
         });
         await refreshExtraSettings();
         if (showAddonRecentLogs) await loadRecentAddonLogs();
@@ -515,6 +554,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     setEditExtraSettingPrice(Number(item.price));
     setEditExtraSettingChargeType(item.charge_type === 'per_night' ? 'per_night' : 'one_time');
     setEditExtraSettingUiType(item.ui_type === 'quick_button' ? 'quick_button' : 'dropdown');
+    setEditExtraSettingReportCat(posCategoryMap[item.name] || 'addon');
   };
 
   const handleSaveEditExtraSetting = async (oldItem: any) => {
@@ -533,14 +573,14 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         })
         .eq('id', oldItem.id);
       if (!error) {
-        await syncExtraPosCategoryMap(trimmed, oldItem.name);
+        await syncExtraPosCategoryMap(trimmed, oldItem.name, editExtraSettingReportCat);
         await logActivity({
           category: 'addons',
           action: 'update',
           staffName: actorName,
           shiftName: activeShift?.staff_name || null,
           target: trimmed,
-          details: `แก้ไขบริการเสริม "${oldItem.name}" (฿${Number(oldItem.price).toLocaleString()}) -> "${trimmed}" (฿${numPrice.toLocaleString()}) [${editExtraSettingChargeType === 'per_night' ? 'ระบุวัน/รายคืน' : 'ครั้งเดียว'} • ${editExtraSettingUiType === 'quick_button' ? 'ปุ่มลัดด้านบน' : 'ในตัวเลือก'}]`
+          details: `แก้ไขรายการ "${oldItem.name}" (฿${Number(oldItem.price).toLocaleString()}) -> "${trimmed}" (฿${numPrice.toLocaleString()}) [${editExtraSettingChargeType === 'per_night' ? 'ระบุวัน/รายคืน' : 'ครั้งเดียว'} • ${editExtraSettingUiType === 'quick_button' ? 'ปุ่มลัดด้านบน' : 'ในตัวเลือก'}]`
         });
         await refreshExtraSettings();
         if (showAddonRecentLogs) await loadRecentAddonLogs();
@@ -2920,6 +2960,17 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                                       <option value="dropdown">📂 ในตัวเลือก</option>
                                       <option value="quick_button">⚡ ปุ่มลัดด้านบน</option>
                                     </select>
+                                    <select
+                                      value={editExtraSettingReportCat}
+                                      onChange={e => setEditExtraSettingReportCat(e.target.value as 'addon' | 'minibar' | 'fine' | 'other')}
+                                      className="border border-slate-300 rounded px-1.5 py-1 bg-white font-bold text-slate-700 text-[11px]"
+                                      title="หมวดหมู่ในรายงานประจำวัน"
+                                    >
+                                      <option value="addon">📊 หมวด: ค่าส่วนเสริม</option>
+                                      <option value="minibar">📊 หมวด: ค่ามินิบาร์</option>
+                                      <option value="fine">📊 หมวด: ค่าปรับ</option>
+                                      <option value="other">📊 หมวด: บริการอื่นๆ</option>
+                                    </select>
                                     <button
                                       type="button"
                                       disabled={extraSettingSaving}
@@ -3032,6 +3083,17 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                                       >
                                         <option value="quick_button">⚡ ปุ่มลัดด้านบน</option>
                                         <option value="dropdown">📂 ในตัวเลือก</option>
+                                      </select>
+                                      <select
+                                        value={editExtraSettingReportCat}
+                                        onChange={e => setEditExtraSettingReportCat(e.target.value as 'addon' | 'minibar' | 'fine' | 'other')}
+                                        className="border border-slate-300 rounded px-1.5 py-1 bg-white font-bold text-slate-700 text-[11px]"
+                                        title="หมวดหมู่ในรายงานประจำวัน"
+                                      >
+                                        <option value="addon">📊 หมวด: ค่าส่วนเสริม</option>
+                                        <option value="minibar">📊 หมวด: ค่ามินิบาร์</option>
+                                        <option value="fine">📊 หมวด: ค่าปรับ</option>
+                                        <option value="other">📊 หมวด: บริการอื่นๆ</option>
                                       </select>
                                       <button
                                         type="button"
@@ -3152,6 +3214,17 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                                     >
                                       <option value="dropdown">📂 ไว้ใน + รายการอื่นๆ</option>
                                       <option value="quick_button">⚡ แสดงเป็นปุ่มลัดด้านบน</option>
+                                    </select>
+                                    <select
+                                      value={newExtraSettingReportCat}
+                                      onChange={e => setNewExtraSettingReportCat(e.target.value as 'addon' | 'minibar' | 'fine' | 'other')}
+                                      className="border border-slate-300 rounded-lg px-2 py-1 bg-white font-bold text-slate-700 text-[11px]"
+                                      title="หมวดหมู่ในรายงานประจำวัน"
+                                    >
+                                      <option value="addon">📊 หมวด: ค่าส่วนเสริม</option>
+                                      <option value="minibar">📊 หมวด: ค่ามินิบาร์</option>
+                                      <option value="fine">📊 หมวด: ค่าปรับ</option>
+                                      <option value="other">📊 หมวด: บริการอื่นๆ</option>
                                     </select>
                                   </div>
                                   <div className="flex items-center gap-1">

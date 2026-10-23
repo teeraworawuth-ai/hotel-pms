@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>เอกสารจำลองสถานการณ์ 5 วัน — ตรวจสอบหน้ารายงานเงินสดประจำวัน (Hotel PMS)</title>
+  <style>
+    @page {
+      size: A4 landscape;
+      margin: 10mm;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Sarabun', 'Tahoma', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #0f172a;
+      background: #f1f5f9;
+      margin: 0;
+      padding: 20px;
+      line-height: 1.45;
+    }
+    .container {
+      max-width: 1120px;
+      margin: 0 auto;
+      background: #ffffff;
+      padding: 24px 28px;
+      border-radius: 14px;
+      box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08);
+    }
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 3px solid #0f172a;
+    }
+    h1 {
+      font-size: 20px;
+      margin: 0;
+      font-weight: 900;
+      color: #0f172a;
+    }
+    h2 {
+      font-size: 15px;
+      margin: 18px 0 8px 0;
+      padding: 6px 10px;
+      background: #1e293b;
+      color: #ffffff;
+      border-radius: 6px;
+    }
+    p.sub {
+      margin: 4px 0 0 0;
+      font-size: 12px;
+      color: #475569;
+    }
+    .print-btn {
+      background: #2563eb;
+      color: #ffffff;
+      border: 0;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: 800;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .print-btn:hover {
+      background: #1d4ed8;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin-bottom: 14px;
+    }
+    th, td {
+      border: 1px solid #cbd5e1;
+      padding: 6px 8px;
+      vertical-align: top;
+    }
+    th {
+      background: #f8fafc;
+      font-weight: 800;
+      color: #1e293b;
+      text-align: left;
+    }
+    .num {
+      text-align: right;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .center {
+      text-align: center;
+    }
+    .sec-row td {
+      background: #e2e8f0;
+      font-weight: 900;
+      color: #0f172a;
+    }
+    .total-row td {
+      background: #fef3c7;
+      font-weight: 900;
+      font-size: 12.5px;
+      color: #92400e;
+    }
+    .note-small {
+      display: block;
+      font-size: 10.5px;
+      font-weight: 400;
+      color: #64748b;
+      margin-top: 2px;
+    }
+    .finding-box {
+      border: 1px solid #cbd5e1;
+      border-left: 5px solid #e11d48;
+      background: #fff1f2;
+      padding: 10px 14px;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      font-size: 12.5px;
+    }
+    .finding-box.recommend {
+      border-left-color: #2563eb;
+      background: #eff6ff;
+    }
+    .page-break {
+      page-break-before: always;
+    }
+    @media print {
+      body {
+        background: #ffffff;
+        padding: 0;
+      }
+      .container {
+        box-shadow: none;
+        padding: 0;
+        max-width: 100%;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="top-bar">
+      <div>
+        <h1>📊 เอกสารจำลองสถานการณ์จริง 5 วัน — ตรวจสอบหน้ารายงานเงินสดประจำวัน (Hotel PMS)</h1>
+        <p class="sub">โจทย์จำลอง: ผู้เข้าพักจริง 7 ห้อง (101–107) + จองล่วงหน้ายังไม่มา 2 ห้อง (201–202 มาเข้าพักวันที่ 2 และ 3) • ต่างคนต่างมา • เข้าพักไม่เกิน 5 วัน</p>
+      </div>
+      <div class="no-print">
+        <button class="print-btn" onclick="window.print()">🖨️ สั่งพิมพ์เอกสารนี้ (Print A4)</button>
+      </div>
+    </div>
+
+    <h2>ส่วนที่ 1: รายละเอียดเหตุการณ์และการชำระเงินของลูกค้าทั้ง 9 ห้อง (วันที่ 1 – วันที่ 5)</h2>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 75px;">ห้อง</th>
+          <th style="width: 135px;">รูปแบบการพัก</th>
+          <th style="width: 125px;">วันเข้าพัก – วันออก</th>
+          <th>รายละเอียดเหตุการณ์จริง / บริการเสริม / การชำระเงินในแต่ละวัน</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>ห้อง 101</b></td>
+          <td>ค้างคืน <b>1 คืน</b></td>
+          <td>เข้า <b>วันที่ 1</b><br/>ออก <b>วันที่ 2</b></td>
+          <td>
+            • <b>วันที่ 1:</b> เช็คอิน ค่าห้อง 750 + มัดจำกุญแจ 200 = <b>จ่ายเงินสด 950 บาท</b><br/>
+            • <b>วันที่ 2:</b> เช็คเอาท์ปกติ <b>คืนเงินสดมัดจำกุญแจ -200 บาท</b>
+          </td>
+        </tr>
+        <tr>
+          <td><b>ห้อง 102</b></td>
+          <td>ค้างคืน <b>3 คืน</b><br/><span class="note-small">(จ่ายครบตั้งแต่คืนแรก + ยกเลิกบริการเสริมวันหลัง)</span></td>
+          <td>เข้า <b>วันที่ 1</b><br/>ออก <b>วันที่ 4</b></td>
+          <td>
+            • <b>วันที่ 1:</b> เช็คอิน ค่าห้องคืนละ 800 x 3 คืน (2,400) + เช่ามอเตอร์ไซค์รายวัน 250 x 3 คืน (750) + มัดจำกุญแจ 200 = <b>โอน SCB 3,350 บาท</b><br/>
+            • <b>วันที่ 2:</b> ลูกค้าแจ้งยกเลิกเช่ามอเตอร์ไซค์เฉพาะของ <b>วันที่ 3 (250 บาท)</b> พนักงานกดยกเลิกและเลือก <b>คืนเงินสดทันที -250 บาท</b><br/>
+            • <b>วันที่ 4:</b> เช็คเอาท์ปกติ <b>คืนเงินสดมัดจำกุญแจ -200 บาท</b>
+          </td>
+        </tr>
+        <tr>
+          <td><b>ห้อง 103</b></td>
+          <td>ค้างคืน <b>2 คืน</b><br/><span class="note-small">(ทยอยจ่ายทีละคืน + ซื้อ POS)</span></td>
+          <td>เข้า <b>วันที่ 1</b><br/>ออก <b>วันที่ 3</b></td>
+          <td>
+            • <b>วันที่ 1:</b> เช็คอินพัก 2 คืน (คืนละ 750 = 1,500) แต่ขอจ่ายเฉพาะคืนแรกก่อน = <b>จ่ายเงินสด 750 บาท</b> (ไม่เก็บมัดจำกุญแจ)<br/>
+            • <b>วันที่ 2:</b> จ่ายค่าห้องคืนที่ 2 ด้วย <b>โอน KBANK 750 บาท</b> + ซื้อน้ำเปล่า POS 2 ขวด <b>จ่ายเงินสด 40 บาท</b><br/>
+            • <b>วันที่ 3:</b> เช็คเอาท์ปกติ (ไม่มีค้างชำระ)
+          </td>
+        </tr>
+        <tr>
+          <td><b>ห้อง 104</b></td>
+          <td><b>ชั่วคราว 3 ชม.</b><br/>+ เพิ่ม 1 ชม.</td>
+          <td>เข้า–ออก <b>วันที่ 1</b></td>
+          <td>
+            • <b>วันที่ 1:</b> เข้าพักชั่วคราว 3 ชม. (ราคาฐาน 350 บาท) + อยู่เพิ่ม 1 ชม. (+150 บาท) = <b>จ่ายเงินสด 500 บาท</b> แล้วเช็คเอาท์ในวันเดียวกัน
+          </td>
+        </tr>
+        <tr>
+          <td><b>ห้อง 105</b></td>
+          <td>ค้างคืน <b>2 คืน</b><br/><span class="note-small">(Early Check-in + ริบมัดจำตอนออก)</span></td>
+          <td>เข้า <b>วันที่ 2 (07:30 น.)</b><br/>ออก <b>วันที่ 4</b></td>
+          <td>
+            • <b>วันที่ 2 (07:30 น.):</b> เข้าก่อนเวลา (Early Check-in) ค่าห้องคืนละ 750 x 2 คืน (1,500) + ค่าเข้าก่อนเวลา 200 + มัดจำกุญแจ 200 = <b>โอน SCB 1,900 บาท</b><br/>
+            • <b>วันที่ 4:</b> เช็คเอาท์ ลูกค้าทำกุญแจหาย <b>ริบมัดจำกุญแจ 200 บาทเป็นรายได้ค่าปรับของวันที่ 4</b>
+          </td>
+        </tr>
+        <tr>
+          <td><b>ห้อง 106</b></td>
+          <td>ค้างคืน <b>3 คืน</b><br/><span class="note-small">(มีส่วนลดค่าห้อง + เตียงเสริมระบุวัน)</span></td>
+          <td>เข้า <b>วันที่ 2</b><br/>ออก <b>วันที่ 5</b></td>
+          <td>
+            • <b>วันที่ 2:</b> ราคาเป้าหมายคืนละ 800 แต่ลดให้เหลือคืนละ 700 x 3 คืน (2,100) + เตียงเสริมระบุวันเฉพาะ <b>วันที่ 2 และ วันที่ 3</b> (300 x 2 คืน = 600) = <b>รูดบัตรเครดิต 2,700 บาท</b><br/>
+            • <b>วันที่ 5:</b> เช็คเอาท์ปกติ
+          </td>
+        </tr>
+        <tr>
+          <td><b>ห้อง 107</b></td>
+          <td>ค้างคืน <b>1 คืน</b><br/><span class="note-small">(ออกช้า Late Check-out ในวันออก)</span></td>
+          <td>เข้า <b>วันที่ 4</b><br/>ออก <b>วันที่ 5</b></td>
+          <td>
+            • <b>วันที่ 4:</b> เช็คอิน 1 คืน ค่าห้อง 750 = <b>จ่ายเงินสด 750 บาท</b><br/>
+            • <b>วันที่ 5:</b> เช็คเอาท์เกินเวลา คิดค่าปรับออกช้า (Late Check-out) 200 = <b>จ่ายเงินสด 200 บาท</b>
+          </td>
+        </tr>
+        <tr style="background: #faf5ff;">
+          <td><b>ห้อง 201</b><br/><span class="note-small">(จองล่วงหน้า #1)</span></td>
+          <td>จองพัก <b>2 คืน</b><br/>(เข้าพักวันที่ 2–3)</td>
+          <td>จอง <b>วันที่ 1</b><br/>เข้าพักจริง <b>วันที่ 2</b><br/>ออก <b>วันที่ 4</b></td>
+          <td>
+            • <b>วันที่ 1 (วันจอง):</b> ลูกค้ายังไม่มาพัก จองล่วงหน้าสำหรับเข้าพักวันที่ 2 จำนวน 2 คืน (คืนละ 800 = 1,600) <b>โอน SCB เต็มจำนวน 1,600 บาทในวันที่ 1</b><br/>
+            • <b>วันที่ 2 (วันมาเข้าพักจริง):</b> ลูกค้าเดินทางมาเช็คอิน (เงินจอง 1,600 ถูกดึงมาใช้เป็นค่าห้องวันที่ 2 จำนวน 800 และพักเป็นจ่ายล่วงหน้าสำหรับวันที่ 3 อีก 800) + เก็บมัดจำกุญแจเพิ่ม <b>เงินสด 200 บาท</b><br/>
+            • <b>วันที่ 4:</b> เช็คเอาท์ <b>คืนเงินสดมัดจำกุญแจ -200 บาท</b>
+          </td>
+        </tr>
+        <tr style="background: #faf5ff;">
+          <td><b>ห้อง 202</b><br/><span class="note-small">(จองล่วงหน้า #2)</span></td>
+          <td>จองพัก <b>2 คืน</b><br/>(เข้าพักวันที่ 3–4)</td>
+          <td>จอง <b>วันที่ 1</b><br/>เข้าพักจริง <b>วันที่ 3</b><br/>ออก <b>วันที่ 5</b></td>
+          <td>
+            • <b>วันที่ 1 (วันจอง):</b> ลูกค้ายังไม่มาพัก จองล่วงหน้าสำหรับเข้าพักวันที่ 3 จำนวน 2 คืน (คืนละ 900 = 1,800) <b>โอนมัดจำจอง KBANK บางส่วน 500 บาทในวันที่ 1</b><br/>
+            • <b>วันที่ 3 (วันมาเข้าพักจริง):</b> ลูกค้าเดินทางมาเช็คอิน และชำระส่วนที่เหลือ <b>เงินสด 1,300 บาท</b> (รวมกับเงินจองเดิม 500 = 1,800 หักเป็นค่าห้องวันที่ 3 จำนวน 900 และยกไปเป็นจ่ายล่วงหน้าสำหรับวันที่ 4 อีก 900)<br/>
+            • <b>วันที่ 5:</b> เช็คเอาท์ปกติ
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="page-break"></div>
+
+    <h2>ส่วนที่ 2: ตารางเปรียบเทียบตัวเลขใน "หน้ารายงานเงินสดประจำวัน" ตั้งแต่วันที่ 1 ถึง วันที่ 5</h2>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 240px;">รายการในรายงานประจำวัน</th>
+          <th class="center">วันที่ 1</th>
+          <th class="center">วันที่ 2</th>
+          <th class="center">วันที่ 3</th>
+          <th class="center">วันที่ 4</th>
+          <th class="center">วันที่ 5</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- ฝั่งซ้าย: รายได้ -->
+        <tr class="sec-row">
+          <td colspan="6">1. คอลัมน์ซ้าย: ฝั่งรายได้ประจำวัน (Revenue — รับรู้เฉพาะวันที่เกิดการเข้าพักจริง)</td>
+        </tr>
+        <tr>
+          <td>1.1.1 ค่าห้องค้างคืน (ตามราคาเป้าหมาย)</td>
+          <td class="num">฿2,300<span class="note-small">101(750)+102(800)+103(750)</span></td>
+          <td class="num">฿3,900<span class="note-small">102(800)+103(750)+105(750)+106(800)+201(800)</span></td>
+          <td class="num">฿4,050<span class="note-small">102(800)+105(750)+106(800)+201(800)+202(900)</span></td>
+          <td class="num">฿2,450<span class="note-small">106(800)+107(750)+202(900)</span></td>
+          <td class="num">฿0</td>
+        </tr>
+        <tr>
+          <td>1.1.2 ค่าห้องชั่วคราว (ตามราคาฐาน 3 ชม.)</td>
+          <td class="num">฿350<span class="note-small">104 (ฐาน 3 ชม.)</span></td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+        </tr>
+        <tr>
+          <td>1.2.1 รายได้ส่วนเพิ่ม: เข้าก่อน/ออกช้า (Early-Late)</td>
+          <td class="num">฿0</td>
+          <td class="num">+฿200<span class="note-small">105 (Early Check-in)</span></td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+          <td class="num">+฿200<span class="note-small">107 (Late Check-out)</span></td>
+        </tr>
+        <tr>
+          <td>1.2.2 รายได้ส่วนเพิ่ม: ปรับเพิ่มราคา/เพิ่มชั่วโมง</td>
+          <td class="num">+฿150<span class="note-small">104 (เพิ่ม 1 ชม.)</span></td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+        </tr>
+        <tr>
+          <td>1.3 หัก ส่วนลดค่าห้อง (ขายต่ำกว่าราคาเป้าหมาย)</td>
+          <td class="num">฿0</td>
+          <td class="num">-฿100<span class="note-small">106 (ลดจาก 800 เหลือ 700)</span></td>
+          <td class="num">-฿100<span class="note-small">106 (ลดจาก 800 เหลือ 700)</span></td>
+          <td class="num">-฿100<span class="note-small">106 (ลดจาก 800 เหลือ 700)</span></td>
+          <td class="num">฿0</td>
+        </tr>
+        <tr>
+          <td>2. ค่าส่วนเสริม (เตียงเสริม / มอเตอร์ไซค์รายวัน)</td>
+          <td class="num">฿250<span class="note-small">102 (มอไซค์คืน 1)</span></td>
+          <td class="num">฿550<span class="note-small">102(มอไซค์ 250) + 106(เตียงเสริม 300)</span></td>
+          <td class="num">฿300<span class="note-small">106(เตียงเสริม 300) • 102 ยกเลิกแล้ว</span></td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+        </tr>
+        <tr>
+          <td>3. ค่ามินิบาร์ (POS)</td>
+          <td class="num">฿0</td>
+          <td class="num">฿40<span class="note-small">103 (น้ำเปล่า POS)</span></td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+        </tr>
+        <tr>
+          <td>4. ค่าปรับ / ริบมัดจำกุญแจ</td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+          <td class="num">฿200<span class="note-small">105 (ริบมัดจำกุญแจหาย)</span></td>
+          <td class="num">฿0</td>
+        </tr>
+        <tr class="total-row">
+          <td>รวมรายได้สุทธิประจำวัน (ฝั่งซ้าย)</td>
+          <td class="num">฿3,050</td>
+          <td class="num">฿4,590</td>
+          <td class="num">฿4,250</td>
+          <td class="num">฿2,550</td>
+          <td class="num">฿200</td>
+        </tr>
+
+        <!-- ฝั่งกลาง: รับชำระเงิน -->
+        <tr class="sec-row">
+          <td colspan="6">2. คอลัมน์กลาง: ฝั่งรับชำระเงินจริงในวันนั้น (Payments — ไม่รวมเงินมัดจำกุญแจ)</td>
+        </tr>
+        <tr>
+          <td>• รับเงินสด (Cash)</td>
+          <td class="num">฿2,000<span class="note-small">101(750)+103(750)+104(500)</span></td>
+          <td class="num">฿40<span class="note-small">103 (น้ำเปล่า 40)</span></td>
+          <td class="num">฿1,300<span class="note-small">202 (จ่ายเพิ่มวันเช็คอิน)</span></td>
+          <td class="num">฿750<span class="note-small">107 (ค่าห้อง)</span></td>
+          <td class="num">฿200<span class="note-small">107 (ค่าปรับออกช้า)</span></td>
+        </tr>
+        <tr>
+          <td>• รับโอนเงิน บัญชี SCB</td>
+          <td class="num">฿4,750<span class="note-small">102(3,150) + จอง 201(1,600)</span></td>
+          <td class="num">฿1,700<span class="note-small">105 (ค่าห้อง 2 คืน + Early)</span></td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+        </tr>
+        <tr>
+          <td>• รับโอนเงิน บัญชี KBANK</td>
+          <td class="num">฿500<span class="note-small">จอง 202 (มัดจำจอง)</span></td>
+          <td class="num">฿750<span class="note-small">103 (จ่ายค่าห้องคืน 2)</span></td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+        </tr>
+        <tr>
+          <td>• รับบัตรเครดิต (Credit Card)</td>
+          <td class="num">฿0</td>
+          <td class="num">฿2,700<span class="note-small">106 (3 คืน + เตียงเสริม 2 คืน)</span></td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+        </tr>
+        <tr>
+          <td>• หัก คืนเงินสด/ยกเลิกรายการล่วงหน้า</td>
+          <td class="num">฿0</td>
+          <td class="num">-฿250<span class="note-small">102 (คืนเงินสดยกเลิกมอไซค์วันที่ 3)</span></td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+          <td class="num">฿0</td>
+        </tr>
+        <tr class="total-row">
+          <td>รวมรับชำระเงินสุทธิประจำวัน (ฝั่งกลาง)</td>
+          <td class="num">฿7,250</td>
+          <td class="num">฿4,940</td>
+          <td class="num">฿1,300</td>
+          <td class="num">฿750</td>
+          <td class="num">฿200</td>
+        </tr>
+
+        <!-- ฝั่งขวา: รับจอง & จ่ายล่วงหน้า & มัดจำกุญแจ -->
+        <tr class="sec-row">
+          <td colspan="6">3. คอลัมน์ขวา: กล่อง "รับจอง (ยังไม่เข้าพัก)" + กล่อง "จ่ายล่วงหน้า (เช็คอินแล้ว)" + กล่อง "มัดจำกุญแจ"</td>
+        </tr>
+        <tr>
+          <td><b>[กล่องรับจอง]</b> ยอดยกมา &rarr; (+เพิ่ม / -ใช้ไป) &rarr; <b>ยอดยกไป</b></td>
+          <td class="num">ยกมา 0<br/><b>+เพิ่ม 2,100</b><br/>ใช้ไป 0<br/><b>= ยกไป ฿2,100</b><span class="note-small">201(1,600) + 202(500)</span></td>
+          <td class="num">ยกมา 2,100<br/>+เพิ่ม 0<br/><b>-ใช้ไป 1,600</b><br/><b>= ยกไป ฿500</b><span class="note-small">201 มาเช็คอิน / เหลือ 202(500)</span></td>
+          <td class="num">ยกมา 500<br/>+เพิ่ม 0<br/><b>-ใช้ไป 500</b><br/><b>= ยกไป ฿0</b><span class="note-small">202 มาเช็คอินแล้ว</span></td>
+          <td class="num">ยกมา 0<br/>= ยกไป <b>฿0</b></td>
+          <td class="num">ยกมา 0<br/>= ยกไป <b>฿0</b></td>
+        </tr>
+        <tr>
+          <td><b>[กล่องจ่ายล่วงหน้า]</b> ยอดยกมา &rarr; (+เพิ่ม / -ใช้ไป) &rarr; <b>ยอดยกไป</b></td>
+          <td class="num">ยกมา 0<br/><b>+เพิ่ม 2,100</b><br/>ใช้ไป 0<br/><b>= ยกไป ฿2,100</b><span class="note-small">102 (ค่าห้อง+มอไซค์ คืน 2-3)</span></td>
+          <td class="num">ยกมา 2,100<br/><b>+เพิ่ม 3,000</b><br/><b>-ใช้ไป 1,050</b><br/><b>= ยกไป ฿4,050</b><span class="note-small">คงเหลือ: 102(800)+105(750)+106(1,700)+201(800)</span></td>
+          <td class="num">ยกมา 4,050<br/><b>+เพิ่ม 900</b><br/><b>-ใช้ไป 3,350</b><br/><b>= ยกไป ฿1,600</b><span class="note-small">คงเหลือ: 106(700)+202(900)</span></td>
+          <td class="num">ยกมา 1,600<br/>+เพิ่ม 0<br/><b>-ใช้ไป 1,600</b><br/><b>= ยกไป ฿0</b><span class="note-small">ตัดค่าห้องคืนสุดท้ายของ 106 และ 202</span></td>
+          <td class="num">ยกมา 0<br/>= ยกไป <b>฿0</b></td>
+        </tr>
+        <tr>
+          <td><b>[กล่องมัดจำกุญแจ]</b> (แยกจากรายได้)</td>
+          <td class="num">รับเข้า +฿400<span class="note-small">101(200), 102(200) • ถืออยู่ ฿400</span></td>
+          <td class="num">รับ +฿400 / คืน -฿200<span class="note-small">รับ 105,201 / คืน 101 • ถืออยู่ ฿600</span></td>
+          <td class="num">ไม่มีรับ-คืน<span class="note-small">ถือสะสมอยู่ ฿600 (102,105,201)</span></td>
+          <td class="num">คืน -฿400 / ริบ -฿200<span class="note-small">คืน 102,201 / ริบ 105 • ถืออยู่ ฿0</span></td>
+          <td class="num">ถือสะสมอยู่ <b>฿0</b></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>ส่วนที่ 3: จุดที่ตรวจพบจากการจำลอง 5 วันนี้ & ข้อเสนอแนะเพื่อรอการตัดสินใจจากคุณ</h2>
+    <div class="finding-box">
+      <b>1. [จุดที่ต้องแก้เพื่อให้กล่อง "รับจอง" วันที่ 1–3 แม่นยำ 100%] ปัญหาเวลา UTC ของวันเช็คอินห้องจองล่วงหน้า (ห้อง 201 และ 202):</b><br/>
+      • <b>สาเหตุ:</b> ในไฟล์ <code>DailyReport.tsx</code> บรรทัด 802 เดิมดึงวันที่เช็คอินด้วยคำสั่ง <code>.slice(0, 10)</code> จากเวลา UTC ทำให้ห้องที่จองเข้าพักวันที่ 2 (เวลาเที่ยงคืนไทย = 17:00 น. UTC ของวันที่ 1) ถูกรายงานมองว่าเช็คอินตั้งแต่วันที่ 1 ส่งผลให้เงินมัดจำจองของห้อง 201 และ 202 ไม่ไปขึ้นในกล่อง <b>"รับจอง"</b> ของวันที่ 1<br/>
+      • <b>การแก้ไขที่เสนอ:</b> เปลี่ยนให้ดึงวันเข้าพักคืนแรกจากตารางราคาค่าห้องรายวัน (<code>booking_daily_rates[0].target_date</code>) หรือแปลงเป็นเขตเวลาไทย (<code>Asia/Bangkok</code>) เสมอ
+    </div>
+
+    <div class="finding-box">
+      <b>2. [จุดที่ต้องแก้เพื่อให้กล่อง "จ่ายล่วงหน้า - ใช้ไปวันนี้" ดุลกับฝั่งซ้ายเสมอ] บริการเสริมรายวันที่ยังไม่ถูกกดเปิดบิลในวันถัดไป:</b><br/>
+      • <b>สาเหตุ:</b> ในวันที่ 2 และ 3 ค่าเตียงเสริม/มอเตอร์ไซค์รายวัน (ห้อง 102 และ 106) ถูกนับเป็นรายได้ฝั่งซ้ายแล้ว แต่ในสูตรคำนวณกล่อง <b>"จ่ายล่วงหน้า (ใช้ไปวันนี้)"</b> ฝั่งขวา เดิมนับเฉพาะรายการที่อยู่ใน <code>ledger_transactions</code> ยังไม่ได้บวก <code>booking_daily_extras</code> ของวันนั้นที่ยังไม่ได้เปิดบิล<br/>
+      • <b>การแก้ไขที่เสนอ:</b> ปรับสูตรในกล่อง "จ่ายล่วงหน้า" ให้รวมยอด <code>booking_daily_extras</code> ประจำวันนั้นด้วยเสมอ เพื่อให้ยอดตัดจ่ายล่วงหน้าตรงกับฝั่งรายได้ทุกบาทโดยไม่ต้องรอให้พนักงานกดเปิดบิล
+    </div>
+
+    <div class="finding-box recommend">
+      <b>3. [คำแนะนำเพิ่มเติมเพื่อความสมบูรณ์] เพิ่มปุ่ม "🔍 ดูแจกแจงรายห้อง" ใต้กล่องจ่ายล่วงหน้า & กล่องรับจอง:</b><br/>
+      • เมื่อมีผู้เข้าพักพร้อมกัน 6–7 ห้องและมีจองล่วงหน้าหลายห้อง ตัวเลขรวมในกล่อง (เช่น ยอดจ่ายล่วงหน้ายกไป <b>฿4,050</b> ในวันที่ 2) อาจทำให้ผู้จัดการต้องมานั่งไล่บวกเองว่ามาจากห้องไหนบ้าง<br/>
+      • <b>ข้อเสนอแนะ:</b> เพิ่มปุ่มคลิกดูรายชื่อห้องที่มาของยอดในกล่อง "จ่ายล่วงหน้า" และ "รับจอง" (เช่น แสดงทันทีว่า <i>ห้อง 102: ฿800, ห้อง 105: ฿750, ห้อง 106: ฿1,700, ห้อง 201: ฿800</i>) เพื่อให้ตรวจสอบย้อนกลับได้ง่ายที่สุด
+    </div>
+  </div>
+</body>
+</html>
