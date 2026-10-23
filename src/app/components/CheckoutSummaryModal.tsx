@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useShift } from '@/contexts/ShiftContext';
 import { computeDeposit } from '@/lib/depositMath';
+import FolioReceiptModal from './FolioReceiptModal';
 
 type Tx = { id: string; transaction_type: string; category: string; amount: number; created_at: string };
 
@@ -29,6 +30,7 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
   const [pin, setPin] = useState('');
   const [pinOk, setPinOk] = useState(false);
   const [error, setError] = useState('');
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
 
   const isTester = activeShift?.staff_role === 'staff';
   const isManager = activeShift?.staff_role === 'admin' || activeShift?.staff_role === 'manager';
@@ -283,6 +285,14 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
 
             {error && <p className="text-sm font-medium text-rose-600">{error}</p>}
 
+            <button
+              type="button"
+              onClick={() => setShowReceiptModal(true)}
+              className="w-full py-2.5 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-white text-xs flex items-center justify-center gap-2 transition-colors"
+            >
+              <span>🖨️</span> พิมพ์ใบเสร็จ / เลือกวันที่ & ซ่อนรายการ (Folio Receipt)
+            </button>
+
             <div className="flex gap-3">
               <button onClick={onClose} className="flex-1 py-3 rounded-xl font-bold bg-slate-100 hover:bg-slate-200 text-slate-700">ยกเลิก</button>
               <button
@@ -294,6 +304,14 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
               </button>
             </div>
           </div>
+        )}
+        {showReceiptModal && (
+          <FolioReceiptModal
+            roomId={roomId}
+            roomNo={roomNo}
+            bookingId={bookingId}
+            onClose={() => setShowReceiptModal(false)}
+          />
         )}
       </div>
     </div>

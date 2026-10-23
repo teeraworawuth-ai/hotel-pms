@@ -14,6 +14,7 @@ export type ActivityLogAction =
   | 'toggle'
   | 'cancel'
   | 'checkin'
+  | 'checkout'
   | 'reserve'
   | 'move'
   | 'payment';
@@ -72,6 +73,7 @@ export const ACTIVITY_ACTION_LABELS: Record<ActivityLogAction, { label: string; 
   toggle: { label: 'สลับค่า', className: 'bg-indigo-100 text-indigo-800' },
   cancel: { label: 'ยกเลิก/คืนเงิน', className: 'bg-rose-100 text-rose-800' },
   checkin: { label: 'เช็คอิน', className: 'bg-blue-100 text-blue-800' },
+  checkout: { label: 'เช็คเอาท์', className: 'bg-slate-100 text-slate-700' },
   reserve: { label: 'จองห้องพัก', className: 'bg-purple-100 text-purple-800' },
   move: { label: 'ย้ายห้อง/เลื่อนวัน', className: 'bg-amber-100 text-amber-800' },
   payment: { label: 'รับชำระเงิน', className: 'bg-emerald-100 text-emerald-800' },

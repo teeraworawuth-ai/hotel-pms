@@ -144,6 +144,11 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
         })
       );
 
+      // จำกัดขอบเขตการดึงข้อมูลย้อนหลัง 180 วัน + limit 10,000 แถว เพื่อไม่ให้ติดเพดานเริ่มต้น 1,000 แถวของ Supabase เมื่อข้อมูลสะสมหลายเดือน
+      const windowStart = new Date(start0645);
+      windowStart.setDate(windowStart.getDate() - 180);
+      const windowStartDateStr = `${windowStart.getFullYear()}-${String(windowStart.getMonth() + 1).padStart(2, "0")}-${String(windowStart.getDate()).padStart(2, "0")}`;
+
       // ดึงข้อมูลทั้งหมดที่จำเป็นแบบขนาน
       const [
         shiftRes,
@@ -165,17 +170,25 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
         supabase
           .from("ledger_transactions")
           .select("*")
+          .gte("created_at", windowStart.toISOString())
           .lt("created_at", end0945.toISOString())
-          .order("created_at", { ascending: true }),
+          .order("created_at", { ascending: true })
+          .limit(10000),
         supabase
           .from("bookings")
-          .select("id, room_id, guest_name, status, check_in_time, check_out_time, actual_check_in_time, actual_price, created_at"),
+          .select("id, room_id, guest_name, status, check_in_time, check_out_time, actual_check_in_time, actual_price, created_at")
+          .or(`check_out_time.gte.${windowStart.toISOString()},status.in.(reserved,checked_in)`)
+          .limit(10000),
         supabase
           .from("booking_daily_rates")
-          .select("id, booking_id, target_date, amount, is_manual_override"),
+          .select("id, booking_id, target_date, amount, is_manual_override")
+          .gte("target_date", windowStartDateStr)
+          .limit(10000),
         supabase
           .from("booking_daily_extras")
-          .select("id, booking_id, target_date, category, description, amount"),
+          .select("id, booking_id, target_date, category, description, amount")
+          .gte("target_date", windowStartDateStr)
+          .limit(10000),
         supabase
           .from("rooms")
           .select("id, room_no, price_night, price_temp"),
@@ -187,7 +200,8 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
           .select("name"),
         supabase
           .from("system_settings")
-          .select("key, value"),
+          .select("key, value")
+          .limit(10000),
       ]);
 
       if (shiftRes.data) setShifts(shiftRes.data);

@@ -4,6 +4,7 @@ import { useShift } from '@/contexts/ShiftContext';
 import { useSimulatedTime } from '@/contexts/SimulatedTimeContext';
 import { computeDeposit } from '@/lib/depositMath';
 import { logActivity } from '@/lib/activityLog';
+import FolioReceiptModal from './FolioReceiptModal';
 
 type PosItem = { id: string, name: string, default_price: number };
 type Transaction = { id: string, transaction_type: string, category: string, amount: number, created_at: string, staff_name: string, notes?: string };
@@ -69,6 +70,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   const [cancelExtraPin, setCancelExtraPin] = useState<string>('');
   const [cancelExtraError, setCancelExtraError] = useState<string>('');
   const [cancelExtraRefundMode, setCancelExtraRefundMode] = useState<'refund_now' | 'keep_credit'>('refund_now');
+  const [showReceiptModal, setShowReceiptModal] = useState<boolean>(false);
 
   const { getNow } = useSimulatedTime();
 
@@ -933,10 +935,11 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
               {true && (
                 <div className="p-2 border-t border-slate-100 bg-slate-50">
                   <button 
-                    onClick={() => window.print()}
-                    className="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-2 rounded-lg flex items-center justify-center gap-2 transition-colors"
+                    type="button"
+                    onClick={() => setShowReceiptModal(true)}
+                    className="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors shadow-xs"
                   >
-                    <span>🖨️</span> พิมพ์ใบเสร็จ (Print Receipt)
+                    <span>🖨️</span> พิมพ์ใบเสร็จ / เลือกวันที่ & ซ่อนรายการ (Folio Receipt)
                   </button>
                 </div>
               )}
@@ -1370,6 +1373,14 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
             
           </div>
         </div>
+        {showReceiptModal && (
+          <FolioReceiptModal
+            roomId={roomId}
+            roomNo={roomNo}
+            bookingId={bookingId}
+            onClose={() => setShowReceiptModal(false)}
+          />
+        )}
       </div>
     </div>
   );

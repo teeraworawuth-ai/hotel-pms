@@ -8,6 +8,7 @@ import CleaningNoteModal from "@/app/components/CleaningNoteModal";
 import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
 import { useShift } from "@/contexts/ShiftContext";
 import ShiftManager from "@/app/components/ShiftManager";
+import { logActivity } from "@/lib/activityLog";
 
 export type RoomStatus = {
   id: string;
@@ -56,6 +57,9 @@ export default function CheckinPage() {
   
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
   const [floorPlans, setFloorPlans] = useState<Record<string, string>>({});
+  const [showClearRoomsPinModal, setShowClearRoomsPinModal] = useState(false);
+  const [clearRoomsPin, setClearRoomsPin] = useState("");
+  const [clearRoomsPinError, setClearRoomsPinError] = useState("");
 
   // สำหรับจับเวลา Double Tap ของแม่บ้านบนหน้ากระดานหลัก
   const lastTapRef = useRef<{ [key: string]: number }>({});
@@ -562,18 +566,44 @@ export default function CheckinPage() {
     }
   };
 
-  const handleClearAllOccupiedRooms = async () => {
+  const handleClearAllOccupiedRooms = () => {
     const occupiedRooms = rooms.filter(r => r.status === 'occupied');
     if (occupiedRooms.length === 0) return;
-    
-    if (!window.confirm(`[สำหรับทดสอบ] ยืนยันการเคลียร์แขกออกจากห้องที่มีคนพักอยู่จำนวน ${occupiedRooms.length} ห้องหรือไม่? (สถานะห้องจะกลายเป็น รอทำความสะอาด)`)) return;
+    setClearRoomsPin("");
+    setClearRoomsPinError("");
+    setShowClearRoomsPinModal(true);
+  };
+
+  const handleConfirmClearAllOccupiedRooms = async () => {
+    const occupiedRooms = rooms.filter(r => r.status === 'occupied');
+    if (occupiedRooms.length === 0) {
+      setShowClearRoomsPinModal(false);
+      return;
+    }
+    if (!clearRoomsPin.trim()) {
+      setClearRoomsPinError("กรุณากรอกรหัส PIN ของ Admin หรือผู้จัดการ");
+      return;
+    }
 
     setLoading(true);
+    setClearRoomsPinError("");
+
+    const { data: staffData, error: staffErr } = await supabase
+      .from('staff')
+      .select('name, role')
+      .eq('pin', clearRoomsPin.trim())
+      .maybeSingle();
+
+    if (staffErr || !staffData || (staffData.role !== 'admin' && staffData.role !== 'manager')) {
+      setLoading(false);
+      setClearRoomsPinError("รหัส PIN ไม่ถูกต้อง หรือไม่มีสิทธิ์ (ต้องเป็น Admin/Manager เท่านั้น)");
+      return;
+    }
 
     // อัปเดตตาราง bookings ให้เป็น checked_out ด้วย จะได้ไม่เด้งกลับมาเป็น reserved อีก
     await supabase
       .from('bookings')
-      .update({ status: 'checked_out', actual_check_out_time: new Date().toISOString() })
+      .update({ status: 'checked_out', actual_check_out_time: getNow().toISOString() })
       .in('room_id', occupiedRooms.map(r => r.id))
       .eq('status', 'checked_in');
 
@@ -591,6 +621,16 @@ export default function CheckinPage() {
       .in('id', occupiedRooms.map(r => r.id));
       
     if (!error) {
+      await logActivity({
+        category: 'checkin',
+        action: 'checkout',
+        staffName: staffData.name || 'Admin',
+        shiftName: activeShift?.staff_name || null,
+        target: `เคลียร์ห้องพักทั้งหมด (${occupiedRooms.length} ห้อง)`,
+        details: `[โหมดทดสอบ] เคลียร์แขกออกจากห้องพักทั้งหมด ${occupiedRooms.length} ห้อง (${occupiedRooms.map(r => r.room_no).join(', ')}) โดย ${staffData.name}`
+      });
+      setShowClearRoomsPinModal(false);
+      setClearRoomsPin("");
       fetchData();
     } else {
       console.error(error);
@@ -1274,6 +1314,69 @@ export default function CheckinPage() {
       )}
       {noteRoom && (
         <CleaningNoteModal roomId={noteRoom.id} roomNo={noteRoom.room_no} onClose={() => setNoteRoom(null)} />
+      )}
+
+      {showClearRoomsPinModal && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in"
+          onClick={() => setShowClearRoomsPinModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-rose-600 px-5 py-4 text-white">
+              <h3 className="font-black text-base flex items-center gap-2">
+                <span>🔒</span> ยืนยันรหัส PIN เพื่อเคลียร์ห้องทั้งหมด (สำหรับทดสอบ)
+              </h3>
+              <p className="text-xs text-rose-100 mt-1">
+                ป้องกันการกดพลาด: ระบบจะเช็คเอาท์ห้องที่มีแขกพักอยู่ทั้งหมด ({rooms.filter(r => r.status === 'occupied').length} ห้อง)
+              </p>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1.5">
+                  กรอกรหัส PIN ของ Admin หรือผู้จัดการ
+                </label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={6}
+                  autoFocus
+                  value={clearRoomsPin}
+                  onChange={(e) => setClearRoomsPin(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleConfirmClearAllOccupiedRooms();
+                  }}
+                  placeholder="••••"
+                  className="w-full border-2 border-slate-200 rounded-xl p-3 text-center text-xl font-mono tracking-widest focus:border-rose-500 outline-none"
+                />
+              </div>
+              {clearRoomsPinError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 text-xs font-bold">
+                  {clearRoomsPinError}
+                </div>
+              )}
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowClearRoomsPinModal(false)}
+                  className="flex-1 py-3 rounded-xl font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition-colors"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmClearAllOccupiedRooms}
+                  disabled={loading || !clearRoomsPin}
+                  className="flex-1 py-3 rounded-xl font-black bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white text-sm shadow-sm transition-colors"
+                >
+                  {loading ? "กำลังดำเนินการ..." : "ยืนยันเคลียร์ห้อง"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
