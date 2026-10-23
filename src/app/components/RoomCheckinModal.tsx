@@ -63,6 +63,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [guestPhone, setGuestPhone] = useState<string>(room.guest_phone || "");
   const [skipPhone, setSkipPhone] = useState<boolean>(false);
   const phoneInputRef = useRef<HTMLInputElement>(null);
+  const submitLockRef = useRef(false);
   const [extrasManagerUnlocked, setExtrasManagerUnlocked] = useState(false);
   const [extrasManagerName, setExtrasManagerName] = useState('');
   const [extrasEditNote, setExtrasEditNote] = useState('');
@@ -366,6 +367,8 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const effectiveStaffName = (staffName && staffName.trim())
     ? staffName.trim()
     : (operatorName || activeShift?.staff_name || 'Admin');
+  // ผู้ใช้ที่ล็อกอินอยู่จริง (ซับของกะ) — ใช้บันทึกผู้ทำรายการชำระเงิน/แก้ไข/Log แทนชื่อพนักงานเดิมของการจอง
+  const actorName = operatorName || activeShift?.staff_name || 'Admin';
 
   const handleDiscountChange = (newDiscountStr: string) => {
     const disc = newDiscountStr === '' ? '' : Number(newDiscountStr);
@@ -488,7 +491,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         await logActivity({
           category: 'addons',
           action: 'create',
-          staffName: effectiveStaffName,
+          staffName: actorName,
           shiftName: activeShift?.staff_name || null,
           target: trimmed,
           details: `เพิ่มบริการเสริม "${trimmed}" ราคา ฿${numPrice.toLocaleString()} (${newExtraSettingChargeType === 'per_night' ? 'ระบุวัน/รายคืน' : 'ครั้งเดียว'} • ${newExtraSettingUiType === 'quick_button' ? 'ปุ่มลัดด้านบน' : 'ในตัวเลือก'})`
@@ -534,7 +537,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         await logActivity({
           category: 'addons',
           action: 'update',
-          staffName: effectiveStaffName,
+          staffName: actorName,
           shiftName: activeShift?.staff_name || null,
           target: trimmed,
           details: `แก้ไขบริการเสริม "${oldItem.name}" (฿${Number(oldItem.price).toLocaleString()}) -> "${trimmed}" (฿${numPrice.toLocaleString()}) [${editExtraSettingChargeType === 'per_night' ? 'ระบุวัน/รายคืน' : 'ครั้งเดียว'} • ${editExtraSettingUiType === 'quick_button' ? 'ปุ่มลัดด้านบน' : 'ในตัวเลือก'}]`
@@ -562,7 +565,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         await logActivity({
           category: 'addons',
           action: 'toggle',
-          staffName: effectiveStaffName,
+          staffName: actorName,
           shiftName: activeShift?.staff_name || null,
           target: item.name,
           details: `ย้ายปุ่ม "${item.name}" จาก ${item.ui_type === 'quick_button' ? 'ปุ่มลัดด้านบน' : 'ในตัวเลือก (+ รายการอื่นๆ)'} -> ${nextUi === 'quick_button' ? 'ปุ่มลัดด้านบน' : 'ในตัวเลือก (+ รายการอื่นๆ)'}`
@@ -587,7 +590,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         await logActivity({
           category: 'addons',
           action: 'toggle',
-          staffName: effectiveStaffName,
+          staffName: actorName,
           shiftName: activeShift?.staff_name || null,
           target: item.name,
           details: `เปลี่ยนค่าเริ่มต้น "${item.name}" เป็นแบบ ${nextCharge === 'per_night' ? 'ระบุวัน (รายคืน)' : 'ครั้งเดียว'}`
@@ -612,7 +615,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         await logActivity({
           category: 'addons',
           action: 'delete',
-          staffName: effectiveStaffName,
+          staffName: actorName,
           shiftName: activeShift?.staff_name || null,
           target: item.name,
           details: `ลบรายการบริการเสริม "${item.name}" (ราคาเดิม ฿${Number(item.price).toLocaleString()})`
@@ -1046,6 +1049,8 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       }, 50);
       return;
     }
+    if (submitLockRef.current) return; // กันกดซ้ำรัวๆ ก่อน state loading อัปเดต
+    submitLockRef.current = true;
     setLoading(true);
     const startDate = (dateOffset === 0 && !isReservationForToday) ? getNow() : new Date(displayDateStr);
     if (dateOffset > 0 || isReservationForToday) {
@@ -1059,6 +1064,23 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       checkoutDate = getNextNoon(startDate, Number(nights) || 0);
     } else {
       checkoutDate = new Date(startDate.getTime() + (Number(hours) || 1) * 60 * 60 * 1000);
+    }
+
+    // 0. กันจองซ้อนทับ: ห้องนี้ต้องไม่มีการจอง/เข้าพักอื่นที่ช่วงเวลาทับซ้อนกัน
+    const { data: overlaps } = await supabase
+      .from('bookings')
+      .select('id, guest_name, check_in_time, check_out_time, status')
+      .eq('room_id', room.id)
+      .in('status', ['reserved', 'checked_in'])
+      .lt('check_in_time', checkoutDate.toISOString())
+      .gt('check_out_time', startDate.toISOString())
+      .limit(1);
+    if (overlaps && overlaps.length > 0) {
+      const o = overlaps[0];
+      alert(`ห้อง ${room.room_no} มีการจอง/เข้าพักทับซ้อนช่วงเวลานี้แล้ว\nผู้เข้าพัก: ${o.guest_name || '(ไม่ระบุชื่อ)'}\n${new Date(o.check_in_time).toLocaleString('th-TH')} - ${new Date(o.check_out_time).toLocaleString('th-TH')}\n\nกรุณาเลือกห้องหรือช่วงวันอื่น`);
+      setLoading(false);
+      submitLockRef.current = false;
+      return;
     }
 
     // 1. บันทึกลงตาราง Bookings (ประวัติ/สมุดจอง)
@@ -1260,6 +1282,10 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     }
 
     setLoading(false);
+    submitLockRef.current = false;
+    if (bookingError) {
+      alert('บันทึกการจอง/เช็คอินไม่สำเร็จ: ' + bookingError.message);
+    }
     if (!bookingError && insertedBooking) {
       const actionType = (dateOffset === 0 && !isReservationForToday) ? 'checkin' : 'reserve';
       const extrasDesc = dailyExtras.length > 0
@@ -1494,6 +1520,8 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       return;
     }
     if (!room.booking_id) return;
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
     
     setLoading(true);
     if (extrasManagerUnlocked) {
@@ -1521,11 +1549,11 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     if (oldDepAmt !== newDepAmt) {
       if (newDepAmt > 0) {
         if (existingDepositTx) {
-          await supabase.from('ledger_transactions').update({ amount: newDepAmt, notes: `แก้มัดจำจาก ฿${oldDepAmt.toLocaleString()} โดย ${effectiveStaffName}` }).eq('id', existingDepositTx.id);
+          await supabase.from('ledger_transactions').update({ amount: newDepAmt, notes: `แก้มัดจำจาก ฿${oldDepAmt.toLocaleString()} โดย ${actorName}` }).eq('id', existingDepositTx.id);
           setExistingDepositTx({ id: existingDepositTx.id, amount: newDepAmt });
         } else {
           const { data: insDep } = await supabase.from('ledger_transactions').insert({
-            shift_id: activeShift.id, staff_name: effectiveStaffName,
+            shift_id: activeShift.id, staff_name: actorName,
             room_id: room.id, booking_id: room.booking_id,
             transaction_type: 'deposit', category: 'ค่ามัดจำกุญแจ', amount: newDepAmt
           }).select('id, amount').single();
@@ -1534,7 +1562,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         setInitialKeyDepositStatus(true);
       } else {
         if (existingDepositTx) {
-          await supabase.from('ledger_transactions').update({ category: 'ค่ามัดจำกุญแจ (Voided)', notes: `ยกเลิกมัดจำโดย ${effectiveStaffName}` }).eq('id', existingDepositTx.id);
+          await supabase.from('ledger_transactions').update({ category: 'ค่ามัดจำกุญแจ (Voided)', notes: `ยกเลิกมัดจำโดย ${actorName}` }).eq('id', existingDepositTx.id);
           setExistingDepositTx(null);
         }
         setInitialKeyDepositStatus(false);
@@ -1548,7 +1576,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         {
           oldValue: oldDepAmt > 0 ? `฿${oldDepAmt.toLocaleString()}` : 'ไม่เก็บมัดจำ (฿0)',
           newValue: newDepAmt > 0 ? `฿${newDepAmt.toLocaleString()}` : 'ไม่เก็บมัดจำ (฿0)',
-          by: effectiveStaffName,
+          by: actorName,
           at: nowIso
         }
       ];
@@ -1579,7 +1607,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
             if (d.date === firstNightDate && dayAmt > 0) {
               paymentInserts.push({
                 shift_id: activeShift.id,
-                staff_name: effectiveStaffName,
+                staff_name: actorName,
                 room_id: room.id,
                 booking_id: room.booking_id,
                 transaction_type: 'revenue',
@@ -1593,7 +1621,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         } else {
           paymentInserts.push({
             shift_id: activeShift.id,
-            staff_name: effectiveStaffName,
+            staff_name: actorName,
             room_id: room.id,
             booking_id: room.booking_id,
             transaction_type: 'revenue',
@@ -1621,7 +1649,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           // 2. Insert new entry
           paymentInserts.push({
             shift_id: activeShift.id,
-            staff_name: effectiveStaffName,
+            staff_name: actorName,
             room_id: room.id,
             booking_id: room.booking_id,
             transaction_type: 'revenue',
@@ -1633,12 +1661,12 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         }
       }
     }
-    if (cash > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'cash', amount: -cash });
+    if (cash > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: actorName, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'cash', amount: -cash });
     if (transfer > 0) {
       const transferNote = `[BANK:${selectedBank || 'SCB'}]${paymentTime ? ` โอนเวลา: ${paymentTime.replace('T', ' ')}` : ''}`;
-      paymentInserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: transferNote });
+      paymentInserts.push({ shift_id: activeShift.id, staff_name: actorName, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: transferNote });
     }
-    if (credit > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'credit_card', amount: -credit });
+    if (credit > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: actorName, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'credit_card', amount: -credit });
     
     if (paymentInserts.length > 0) {
       await supabase.from('ledger_transactions').insert(paymentInserts);
@@ -1659,6 +1687,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     setPaymentTime('');
     setDailyExtras([]); // clear extras after save
     setLoading(false);
+    submitLockRef.current = false;
 
     onUpdate();
   };
@@ -1835,15 +1864,17 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     }
     setLoading(true);
 
-
     const cash = Number(payCash) || 0;
     const transfer = Number(payTransfer) || 0;
     const credit = Number(payCredit) || 0;
-    
-    if (cash > 0 || transfer > 0 || credit > 0 || keyDepositEnabled !== initialKeyDepositStatus) {
+    const hasUnsavedExtras = dailyExtras.some(e => !e.isSaved || e.isModified);
+    const keyDepChanged =
+      keyDepositEnabled !== initialKeyDepositStatus ||
+      (keyDepositEnabled && Number(keyDepositAmount || 0) !== Number(existingDepositTx?.amount || 0));
+
+    if (cash > 0 || transfer > 0 || credit > 0 || hasUnsavedExtras || extrasManagerUnlocked || keyDepChanged || (!isSplitPayment && remainingBalance > 0)) {
       await handleAdditionalPayment();
     }
-
 
     // 1. Update Booking Status
     const { error: bookingError } = await supabase
@@ -1866,6 +1897,16 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           staff_name: room.staff_name || null
         })
         .eq('id', room.id);
+
+      await logActivity({
+        category: 'checkin',
+        action: 'checkin',
+        staffName: actorName,
+        shiftName: activeShift?.staff_name || null,
+        roomNo: room.room_no,
+        target: `ห้อง ${room.room_no} (${guestName.trim() || room.guest_name || 'ไม่ระบุชื่อ'})`,
+        details: `เช็คอินจากรายการจองล่วงหน้า ห้อง ${room.room_no}`
+      });
     }
     
     setLoading(false);
@@ -1958,7 +1999,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     await logActivity({
       category: 'checkin',
       action: 'cancel',
-      staffName: effectiveStaffName,
+      staffName: actorName,
       shiftName: activeShift?.staff_name || null,
       roomNo: room.room_no,
       target: `ห้อง ${room.room_no}`,
@@ -2184,7 +2225,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       await logActivity({
         category: 'checkin',
         action: 'move',
-        staffName: effectiveStaffName,
+        staffName: actorName,
         shiftName: activeShift?.staff_name || null,
         roomNo: room.room_no,
         target: `ห้อง ${room.room_no} -> ${targetRoom.room_no}`,
@@ -2279,7 +2320,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     await logActivity({
       category: 'checkin',
       action: 'move',
-      staffName: effectiveStaffName,
+      staffName: actorName,
       shiftName: activeShift?.staff_name || null,
       roomNo: room.room_no,
       target: `ห้อง ${room.room_no} -> ${targetRoom.room_no}`,
@@ -3195,7 +3236,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                                     (฿{Number(ext.price).toLocaleString()}{ext.isPerNight ? '/คืน' : '/หน่วย'})
                                   </span>
                                   {/* ปุ่มสลับ 1️⃣ ครั้งเดียว <-> 📅 ระบุวัน ได้อิสระในทุกรายการ */}
-                                  {!isBookingLocked && (
+                                  {!isBookingLocked && !ext.isSaved && (
                                     <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-[10px] font-bold">
                                       <button
                                         type="button"

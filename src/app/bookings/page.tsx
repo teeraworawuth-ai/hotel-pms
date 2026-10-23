@@ -43,7 +43,13 @@ export default function BookingsPage() {
       .order("created_at", { ascending: false });
 
     if (statusFilter !== "all") {
-      query = query.eq("status", statusFilter);
+      if (statusFilter === "checked_in") {
+        query = query.in("status", ["checked_in", "active"]);
+      } else if (statusFilter === "checked_out") {
+        query = query.in("status", ["checked_out", "completed"]);
+      } else {
+        query = query.eq("status", statusFilter);
+      }
     }
 
     if (searchTerm) {
@@ -70,11 +76,18 @@ export default function BookingsPage() {
 
   const getStatusBadge = (status: string) => {
     switch(status) {
-      case 'active': return <span className="px-2 py-1 text-xs font-bold rounded-full bg-blue-100 text-blue-700">เข้าพักแล้ว</span>;
-      case 'reserved': return <span className="px-2 py-1 text-xs font-bold rounded-full bg-purple-100 text-purple-700">จองแล้ว</span>;
-      case 'completed': return <span className="px-2 py-1 text-xs font-bold rounded-full bg-emerald-100 text-emerald-700">เช็คเอาท์แล้ว</span>;
-      case 'cancelled': return <span className="px-2 py-1 text-xs font-bold rounded-full bg-red-100 text-red-700">ยกเลิก</span>;
-      default: return <span className="px-2 py-1 text-xs font-bold rounded-full bg-slate-100 text-slate-700">{status}</span>;
+      case 'checked_in':
+      case 'active':
+        return <span className="px-2 py-1 text-xs font-bold rounded-full bg-blue-100 text-blue-700">เข้าพักแล้ว</span>;
+      case 'reserved':
+        return <span className="px-2 py-1 text-xs font-bold rounded-full bg-purple-100 text-purple-700">จองแล้ว</span>;
+      case 'checked_out':
+      case 'completed':
+        return <span className="px-2 py-1 text-xs font-bold rounded-full bg-emerald-100 text-emerald-700">เช็คเอาท์แล้ว</span>;
+      case 'cancelled':
+        return <span className="px-2 py-1 text-xs font-bold rounded-full bg-red-100 text-red-700">ยกเลิก</span>;
+      default:
+        return <span className="px-2 py-1 text-xs font-bold rounded-full bg-slate-100 text-slate-700">{status}</span>;
     }
   };
 
@@ -120,8 +133,8 @@ export default function BookingsPage() {
           >
             <option value="all">ทั้งหมด</option>
             <option value="reserved">จองแล้ว (Reserved)</option>
-            <option value="active">เข้าพักแล้ว (Active)</option>
-            <option value="completed">เช็คเอาท์แล้ว (Completed)</option>
+            <option value="checked_in">เข้าพักแล้ว (Checked-in)</option>
+            <option value="checked_out">เช็คเอาท์แล้ว (Checked-out)</option>
             <option value="cancelled">ยกเลิก (Cancelled)</option>
           </select>
         </div>

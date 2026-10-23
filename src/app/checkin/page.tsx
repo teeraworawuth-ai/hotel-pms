@@ -440,7 +440,10 @@ export default function CheckinPage() {
                 booking_created_at: incomingBookingToday.created_at,
                 unpaid_balance: financialSummary[incomingBookingToday.id]?.balance || 0,
                 total_charges: financialSummary[incomingBookingToday.id]?.charges || 0,
-                total_payments: financialSummary[incomingBookingToday.id]?.payments || 0
+                total_payments: financialSummary[incomingBookingToday.id]?.payments || 0,
+                c_all: financialSummary[incomingBookingToday.id]?.c_all || 0,
+                c_today: financialSummary[incomingBookingToday.id]?.c_today || 0,
+                has_key_deposit: financialSummary[incomingBookingToday.id]?.has_key_deposit
               };
           } else if (finalRoom.status === 'reserved') {
             finalRoom.booking_id = incomingBookingToday.id;
@@ -582,8 +585,6 @@ export default function CheckinPage() {
         check_out_time: null, 
         stay_type: null, 
         guest_count: null, 
-        price_night: null, 
-        price_temp: null, 
         actual_price: null, 
         staff_name: null 
       })

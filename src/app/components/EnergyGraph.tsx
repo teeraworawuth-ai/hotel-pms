@@ -273,8 +273,8 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
       if (el.requestFullscreen) await el.requestFullscreen();
       else if ((el as any).webkitRequestFullscreen) await (el as any).webkitRequestFullscreen();
       
-      if (window.screen && window.screen.orientation && window.screen.orientation.lock) {
-        await window.screen.orientation.lock('landscape');
+      if (window.screen && window.screen.orientation && (window.screen.orientation as any).lock) {
+        await (window.screen.orientation as any).lock('landscape');
       }
     } catch (err) {
       console.log('Fullscreen/Orientation API not fully supported', err);
@@ -402,7 +402,7 @@ export default function EnergyGraph({ roomId, roomNo, location, dateOffset = 0 }
     }
   }
 
-  const midnights = [];
+  const midnights: number[] = [];
   for (let i = -1; i <= 2; i++) {
     const m = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + i, 0, 0, 0).getTime();
     if (m > domain[0] && m < domain[1]) midnights.push(m);

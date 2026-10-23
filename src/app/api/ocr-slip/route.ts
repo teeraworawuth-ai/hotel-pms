@@ -22,9 +22,6 @@ export async function POST(req: NextRequest) {
     const mimeType = file.type || 'image/jpeg';
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    // Use Gemini 1.5 Flash for fast multimodal OCR
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
     const prompt = `
     Analyze this Thai bank transfer slip image.
     Extract the following details and return ONLY a valid JSON object without any markdown formatting or extra text.
@@ -39,15 +36,25 @@ export async function POST(req: NextRequest) {
     }
     `;
 
-    const result = await model.generateContent([
-      prompt,
-      {
-        inlineData: {
-          data: base64Image,
-          mimeType: mimeType
-        }
+    const imagePart = {
+      inlineData: {
+        data: base64Image,
+        mimeType: mimeType
       }
-    ]);
+    };
+
+    let result: any = null;
+    let lastErr: any = null;
+    for (const modelName of ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelName });
+        result = await model.generateContent([prompt, imagePart]);
+        break;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    if (!result) throw lastErr || new Error('All Gemini models failed');
 
     const text = result.response.text();
     // Clean up potential markdown formatting (```json ... ```)

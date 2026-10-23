@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
@@ -25,7 +25,7 @@ export default function OfflineSensors({ dateOffset = 0 }: { dateOffset?: number
       const endOfDay = new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate(), 6, 44, 59);
 
       // ดึง log ทั้งหมดของวันนี้เพื่อหาช่องโหว่ > 10 นาที
-      let logs = [];
+      let logs: any[] = [];
       let from = 0;
       const limit = 1000;
       while (true) {

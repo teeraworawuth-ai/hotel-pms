@@ -26,8 +26,8 @@ export async function POST(req: Request) {
 
     if (roomsError) throw roomsError;
 
-    // 3. For each booking, check if we need to post a charge for today
-    const todayStr = targetDate.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+    // 3. For each booking, check if we need to post a charge for today (using Asia/Bangkok timezone)
+    const todayStr = targetDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' }); // YYYY-MM-DD in Thai time
     let postedCount = 0;
 
     for (const booking of bookings) {
@@ -35,23 +35,11 @@ export async function POST(req: Request) {
       const room = rooms?.find(r => r.id === booking.room_id);
       if (!room) continue;
 
-      // DO NOT post charge if targetDate is the check-out day or later
+      // DO NOT post charge if targetDate is the check-out day or later (compared in Asia/Bangkok date)
       if (booking.check_out_time) {
-        const checkoutDate = new Date(booking.check_out_time);
-        
-        // Extract local Thai date components for accurate comparison
-        const checkoutYear = checkoutDate.getFullYear();
-        const checkoutMonth = checkoutDate.getMonth();
-        const checkoutDay = checkoutDate.getDate();
-        
-        const targetYear = targetDate.getFullYear();
-        const targetMonth = targetDate.getMonth();
-        const targetDay = targetDate.getDate();
-        
-        // If the target date is >= the checkout date, skip charging for this night.
-        // (If a customer checks out on the 9th, they don't pay for the night of the 9th)
-        if (new Date(targetYear, targetMonth, targetDay).getTime() >= new Date(checkoutYear, checkoutMonth, checkoutDay).getTime()) {
-          console.log(`Skipping charge for booking ${booking.id}: Target date is >= Checkout date`);
+        const checkoutDateStr = new Date(booking.check_out_time).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+        if (todayStr >= checkoutDateStr) {
+          console.log(`Skipping charge for booking ${booking.id}: Target date (${todayStr}) is >= Checkout date (${checkoutDateStr})`);
           continue; 
         }
       }
@@ -66,15 +54,15 @@ export async function POST(req: Request) {
 
       const chargeAmount = todayRateRow?.amount != null ? Number(todayRateRow.amount) : (room.actual_price || room.price_night || 0);
 
-      // Check if a room_charge has already been posted TODAY for this booking
+      // Check if a room_charge has already been posted TODAY (in Asia/Bangkok +07:00) for this booking
       const { data: existingCharges, error: txError } = await supabase
         .from('ledger_transactions')
         .select('id, category, notes')
         .eq('booking_id', booking.id)
-        .gte('created_at', `${todayStr}T00:00:00.000Z`)
-        .lte('created_at', `${todayStr}T23:59:59.999Z`);
+        .gte('created_at', `${todayStr}T00:00:00+07:00`)
+        .lte('created_at', `${todayStr}T23:59:59.999+07:00`);
         
-      const hasRoomCharge = existingCharges?.some(tx => tx.category === 'ค่าห้องพัก' || tx.category === 'room_charge');
+      const hasRoomCharge = existingCharges?.some(tx => (tx.category === 'ค่าห้องพัก' || tx.category === 'room_charge') && !tx.category.includes('Voided'));
 
       if (txError) {
         console.error('Error checking existing transactions:', txError);

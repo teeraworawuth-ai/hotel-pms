@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 const { TuyaContext } = require('@tuya/tuya-connector-nodejs');
 
@@ -63,15 +63,15 @@ export async function GET(request: Request) {
     const deviceIds = rooms.map(r => r.tuya_device_id).filter(Boolean);
 
     const CHUNK_SIZE = 20; 
-    const tuyaData = [];
-    const failedDevices = [];
+    const tuyaData: any[] = [];
+    const failedDevices: { id: any; error: string }[] = [];
     let apiCallsMade = 0;
     
     for (let i = 0; i < deviceIds.length; i += CHUNK_SIZE) {
       const chunk = deviceIds.slice(i, i + CHUNK_SIZE);
       const deviceIdsString = chunk.join(',');
       let chunkSuccess = false;
-      let lastError = null;
+      let lastError: any = null;
 
       for (let idx = 0; idx < contexts.length; idx++) {
         try {

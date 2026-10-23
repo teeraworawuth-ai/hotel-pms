@@ -27,7 +27,7 @@ export default function GraphModal({ booking, onClose }: GraphModalProps) {
 
   const fetchData = async () => {
     setLoading(true);
-    let logs = [];
+    let logs: any[] = [];
       let from = 0;
       const limit = 1000;
       while (true) {
