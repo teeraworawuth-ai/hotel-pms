@@ -3,450 +3,2020 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>เอกสารจำลองสถานการณ์ 5 วัน — ตรวจสอบหน้ารายงานเงินสดประจำวัน (Hotel PMS)</title>
+  <title>ตัวอย่างหน้ารายงานเงินสดประจำวัน (รูปแบบใหม่) — จำลองครบ 5 วัน (วันที่ 1 ถึง วันที่ 5)</title>
   <style>
     @page {
       size: A4 landscape;
-      margin: 10mm;
+      margin: 8mm;
     }
     * {
       box-sizing: border-box;
     }
     body {
-      font-family: 'Sarabun', 'Tahoma', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      color: #0f172a;
+      font-family: 'Sarabun', 'Prompt', 'Tahoma', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: #f1f5f9;
+      color: #0f172a;
       margin: 0;
-      padding: 20px;
-      line-height: 1.45;
+      padding: 18px;
+      line-height: 1.4;
     }
-    .container {
-      max-width: 1120px;
+    .page-wrap {
+      max-width: 1280px;
       margin: 0 auto;
-      background: #ffffff;
-      padding: 24px 28px;
-      border-radius: 14px;
-      box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08);
     }
-    .top-bar {
+    /* Top sticky navigation */
+    .sticky-nav {
+      position: sticky;
+      top: 10px;
+      z-index: 50;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(8px);
+      color: #fff;
+      padding: 12px 18px;
+      border-radius: 14px;
+      box-shadow: 0 8px 25px rgba(15, 23, 42, 0.18);
       display: flex;
+      flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 16px;
-      padding-bottom: 12px;
-      border-bottom: 3px solid #0f172a;
+      gap: 10px;
+      margin-bottom: 18px;
     }
-    h1 {
-      font-size: 20px;
-      margin: 0;
+    .sticky-nav h1 {
+      font-size: 16px;
       font-weight: 900;
-      color: #0f172a;
+      margin: 0;
+      color: #f8fafc;
     }
-    h2 {
-      font-size: 15px;
-      margin: 18px 0 8px 0;
-      padding: 6px 10px;
+    .sticky-nav p {
+      font-size: 11.5px;
+      color: #94a3b8;
+      margin: 2px 0 0 0;
+    }
+    .nav-btns {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .tab-btn {
+      border: 1px solid #334155;
       background: #1e293b;
-      color: #ffffff;
-      border-radius: 6px;
-    }
-    p.sub {
-      margin: 4px 0 0 0;
+      color: #cbd5e1;
+      padding: 7px 12px;
+      border-radius: 8px;
       font-size: 12px;
-      color: #475569;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover {
+      background: #334155;
+      color: #fff;
+    }
+    .tab-btn.active {
+      background: #10b981;
+      border-color: #059669;
+      color: #ffffff;
     }
     .print-btn {
       background: #2563eb;
-      color: #ffffff;
-      border: 0;
-      padding: 10px 18px;
+      border: 1px solid #1d4ed8;
+      color: #fff;
+      padding: 7px 14px;
       border-radius: 8px;
+      font-size: 12px;
       font-weight: 800;
-      font-size: 13px;
       cursor: pointer;
     }
     .print-btn:hover {
       background: #1d4ed8;
     }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 12px;
-      margin-bottom: 14px;
+
+    /* Master scenario overview card */
+    .scenario-card {
+      background: #fff;
+      border: 2px solid #cbd5e1;
+      border-radius: 16px;
+      padding: 16px 20px;
+      margin-bottom: 22px;
+      box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
     }
-    th, td {
-      border: 1px solid #cbd5e1;
-      padding: 6px 8px;
-      vertical-align: top;
-    }
-    th {
-      background: #f8fafc;
-      font-weight: 800;
-      color: #1e293b;
-      text-align: left;
-    }
-    .num {
-      text-align: right;
-      font-weight: 700;
-      white-space: nowrap;
-    }
-    .center {
-      text-align: center;
-    }
-    .sec-row td {
-      background: #e2e8f0;
+    .scenario-card h2 {
+      margin: 0 0 10px 0;
+      font-size: 15px;
       font-weight: 900;
+      color: #1e293b;
+    }
+    .scenario-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+      gap: 8px;
+      font-size: 11.5px;
+    }
+    .sc-item {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 8px 10px;
+    }
+    .sc-item.res {
+      background: #faf5ff;
+      border-color: #d8b4fe;
+    }
+    .sc-item b {
       color: #0f172a;
     }
-    .total-row td {
-      background: #fef3c7;
+
+    /* Each Day Container */
+    .day-section {
+      background: #ffffff;
+      border: 2px solid #cbd5e1;
+      border-radius: 18px;
+      padding: 20px;
+      margin-bottom: 28px;
+      box-shadow: 0 4px 18px rgba(15, 23, 42, 0.06);
+    }
+    .day-header-bar {
+      background: #eef2ff;
+      border: 1px solid #c7d2fe;
+      border-radius: 14px;
+      padding: 12px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .day-title {
+      font-size: 18px;
       font-weight: 900;
-      font-size: 12.5px;
+      color: #1e1b4b;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0;
+    }
+    .badge-closed {
+      background: #4f46e5;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 3px 10px;
+      border-radius: 999px;
+    }
+    .cutoff-note {
+      font-size: 11.5px;
+      color: #475569;
+      margin: 3px 0 0 0;
+    }
+    .events-strip {
+      background: #fffbeb;
+      border: 1px dashed #f59e0b;
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 11.5px;
+      color: #78350f;
+      margin-bottom: 14px;
+    }
+    .events-strip b {
       color: #92400e;
     }
-    .note-small {
-      display: block;
-      font-size: 10.5px;
-      font-weight: 400;
-      color: #64748b;
-      margin-top: 2px;
+
+    /* 3-Column Layout matching DailyReport.tsx */
+    .report-grid {
+      display: grid;
+      grid-template-columns: 5fr 4fr 3.3fr;
+      gap: 14px;
+      align-items: stretch;
     }
-    .finding-box {
-      border: 1px solid #cbd5e1;
-      border-left: 5px solid #e11d48;
-      background: #fff1f2;
+    @media (max-width: 1024px) {
+      .report-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .col-card {
+      background: #fff;
+      border: 2px solid #e2e8f0;
+      border-radius: 14px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .col-head {
       padding: 10px 14px;
-      border-radius: 8px;
-      margin-bottom: 10px;
+      color: #fff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 900;
+      font-size: 13.5px;
+    }
+    .col-head.rev { background: #1e293b; }
+    .col-head.pay { background: #065f46; }
+    .col-head.adv { background: #075985; }
+    .col-head.res { background: #6b21a8; }
+
+    .head-pill {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.16);
+      font-weight: 700;
+    }
+    .col-body {
+      padding: 14px;
+      flex: 1;
+      font-size: 12.5px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .col-foot {
+      padding: 12px 14px;
+      background: #f8fafc;
+      border-top: 2px solid #e2e8f0;
       font-size: 12.5px;
     }
-    .finding-box.recommend {
-      border-left-color: #2563eb;
+    .row-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .sub-box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    .pl-3 { padding-left: 10px; }
+    .pl-6 { padding-left: 20px; }
+    .hint {
+      display: block;
+      font-size: 10.5px;
+      color: #64748b;
+      font-weight: 500;
+    }
+    .amt {
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .text-indigo { color: #4338ca; }
+    .text-emerald { color: #047857; }
+    .text-rose { color: #e11d48; }
+    .text-sky { color: #0369a1; }
+    .text-purple { color: #7e22ce; }
+    .text-amber { color: #b45309; }
+    .text-slate-muted { color: #94a3b8; }
+
+    /* Payment channel boxes */
+    .pay-box-cash {
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      border-radius: 10px;
+      padding: 9px 12px;
+    }
+    .pay-box-transfer {
       background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 10px;
+      padding: 9px 12px;
     }
-    .page-break {
-      page-break-before: always;
+    .pay-box-credit {
+      background: #faf5ff;
+      border: 1px solid #e9d5ff;
+      border-radius: 10px;
+      padding: 9px 12px;
     }
+    .pay-box-void {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 7px 12px;
+    }
+
+    /* Right column breakdown toggle & list */
+    .right-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .toggle-breakdown-btn {
+      width: 100%;
+      margin-top: 6px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .toggle-breakdown-btn.sky {
+      background: #f0f9ff;
+      border: 1px solid #bae6fd;
+      color: #075985;
+    }
+    .toggle-breakdown-btn.purple {
+      background: #faf5ff;
+      border: 1px solid #e9d5ff;
+      color: #6b21a8;
+    }
+    .room-bd-list {
+      margin-top: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .room-bd-item {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 7px 9px;
+      font-size: 11px;
+    }
+    .room-bd-top {
+      display: flex;
+      justify-content: space-between;
+      font-weight: 800;
+      color: #1e293b;
+      margin-bottom: 3px;
+    }
+    .room-bd-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      font-size: 10px;
+      color: #475569;
+      gap: 2px;
+    }
+    .room-bd-note {
+      font-size: 10px;
+      color: #64748b;
+      font-style: italic;
+      margin-top: 2px;
+    }
+
+    /* Bottom Reconciliation Bar */
+    .recon-bar {
+      margin-top: 14px;
+      background: #0f172a;
+      color: #fff;
+      padding: 12px 16px;
+      border-radius: 14px;
+      border-top: 4px solid #6366f1;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    .recon-cell {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 9px 12px;
+    }
+    .recon-cell .lbl {
+      font-size: 11px;
+      color: #94a3b8;
+      font-weight: 700;
+    }
+    .recon-cell .val {
+      font-size: 18px;
+      font-weight: 900;
+      margin-top: 2px;
+    }
+
+    /* Key Deposit Box */
+    .deposit-bar {
+      margin-top: 12px;
+      background: #fffbeb;
+      border: 2px solid #fde68a;
+      border-radius: 14px;
+      padding: 12px 16px;
+    }
+    .deposit-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #fde68a;
+      padding-bottom: 8px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .drawer-pill {
+      background: #fff;
+      border: 1px solid #fcd34d;
+      border-radius: 10px;
+      padding: 6px 12px;
+      text-align: right;
+    }
+    .deposit-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    .dep-card {
+      background: #fff;
+      border: 1px solid #fde68a;
+      border-radius: 10px;
+      padding: 8px 10px;
+    }
+    .dep-card.active-held {
+      background: #fef3c7;
+      border-color: #f59e0b;
+    }
+
     @media print {
       body {
-        background: #ffffff;
+        background: #fff;
         padding: 0;
-      }
-      .container {
-        box-shadow: none;
-        padding: 0;
-        max-width: 100%;
       }
       .no-print {
         display: none !important;
+      }
+      .day-section {
+        page-break-before: always;
+        box-shadow: none;
+        margin-bottom: 0;
+        border: 1px solid #94a3b8;
+      }
+      .day-section:first-of-type {
+        page-break-before: always;
       }
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="top-bar">
+  <div class="page-wrap">
+    <!-- Sticky Navigation -->
+    <div class="sticky-nav no-print">
       <div>
-        <h1>📊 เอกสารจำลองสถานการณ์จริง 5 วัน — ตรวจสอบหน้ารายงานเงินสดประจำวัน (Hotel PMS)</h1>
-        <p class="sub">โจทย์จำลอง: ผู้เข้าพักจริง 7 ห้อง (101–107) + จองล่วงหน้ายังไม่มา 2 ห้อง (201–202 มาเข้าพักวันที่ 2 และ 3) • ต่างคนต่างมา • เข้าพักไม่เกิน 5 วัน</p>
+        <h1>📊 ตัวอย่างแสดงผลหน้ารายงานเงินสดประจำวัน (รูปแบบใหม่หลังแก้ไขครบทั้ง 3 ข้อ)</h1>
+        <p>จำลองการลงบันทึกตั้งแต่วันที่ 1 ถึง วันที่ 5 • พร้อมปุ่ม 🔍 ดูแจกแจงรายห้อง ในกล่องจ่ายล่วงหน้า &amp; กล่องรับจอง</p>
       </div>
-      <div class="no-print">
-        <button class="print-btn" onclick="window.print()">🖨️ สั่งพิมพ์เอกสารนี้ (Print A4)</button>
+      <div class="nav-btns">
+        <button class="tab-btn active" onclick="filterDay('all', this)">📋 ดูครบทั้ง 5 วัน</button>
+        <button class="tab-btn" onclick="filterDay('day-1', this)">วันที่ 1</button>
+        <button class="tab-btn" onclick="filterDay('day-2', this)">วันที่ 2</button>
+        <button class="tab-btn" onclick="filterDay('day-3', this)">วันที่ 3</button>
+        <button class="tab-btn" onclick="filterDay('day-4', this)">วันที่ 4</button>
+        <button class="tab-btn" onclick="filterDay('day-5', this)">วันที่ 5</button>
+        <button class="print-btn" onclick="window.print()">🖨️ สั่งพิมพ์ (Print A4)</button>
       </div>
     </div>
 
-    <h2>ส่วนที่ 1: รายละเอียดเหตุการณ์และการชำระเงินของลูกค้าทั้ง 9 ห้อง (วันที่ 1 – วันที่ 5)</h2>
-    <table>
-      <thead>
-        <tr>
-          <th style="width: 75px;">ห้อง</th>
-          <th style="width: 135px;">รูปแบบการพัก</th>
-          <th style="width: 125px;">วันเข้าพัก – วันออก</th>
-          <th>รายละเอียดเหตุการณ์จริง / บริการเสริม / การชำระเงินในแต่ละวัน</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><b>ห้อง 101</b></td>
-          <td>ค้างคืน <b>1 คืน</b></td>
-          <td>เข้า <b>วันที่ 1</b><br/>ออก <b>วันที่ 2</b></td>
-          <td>
-            • <b>วันที่ 1:</b> เช็คอิน ค่าห้อง 750 + มัดจำกุญแจ 200 = <b>จ่ายเงินสด 950 บาท</b><br/>
-            • <b>วันที่ 2:</b> เช็คเอาท์ปกติ <b>คืนเงินสดมัดจำกุญแจ -200 บาท</b>
-          </td>
-        </tr>
-        <tr>
-          <td><b>ห้อง 102</b></td>
-          <td>ค้างคืน <b>3 คืน</b><br/><span class="note-small">(จ่ายครบตั้งแต่คืนแรก + ยกเลิกบริการเสริมวันหลัง)</span></td>
-          <td>เข้า <b>วันที่ 1</b><br/>ออก <b>วันที่ 4</b></td>
-          <td>
-            • <b>วันที่ 1:</b> เช็คอิน ค่าห้องคืนละ 800 x 3 คืน (2,400) + เช่ามอเตอร์ไซค์รายวัน 250 x 3 คืน (750) + มัดจำกุญแจ 200 = <b>โอน SCB 3,350 บาท</b><br/>
-            • <b>วันที่ 2:</b> ลูกค้าแจ้งยกเลิกเช่ามอเตอร์ไซค์เฉพาะของ <b>วันที่ 3 (250 บาท)</b> พนักงานกดยกเลิกและเลือก <b>คืนเงินสดทันที -250 บาท</b><br/>
-            • <b>วันที่ 4:</b> เช็คเอาท์ปกติ <b>คืนเงินสดมัดจำกุญแจ -200 บาท</b>
-          </td>
-        </tr>
-        <tr>
-          <td><b>ห้อง 103</b></td>
-          <td>ค้างคืน <b>2 คืน</b><br/><span class="note-small">(ทยอยจ่ายทีละคืน + ซื้อ POS)</span></td>
-          <td>เข้า <b>วันที่ 1</b><br/>ออก <b>วันที่ 3</b></td>
-          <td>
-            • <b>วันที่ 1:</b> เช็คอินพัก 2 คืน (คืนละ 750 = 1,500) แต่ขอจ่ายเฉพาะคืนแรกก่อน = <b>จ่ายเงินสด 750 บาท</b> (ไม่เก็บมัดจำกุญแจ)<br/>
-            • <b>วันที่ 2:</b> จ่ายค่าห้องคืนที่ 2 ด้วย <b>โอน KBANK 750 บาท</b> + ซื้อน้ำเปล่า POS 2 ขวด <b>จ่ายเงินสด 40 บาท</b><br/>
-            • <b>วันที่ 3:</b> เช็คเอาท์ปกติ (ไม่มีค้างชำระ)
-          </td>
-        </tr>
-        <tr>
-          <td><b>ห้อง 104</b></td>
-          <td><b>ชั่วคราว 3 ชม.</b><br/>+ เพิ่ม 1 ชม.</td>
-          <td>เข้า–ออก <b>วันที่ 1</b></td>
-          <td>
-            • <b>วันที่ 1:</b> เข้าพักชั่วคราว 3 ชม. (ราคาฐาน 350 บาท) + อยู่เพิ่ม 1 ชม. (+150 บาท) = <b>จ่ายเงินสด 500 บาท</b> แล้วเช็คเอาท์ในวันเดียวกัน
-          </td>
-        </tr>
-        <tr>
-          <td><b>ห้อง 105</b></td>
-          <td>ค้างคืน <b>2 คืน</b><br/><span class="note-small">(Early Check-in + ริบมัดจำตอนออก)</span></td>
-          <td>เข้า <b>วันที่ 2 (07:30 น.)</b><br/>ออก <b>วันที่ 4</b></td>
-          <td>
-            • <b>วันที่ 2 (07:30 น.):</b> เข้าก่อนเวลา (Early Check-in) ค่าห้องคืนละ 750 x 2 คืน (1,500) + ค่าเข้าก่อนเวลา 200 + มัดจำกุญแจ 200 = <b>โอน SCB 1,900 บาท</b><br/>
-            • <b>วันที่ 4:</b> เช็คเอาท์ ลูกค้าทำกุญแจหาย <b>ริบมัดจำกุญแจ 200 บาทเป็นรายได้ค่าปรับของวันที่ 4</b>
-          </td>
-        </tr>
-        <tr>
-          <td><b>ห้อง 106</b></td>
-          <td>ค้างคืน <b>3 คืน</b><br/><span class="note-small">(มีส่วนลดค่าห้อง + เตียงเสริมระบุวัน)</span></td>
-          <td>เข้า <b>วันที่ 2</b><br/>ออก <b>วันที่ 5</b></td>
-          <td>
-            • <b>วันที่ 2:</b> ราคาเป้าหมายคืนละ 800 แต่ลดให้เหลือคืนละ 700 x 3 คืน (2,100) + เตียงเสริมระบุวันเฉพาะ <b>วันที่ 2 และ วันที่ 3</b> (300 x 2 คืน = 600) = <b>รูดบัตรเครดิต 2,700 บาท</b><br/>
-            • <b>วันที่ 5:</b> เช็คเอาท์ปกติ
-          </td>
-        </tr>
-        <tr>
-          <td><b>ห้อง 107</b></td>
-          <td>ค้างคืน <b>1 คืน</b><br/><span class="note-small">(ออกช้า Late Check-out ในวันออก)</span></td>
-          <td>เข้า <b>วันที่ 4</b><br/>ออก <b>วันที่ 5</b></td>
-          <td>
-            • <b>วันที่ 4:</b> เช็คอิน 1 คืน ค่าห้อง 750 = <b>จ่ายเงินสด 750 บาท</b><br/>
-            • <b>วันที่ 5:</b> เช็คเอาท์เกินเวลา คิดค่าปรับออกช้า (Late Check-out) 200 = <b>จ่ายเงินสด 200 บาท</b>
-          </td>
-        </tr>
-        <tr style="background: #faf5ff;">
-          <td><b>ห้อง 201</b><br/><span class="note-small">(จองล่วงหน้า #1)</span></td>
-          <td>จองพัก <b>2 คืน</b><br/>(เข้าพักวันที่ 2–3)</td>
-          <td>จอง <b>วันที่ 1</b><br/>เข้าพักจริง <b>วันที่ 2</b><br/>ออก <b>วันที่ 4</b></td>
-          <td>
-            • <b>วันที่ 1 (วันจอง):</b> ลูกค้ายังไม่มาพัก จองล่วงหน้าสำหรับเข้าพักวันที่ 2 จำนวน 2 คืน (คืนละ 800 = 1,600) <b>โอน SCB เต็มจำนวน 1,600 บาทในวันที่ 1</b><br/>
-            • <b>วันที่ 2 (วันมาเข้าพักจริง):</b> ลูกค้าเดินทางมาเช็คอิน (เงินจอง 1,600 ถูกดึงมาใช้เป็นค่าห้องวันที่ 2 จำนวน 800 และพักเป็นจ่ายล่วงหน้าสำหรับวันที่ 3 อีก 800) + เก็บมัดจำกุญแจเพิ่ม <b>เงินสด 200 บาท</b><br/>
-            • <b>วันที่ 4:</b> เช็คเอาท์ <b>คืนเงินสดมัดจำกุญแจ -200 บาท</b>
-          </td>
-        </tr>
-        <tr style="background: #faf5ff;">
-          <td><b>ห้อง 202</b><br/><span class="note-small">(จองล่วงหน้า #2)</span></td>
-          <td>จองพัก <b>2 คืน</b><br/>(เข้าพักวันที่ 3–4)</td>
-          <td>จอง <b>วันที่ 1</b><br/>เข้าพักจริง <b>วันที่ 3</b><br/>ออก <b>วันที่ 5</b></td>
-          <td>
-            • <b>วันที่ 1 (วันจอง):</b> ลูกค้ายังไม่มาพัก จองล่วงหน้าสำหรับเข้าพักวันที่ 3 จำนวน 2 คืน (คืนละ 900 = 1,800) <b>โอนมัดจำจอง KBANK บางส่วน 500 บาทในวันที่ 1</b><br/>
-            • <b>วันที่ 3 (วันมาเข้าพักจริง):</b> ลูกค้าเดินทางมาเช็คอิน และชำระส่วนที่เหลือ <b>เงินสด 1,300 บาท</b> (รวมกับเงินจองเดิม 500 = 1,800 หักเป็นค่าห้องวันที่ 3 จำนวน 900 และยกไปเป็นจ่ายล่วงหน้าสำหรับวันที่ 4 อีก 900)<br/>
-            • <b>วันที่ 5:</b> เช็คเอาท์ปกติ
-          </td>
-        </tr>
-      </tbody>
-    </table>
-
-    <div class="page-break"></div>
-
-    <h2>ส่วนที่ 2: ตารางเปรียบเทียบตัวเลขใน "หน้ารายงานเงินสดประจำวัน" ตั้งแต่วันที่ 1 ถึง วันที่ 5</h2>
-    <table>
-      <thead>
-        <tr>
-          <th style="width: 240px;">รายการในรายงานประจำวัน</th>
-          <th class="center">วันที่ 1</th>
-          <th class="center">วันที่ 2</th>
-          <th class="center">วันที่ 3</th>
-          <th class="center">วันที่ 4</th>
-          <th class="center">วันที่ 5</th>
-        </tr>
-      </thead>
-      <tbody>
-        <!-- ฝั่งซ้าย: รายได้ -->
-        <tr class="sec-row">
-          <td colspan="6">1. คอลัมน์ซ้าย: ฝั่งรายได้ประจำวัน (Revenue — รับรู้เฉพาะวันที่เกิดการเข้าพักจริง)</td>
-        </tr>
-        <tr>
-          <td>1.1.1 ค่าห้องค้างคืน (ตามราคาเป้าหมาย)</td>
-          <td class="num">฿2,300<span class="note-small">101(750)+102(800)+103(750)</span></td>
-          <td class="num">฿3,900<span class="note-small">102(800)+103(750)+105(750)+106(800)+201(800)</span></td>
-          <td class="num">฿4,050<span class="note-small">102(800)+105(750)+106(800)+201(800)+202(900)</span></td>
-          <td class="num">฿2,450<span class="note-small">106(800)+107(750)+202(900)</span></td>
-          <td class="num">฿0</td>
-        </tr>
-        <tr>
-          <td>1.1.2 ค่าห้องชั่วคราว (ตามราคาฐาน 3 ชม.)</td>
-          <td class="num">฿350<span class="note-small">104 (ฐาน 3 ชม.)</span></td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-        </tr>
-        <tr>
-          <td>1.2.1 รายได้ส่วนเพิ่ม: เข้าก่อน/ออกช้า (Early-Late)</td>
-          <td class="num">฿0</td>
-          <td class="num">+฿200<span class="note-small">105 (Early Check-in)</span></td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-          <td class="num">+฿200<span class="note-small">107 (Late Check-out)</span></td>
-        </tr>
-        <tr>
-          <td>1.2.2 รายได้ส่วนเพิ่ม: ปรับเพิ่มราคา/เพิ่มชั่วโมง</td>
-          <td class="num">+฿150<span class="note-small">104 (เพิ่ม 1 ชม.)</span></td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-        </tr>
-        <tr>
-          <td>1.3 หัก ส่วนลดค่าห้อง (ขายต่ำกว่าราคาเป้าหมาย)</td>
-          <td class="num">฿0</td>
-          <td class="num">-฿100<span class="note-small">106 (ลดจาก 800 เหลือ 700)</span></td>
-          <td class="num">-฿100<span class="note-small">106 (ลดจาก 800 เหลือ 700)</span></td>
-          <td class="num">-฿100<span class="note-small">106 (ลดจาก 800 เหลือ 700)</span></td>
-          <td class="num">฿0</td>
-        </tr>
-        <tr>
-          <td>2. ค่าส่วนเสริม (เตียงเสริม / มอเตอร์ไซค์รายวัน)</td>
-          <td class="num">฿250<span class="note-small">102 (มอไซค์คืน 1)</span></td>
-          <td class="num">฿550<span class="note-small">102(มอไซค์ 250) + 106(เตียงเสริม 300)</span></td>
-          <td class="num">฿300<span class="note-small">106(เตียงเสริม 300) • 102 ยกเลิกแล้ว</span></td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-        </tr>
-        <tr>
-          <td>3. ค่ามินิบาร์ (POS)</td>
-          <td class="num">฿0</td>
-          <td class="num">฿40<span class="note-small">103 (น้ำเปล่า POS)</span></td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-        </tr>
-        <tr>
-          <td>4. ค่าปรับ / ริบมัดจำกุญแจ</td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-          <td class="num">฿200<span class="note-small">105 (ริบมัดจำกุญแจหาย)</span></td>
-          <td class="num">฿0</td>
-        </tr>
-        <tr class="total-row">
-          <td>รวมรายได้สุทธิประจำวัน (ฝั่งซ้าย)</td>
-          <td class="num">฿3,050</td>
-          <td class="num">฿4,590</td>
-          <td class="num">฿4,250</td>
-          <td class="num">฿2,550</td>
-          <td class="num">฿200</td>
-        </tr>
-
-        <!-- ฝั่งกลาง: รับชำระเงิน -->
-        <tr class="sec-row">
-          <td colspan="6">2. คอลัมน์กลาง: ฝั่งรับชำระเงินจริงในวันนั้น (Payments — ไม่รวมเงินมัดจำกุญแจ)</td>
-        </tr>
-        <tr>
-          <td>• รับเงินสด (Cash)</td>
-          <td class="num">฿2,000<span class="note-small">101(750)+103(750)+104(500)</span></td>
-          <td class="num">฿40<span class="note-small">103 (น้ำเปล่า 40)</span></td>
-          <td class="num">฿1,300<span class="note-small">202 (จ่ายเพิ่มวันเช็คอิน)</span></td>
-          <td class="num">฿750<span class="note-small">107 (ค่าห้อง)</span></td>
-          <td class="num">฿200<span class="note-small">107 (ค่าปรับออกช้า)</span></td>
-        </tr>
-        <tr>
-          <td>• รับโอนเงิน บัญชี SCB</td>
-          <td class="num">฿4,750<span class="note-small">102(3,150) + จอง 201(1,600)</span></td>
-          <td class="num">฿1,700<span class="note-small">105 (ค่าห้อง 2 คืน + Early)</span></td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-        </tr>
-        <tr>
-          <td>• รับโอนเงิน บัญชี KBANK</td>
-          <td class="num">฿500<span class="note-small">จอง 202 (มัดจำจอง)</span></td>
-          <td class="num">฿750<span class="note-small">103 (จ่ายค่าห้องคืน 2)</span></td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-        </tr>
-        <tr>
-          <td>• รับบัตรเครดิต (Credit Card)</td>
-          <td class="num">฿0</td>
-          <td class="num">฿2,700<span class="note-small">106 (3 คืน + เตียงเสริม 2 คืน)</span></td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-        </tr>
-        <tr>
-          <td>• หัก คืนเงินสด/ยกเลิกรายการล่วงหน้า</td>
-          <td class="num">฿0</td>
-          <td class="num">-฿250<span class="note-small">102 (คืนเงินสดยกเลิกมอไซค์วันที่ 3)</span></td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-          <td class="num">฿0</td>
-        </tr>
-        <tr class="total-row">
-          <td>รวมรับชำระเงินสุทธิประจำวัน (ฝั่งกลาง)</td>
-          <td class="num">฿7,250</td>
-          <td class="num">฿4,940</td>
-          <td class="num">฿1,300</td>
-          <td class="num">฿750</td>
-          <td class="num">฿200</td>
-        </tr>
-
-        <!-- ฝั่งขวา: รับจอง & จ่ายล่วงหน้า & มัดจำกุญแจ -->
-        <tr class="sec-row">
-          <td colspan="6">3. คอลัมน์ขวา: กล่อง "รับจอง (ยังไม่เข้าพัก)" + กล่อง "จ่ายล่วงหน้า (เช็คอินแล้ว)" + กล่อง "มัดจำกุญแจ"</td>
-        </tr>
-        <tr>
-          <td><b>[กล่องรับจอง]</b> ยอดยกมา &rarr; (+เพิ่ม / -ใช้ไป) &rarr; <b>ยอดยกไป</b></td>
-          <td class="num">ยกมา 0<br/><b>+เพิ่ม 2,100</b><br/>ใช้ไป 0<br/><b>= ยกไป ฿2,100</b><span class="note-small">201(1,600) + 202(500)</span></td>
-          <td class="num">ยกมา 2,100<br/>+เพิ่ม 0<br/><b>-ใช้ไป 1,600</b><br/><b>= ยกไป ฿500</b><span class="note-small">201 มาเช็คอิน / เหลือ 202(500)</span></td>
-          <td class="num">ยกมา 500<br/>+เพิ่ม 0<br/><b>-ใช้ไป 500</b><br/><b>= ยกไป ฿0</b><span class="note-small">202 มาเช็คอินแล้ว</span></td>
-          <td class="num">ยกมา 0<br/>= ยกไป <b>฿0</b></td>
-          <td class="num">ยกมา 0<br/>= ยกไป <b>฿0</b></td>
-        </tr>
-        <tr>
-          <td><b>[กล่องจ่ายล่วงหน้า]</b> ยอดยกมา &rarr; (+เพิ่ม / -ใช้ไป) &rarr; <b>ยอดยกไป</b></td>
-          <td class="num">ยกมา 0<br/><b>+เพิ่ม 2,100</b><br/>ใช้ไป 0<br/><b>= ยกไป ฿2,100</b><span class="note-small">102 (ค่าห้อง+มอไซค์ คืน 2-3)</span></td>
-          <td class="num">ยกมา 2,100<br/><b>+เพิ่ม 3,000</b><br/><b>-ใช้ไป 1,050</b><br/><b>= ยกไป ฿4,050</b><span class="note-small">คงเหลือ: 102(800)+105(750)+106(1,700)+201(800)</span></td>
-          <td class="num">ยกมา 4,050<br/><b>+เพิ่ม 900</b><br/><b>-ใช้ไป 3,350</b><br/><b>= ยกไป ฿1,600</b><span class="note-small">คงเหลือ: 106(700)+202(900)</span></td>
-          <td class="num">ยกมา 1,600<br/>+เพิ่ม 0<br/><b>-ใช้ไป 1,600</b><br/><b>= ยกไป ฿0</b><span class="note-small">ตัดค่าห้องคืนสุดท้ายของ 106 และ 202</span></td>
-          <td class="num">ยกมา 0<br/>= ยกไป <b>฿0</b></td>
-        </tr>
-        <tr>
-          <td><b>[กล่องมัดจำกุญแจ]</b> (แยกจากรายได้)</td>
-          <td class="num">รับเข้า +฿400<span class="note-small">101(200), 102(200) • ถืออยู่ ฿400</span></td>
-          <td class="num">รับ +฿400 / คืน -฿200<span class="note-small">รับ 105,201 / คืน 101 • ถืออยู่ ฿600</span></td>
-          <td class="num">ไม่มีรับ-คืน<span class="note-small">ถือสะสมอยู่ ฿600 (102,105,201)</span></td>
-          <td class="num">คืน -฿400 / ริบ -฿200<span class="note-small">คืน 102,201 / ริบ 105 • ถืออยู่ ฿0</span></td>
-          <td class="num">ถือสะสมอยู่ <b>฿0</b></td>
-        </tr>
-      </tbody>
-    </table>
-
-    <h2>ส่วนที่ 3: จุดที่ตรวจพบจากการจำลอง 5 วันนี้ & ข้อเสนอแนะเพื่อรอการตัดสินใจจากคุณ</h2>
-    <div class="finding-box">
-      <b>1. [จุดที่ต้องแก้เพื่อให้กล่อง "รับจอง" วันที่ 1–3 แม่นยำ 100%] ปัญหาเวลา UTC ของวันเช็คอินห้องจองล่วงหน้า (ห้อง 201 และ 202):</b><br/>
-      • <b>สาเหตุ:</b> ในไฟล์ <code>DailyReport.tsx</code> บรรทัด 802 เดิมดึงวันที่เช็คอินด้วยคำสั่ง <code>.slice(0, 10)</code> จากเวลา UTC ทำให้ห้องที่จองเข้าพักวันที่ 2 (เวลาเที่ยงคืนไทย = 17:00 น. UTC ของวันที่ 1) ถูกรายงานมองว่าเช็คอินตั้งแต่วันที่ 1 ส่งผลให้เงินมัดจำจองของห้อง 201 และ 202 ไม่ไปขึ้นในกล่อง <b>"รับจอง"</b> ของวันที่ 1<br/>
-      • <b>การแก้ไขที่เสนอ:</b> เปลี่ยนให้ดึงวันเข้าพักคืนแรกจากตารางราคาค่าห้องรายวัน (<code>booking_daily_rates[0].target_date</code>) หรือแปลงเป็นเขตเวลาไทย (<code>Asia/Bangkok</code>) เสมอ
+    <!-- Master Scenario Reference -->
+    <div class="scenario-card">
+      <h2>📌 สรุปโจทย์จำลองผู้เข้าพัก 7 ห้อง (101–107) + จองล่วงหน้ายังไม่มาเข้าพัก 2 ห้อง (201–202)</h2>
+      <div class="scenario-grid">
+        <div class="sc-item">
+          <b>ห้อง 101 (ค้างคืน 1 คืน • เข้าวันที่ 1 ออกวันที่ 2):</b><br/>
+          • วันที่ 1: ค่าห้อง 750 + มัดจำกุญแจ 200 = <b>สด ฿950</b><br/>
+          • วันที่ 2: เช็คเอาท์ <b>คืนมัดจำสด -฿200</b>
+        </div>
+        <div class="sc-item">
+          <b>ห้อง 102 (ค้างคืน 3 คืน • เข้าวันที่ 1 ออกวันที่ 4):</b><br/>
+          • วันที่ 1: ค่าห้อง 800×3 (2,400) + มอไซค์รายวัน 250×3 (750) + มัดจำ 200 = <b>โอน SCB ฿3,350</b><br/>
+          • วันที่ 2: ยกเลิกมอไซค์ของวันที่ 3 = <b>คืนเงินสดทันที -฿250</b><br/>
+          • วันที่ 4: เช็คเอาท์ <b>คืนมัดจำสด -฿200</b>
+        </div>
+        <div class="sc-item">
+          <b>ห้อง 103 (ค้างคืน 2 คืน • เข้าวันที่ 1 ออกวันที่ 3):</b><br/>
+          • วันที่ 1: จ่ายคืนแรกก่อน = <b>สด ฿750</b><br/>
+          • วันที่ 2: จ่ายคืนที่ 2 <b>โอน KBANK ฿750</b> + ซื้อน้ำเปล่า POS <b>สด ฿40</b>
+        </div>
+        <div class="sc-item">
+          <b>ห้อง 104 (ชั่วคราว 3 ชม. + เพิ่ม 1 ชม. • วันที่ 1):</b><br/>
+          • วันที่ 1: ราคาฐาน 350 + เพิ่ม 1 ชม. 150 = <b>สด ฿500</b> (เข้า-ออกวันเดียว)
+        </div>
+        <div class="sc-item">
+          <b>ห้อง 105 (ค้างคืน 2 คืน • เข้าวันที่ 2 [07:30 Early] ออกวันที่ 4):</b><br/>
+          • วันที่ 2: ค่าห้อง 750×2 (1,500) + Early 200 + มัดจำ 200 = <b>โอน SCB ฿1,900</b><br/>
+          • วันที่ 4: กุญแจหาย <b>ริบมัดจำ ฿200 เป็นค่าปรับ</b>
+        </div>
+        <div class="sc-item">
+          <b>ห้อง 106 (ค้างคืน 3 คืน • เข้าวันที่ 2 ออกวันที่ 5):</b><br/>
+          • วันที่ 2: ค่าห้องลดจาก 800 เหลือ 700×3 (2,100) + เตียงเสริมวันที่ 2,3 (300×2=600) = <b>บัตรเครดิต ฿2,700</b>
+        </div>
+        <div class="sc-item">
+          <b>ห้อง 107 (ค้างคืน 1 คืน • เข้าวันที่ 4 ออกวันที่ 5):</b><br/>
+          • วันที่ 4: ค่าห้อง 750 = <b>สด ฿750</b><br/>
+          • วันที่ 5: เช็คเอาท์ช้า (Late Check-out) = <b>สด ฿200</b>
+        </div>
+        <div class="sc-item res">
+          <b>ห้อง 201 [จองล่วงหน้า #1] (พัก 2 คืน • เข้าวันที่ 2 ออกวันที่ 4):</b><br/>
+          • <b>วันที่ 1 (วันจอง):</b> โอนจองล่วงหน้า <b>SCB ฿1,600</b> (800×2 คืน)<br/>
+          • <b>วันที่ 2 (วันเข้าพัก):</b> มาเช็คอิน (ดึงเงินจอง 1,600 มาใช้) + เก็บมัดจำกุญแจ <b>สด ฿200</b><br/>
+          • <b>วันที่ 4:</b> เช็คเอาท์ <b>คืนมัดจำสด -฿200</b>
+        </div>
+        <div class="sc-item res">
+          <b>ห้อง 202 [จองล่วงหน้า #2] (พัก 2 คืน • เข้าวันที่ 3 ออกวันที่ 5):</b><br/>
+          • <b>วันที่ 1 (วันจอง):</b> โอนมัดจำจองบางส่วน <b>KBANK ฿500</b> (จาก 900×2=1,800)<br/>
+          • <b>วันที่ 3 (วันเข้าพัก):</b> มาเช็คอิน จ่ายส่วนที่เหลือ <b>สด ฿1,300</b>
+        </div>
+      </div>
     </div>
 
-    <div class="finding-box">
-      <b>2. [จุดที่ต้องแก้เพื่อให้กล่อง "จ่ายล่วงหน้า - ใช้ไปวันนี้" ดุลกับฝั่งซ้ายเสมอ] บริการเสริมรายวันที่ยังไม่ถูกกดเปิดบิลในวันถัดไป:</b><br/>
-      • <b>สาเหตุ:</b> ในวันที่ 2 และ 3 ค่าเตียงเสริม/มอเตอร์ไซค์รายวัน (ห้อง 102 และ 106) ถูกนับเป็นรายได้ฝั่งซ้ายแล้ว แต่ในสูตรคำนวณกล่อง <b>"จ่ายล่วงหน้า (ใช้ไปวันนี้)"</b> ฝั่งขวา เดิมนับเฉพาะรายการที่อยู่ใน <code>ledger_transactions</code> ยังไม่ได้บวก <code>booking_daily_extras</code> ของวันนั้นที่ยังไม่ได้เปิดบิล<br/>
-      • <b>การแก้ไขที่เสนอ:</b> ปรับสูตรในกล่อง "จ่ายล่วงหน้า" ให้รวมยอด <code>booking_daily_extras</code> ประจำวันนั้นด้วยเสมอ เพื่อให้ยอดตัดจ่ายล่วงหน้าตรงกับฝั่งรายได้ทุกบาทโดยไม่ต้องรอให้พนักงานกดเปิดบิล
-    </div>
+    <!-- ================================================================================= -->
+    <!--                                   วันที่ 1 (DAY 1)                                   -->
+    <!-- ================================================================================= -->
+    <section class="day-section" id="day-1">
+      <div class="day-header-bar">
+        <div>
+          <h2 class="day-title">
+            📊 รายงานเงินสดประจำวัน — วันที่ 1 (Day 1)
+            <span class="badge-closed">✅ รูปแบบหน้าจอใหม่</span>
+          </h2>
+          <p class="cutoff-note">⏱️ ตัดรอบค่าห้องพัก: <b>09:45 น.</b> (นับรวม Early Check-in 06:45–09:44 น. เป็นของวันนี้) • ตัดรอบรายการอื่น/กะดึก: <b>06:45 น.</b></p>
+        </div>
+      </div>
 
-    <div class="finding-box recommend">
-      <b>3. [คำแนะนำเพิ่มเติมเพื่อความสมบูรณ์] เพิ่มปุ่ม "🔍 ดูแจกแจงรายห้อง" ใต้กล่องจ่ายล่วงหน้า & กล่องรับจอง:</b><br/>
-      • เมื่อมีผู้เข้าพักพร้อมกัน 6–7 ห้องและมีจองล่วงหน้าหลายห้อง ตัวเลขรวมในกล่อง (เช่น ยอดจ่ายล่วงหน้ายกไป <b>฿4,050</b> ในวันที่ 2) อาจทำให้ผู้จัดการต้องมานั่งไล่บวกเองว่ามาจากห้องไหนบ้าง<br/>
-      • <b>ข้อเสนอแนะ:</b> เพิ่มปุ่มคลิกดูรายชื่อห้องที่มาของยอดในกล่อง "จ่ายล่วงหน้า" และ "รับจอง" (เช่น แสดงทันทีว่า <i>ห้อง 102: ฿800, ห้อง 105: ฿750, ห้อง 106: ฿1,700, ห้อง 201: ฿800</i>) เพื่อให้ตรวจสอบย้อนกลับได้ง่ายที่สุด
-    </div>
+      <div class="events-strip">
+        <b>📌 เหตุการณ์ที่เกิดขึ้นในวันที่ 1:</b>
+        เช็คอินเข้าพักจริง 4 ห้อง (<b>101</b> จ่ายสด 950 [รวมมัดจำ 200], <b>102</b> พัก 3 คืน โอน SCB 3,350 [รวมมอไซค์ 3 วัน + มัดจำ 200], <b>103</b> พัก 2 คืน จ่ายสดคืนแรก 750, <b>104</b> ชั่วคราว+เพิ่มชม. จ่ายสด 500) •
+        รับโอนจองล่วงหน้ายังไม่เข้าพัก 2 ห้อง (<b>201</b> โอน SCB 1,600 เข้าพักวันที่ 2, <b>202</b> โอน KBANK 500 เข้าพักวันที่ 3)
+      </div>
+
+      <div class="report-grid">
+        <!-- คอลัมน์ซ้าย: ฝั่งรายได้ -->
+        <div class="col-card">
+          <div class="col-head rev">
+            <span>ฝั่งรายได้ (Revenue)</span>
+            <span class="head-pill">ไม่รวมมัดจำกุญแจ</span>
+          </div>
+          <div class="col-body">
+            <div class="sub-box">
+              <div class="row-line" style="border-bottom:1px solid #e2e8f0; padding-bottom:6px; margin-bottom:6px; font-weight:900; font-size:13.5px;">
+                <span>1. รายได้ค่าห้อง</span>
+                <span class="text-indigo">฿2,800</span>
+              </div>
+              <div class="pl-3">
+                <div class="row-line">
+                  <span>1.1 รายได้ค่าห้อง (ตามราคาเป้าหมาย)</span>
+                  <span class="amt">฿2,650</span>
+                </div>
+                <div class="row-line pl-3">
+                  <span>1.1.1 ค้างคืน <span class="hint">ห้อง 101 (฿750) + ห้อง 102 คืนที่ 1 (฿800) + ห้อง 103 คืนที่ 1 (฿750)</span></span>
+                  <span class="amt">฿2,300</span>
+                </div>
+                <div class="row-line pl-3">
+                  <span>1.1.2 ชั่วคราว <span class="hint">ห้อง 104 (ราคาฐาน 3 ชม. ฿350)</span></span>
+                  <span class="amt">฿350</span>
+                </div>
+                <div class="row-line" style="margin-top:6px;">
+                  <span>1.2 รายได้ส่วนเพิ่ม</span>
+                  <span class="amt text-emerald">+฿150</span>
+                </div>
+                <div class="row-line pl-3">
+                  <span>1.2.1 เข้าก่อน/ออกช้า (Early-Late)</span>
+                  <span class="amt">฿0</span>
+                </div>
+                <div class="row-line pl-3">
+                  <span>1.2.2 ส่วนเพิ่มค่าห้อง <span class="hint">ห้อง 104 (ต่อเวลาเพิ่ม 1 ชม. +฿150)</span></span>
+                  <span class="amt">฿150</span>
+                </div>
+                <div class="row-line text-rose" style="margin-top:6px; border-top:1px solid #e2e8f0; padding-top:4px;">
+                  <span>1.3 ส่วนลด (ต่ำกว่าราคาเป้าหมาย)</span>
+                  <span class="amt">-฿0</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>2. ค่าส่วนเสริม (เตียงเสริม/ผ้าห่ม/มอไซค์)</b><span class="hint">ห้อง 102 (เช่ามอเตอร์ไซค์รายวัน คืนที่ 1)</span></span>
+              <span class="amt">฿250</span>
+            </div>
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>3. ค่ามินิบาร์ (อาหาร/เครื่องดื่ม)</b></span>
+              <span class="amt">฿0</span>
+            </div>
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>4. ค่าปรับ (เสียหาย/สูบบุหรี่/ริบมัดจำ)</b></span>
+              <span class="amt">฿0</span>
+            </div>
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>5. ค่าบริการอื่นๆ</b></span>
+              <span class="amt">฿0</span>
+            </div>
+            <div class="row-line text-slate-muted">
+              <span>6. ยกเลิก (Voided)</span>
+              <span class="amt">฿0</span>
+            </div>
+          </div>
+          <div class="col-foot">
+            <div class="row-line"><span>รวมรายได้ทั้งหมด (ก่อนหักส่วนลด)</span><span class="amt">฿3,050</span></div>
+            <div class="row-line text-rose"><span>หัก ส่วนลดค่าห้อง</span><span class="amt">-฿0</span></div>
+            <div class="row-line" style="border-top:1px solid #cbd5e1; padding-top:6px; margin-top:4px; font-size:15px; font-weight:900;">
+              <span>รวมรายได้สุทธิ</span>
+              <span class="text-indigo">฿3,050</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- คอลัมน์กลาง: ฝั่งรับชำระเงิน -->
+        <div class="col-card">
+          <div class="col-head pay">
+            <span>ฝั่งรับชำระเงิน (Payments)</span>
+            <span class="head-pill">แยกตามช่องทาง</span>
+          </div>
+          <div class="col-body">
+            <div class="pay-box-cash">
+              <div class="row-line">
+                <span><b>💵 เงินสด</b><span class="hint">ห้อง 101 (฿750) + ห้อง 103 (฿750) + ห้อง 104 (฿500)</span></span>
+                <span class="amt text-emerald" style="font-size:14px;">฿2,000</span>
+              </div>
+            </div>
+            <div class="pay-box-transfer">
+              <div class="row-line" style="border-bottom:1px solid #bfdbfe; padding-bottom:5px; margin-bottom:5px;">
+                <span><b>📱 โอนเงิน (รวมทุกบัญชี)</b></span>
+                <span class="amt text-sky" style="font-size:14px;">฿5,250</span>
+              </div>
+              <div class="row-line pl-3">
+                <span>• บัญชี SCB <span class="hint">ห้อง 102 (฿3,150) + เงินจองห้อง 201 (฿1,600)</span></span>
+                <span class="amt">฿4,750</span>
+              </div>
+              <div class="row-line pl-3" style="margin-top:4px;">
+                <span>• บัญชี KBANK <span class="hint">เงินจองห้อง 202 (฿500)</span></span>
+                <span class="amt">฿500</span>
+              </div>
+            </div>
+            <div class="pay-box-credit">
+              <div class="row-line">
+                <span><b>💳 บัตรเครดิต</b></span>
+                <span class="amt text-purple" style="font-size:14px;">฿0</span>
+              </div>
+            </div>
+            <div class="pay-box-void">
+              <div class="row-line">
+                <span><b>ยกเลิก / คืนเงินทอน</b></span>
+                <span class="amt text-rose">-฿0</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-foot">
+            <div class="row-line"><span>รวมรับชำระ</span><span class="amt">฿7,250</span></div>
+            <div class="row-line text-amber"><span>หัก ค่าใช้จ่ายหน้าร้าน (Petty Cash)</span><span class="amt">-฿0</span></div>
+            <div class="row-line" style="border-top:1px solid #cbd5e1; padding-top:6px; margin-top:4px; font-size:15px; font-weight:900;">
+              <span>รวมรับชำระสุทธิ</span>
+              <span class="text-emerald">฿7,250</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- คอลัมน์ขวา: จ่ายล่วงหน้า & เงินรับจองล่วงหน้า -->
+        <div class="right-stack">
+          <!-- กล่องจ่ายล่วงหน้า -->
+          <div class="col-card">
+            <div class="col-head adv">
+              <div>
+                <div>🏨 จ่ายล่วงหน้า (พักหลายคืน)</div>
+                <div style="font-size:10px; font-weight:500; color:#bae6fd;">ลูกค้าเช็คอินแล้ว ชำระล่วงหน้าสำหรับคืนถัดไป</div>
+              </div>
+            </div>
+            <div class="col-body">
+              <div class="row-line"><span>ยอดยกมา</span><span class="amt">฿0</span></div>
+              <div class="row-line text-emerald"><span>+ รับเพิ่มวันนี้</span><span class="amt">+฿2,100</span></div>
+              <div class="row-line text-rose"><span>- ใช้ไปวันนี้ (ตัดเป็นค่าห้อง/บริการ)</span><span class="amt">-฿0</span></div>
+              <div class="row-line" style="border-top:2px solid #f1f5f9; padding-top:6px; font-weight:900;">
+                <span>ยอดคงเหลือยกไป</span>
+                <span class="text-sky" style="font-size:14.5px;">฿2,100</span>
+              </div>
+              <button class="toggle-breakdown-btn sky" onclick="toggleBox(this)">
+                <span>🔍 ดูแจกแจงรายห้อง (1 ห้อง)</span>
+                <span>▲ ซ่อน</span>
+              </button>
+              <div class="room-bd-list">
+                <div class="room-bd-item">
+                  <div class="room-bd-top">
+                    <span>ห้อง 102 • ลูกค้าพัก 3 คืน</span>
+                    <span class="text-sky">ยกไป ฿2,100</span>
+                  </div>
+                  <div class="room-bd-grid">
+                    <span>ยกมา: ฿0</span>
+                    <span class="text-emerald">+เพิ่ม: ฿2,100</span>
+                    <span class="text-rose">-ใช้ไป: ฿0</span>
+                  </div>
+                  <div class="room-bd-note">ค่าห้องวันนี้ ฿800 • บริการเสริมวันนี้ ฿250 (สำรองคืนที่ 2–3 อีก ฿2,100)</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- กล่องเงินรับจองล่วงหน้า -->
+          <div class="col-card">
+            <div class="col-head res">
+              <div>
+                <div>📅 เงินรับจองล่วงหน้า</div>
+                <div style="font-size:10px; font-weight:500; color:#e9d5ff;">ลูกค้าโอนจองล่วงหน้า ยังไม่เช็คอินเข้าพัก</div>
+              </div>
+            </div>
+            <div class="col-body">
+              <div class="row-line"><span>ยอดยกมา</span><span class="amt">฿0</span></div>
+              <div class="row-line text-emerald"><span>+ รับจองเพิ่มวันนี้</span><span class="amt">+฿2,100</span></div>
+              <div class="row-line text-rose"><span>- ใช้ไปวันนี้ (เข้าพักวันนี้)</span><span class="amt">-฿0</span></div>
+              <div class="row-line" style="border-top:2px solid #f1f5f9; padding-top:6px; font-weight:900;">
+                <span>ยอดคงเหลือยกไป</span>
+                <span class="text-purple" style="font-size:14.5px;">฿2,100</span>
+              </div>
+              <button class="toggle-breakdown-btn purple" onclick="toggleBox(this)">
+                <span>🔍 ดูแจกแจงรายห้อง (2 ห้อง)</span>
+                <span>▲ ซ่อน</span>
+              </button>
+              <div class="room-bd-list">
+                <div class="room-bd-item">
+                  <div class="room-bd-top">
+                    <span>ห้อง 201 • ลูกค้าจองล่วงหน้า #1</span>
+                    <span class="text-purple">ยกไป ฿1,600</span>
+                  </div>
+                  <div class="room-bd-grid">
+                    <span>ยกมา: ฿0</span>
+                    <span class="text-emerald">+เพิ่ม: ฿1,600</span>
+                    <span class="text-rose">-ใช้ไป: ฿0</span>
+                  </div>
+                  <div class="room-bd-note">กำหนดเข้าพัก วันที่ 2 (โอน SCB เต็มจำนวน 2 คืน)</div>
+                </div>
+                <div class="room-bd-item">
+                  <div class="room-bd-top">
+                    <span>ห้อง 202 • ลูกค้าจองล่วงหน้า #2</span>
+                    <span class="text-purple">ยกไป ฿500</span>
+                  </div>
+                  <div class="room-bd-grid">
+                    <span>ยกมา: ฿0</span>
+                    <span class="text-emerald">+เพิ่ม: ฿500</span>
+                    <span class="text-rose">-ใช้ไป: ฿0</span>
+                  </div>
+                  <div class="room-bd-note">กำหนดเข้าพัก วันที่ 3 (โอนมัดจำ KBANK บางส่วน)</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Reconciliation Bar -->
+      <div class="recon-bar">
+        <div class="recon-cell">
+          <div class="lbl">รวมรายได้สุทธิ (ฝั่งซ้าย)</div>
+          <div class="val" style="color:#a5b4fc;">฿3,050</div>
+        </div>
+        <div class="recon-cell">
+          <div class="lbl">รวมรับชำระสุทธิ (ฝั่งกลาง)</div>
+          <div class="val" style="color:#34d399;">฿7,250</div>
+        </div>
+        <div class="recon-cell">
+          <div class="lbl">การเคลื่อนไหวเงินล่วงหน้า/รับจอง</div>
+          <div class="val" style="color:#7dd3fc;">+฿4,200</div>
+        </div>
+        <div class="recon-cell">
+          <div class="lbl">ส่วนต่าง (รับชำระสุทธิ - รายได้สุทธิ)</div>
+          <div class="val" style="color:#fcd34d;">+฿4,200</div>
+        </div>
+      </div>
+
+      <!-- Key Deposit Box -->
+      <div class="deposit-bar">
+        <div class="deposit-top">
+          <div>
+            <b style="font-size:13.5px; color:#78350f;">🔑 กล่องแยกบัญชี: สรุปเงินมัดจำกุญแจ (ไม่รวมในรายได้ค่าห้อง)</b>
+            <div style="font-size:11px; color:#92400e;">แยกจากรายได้หลัก • นับเข้าหมวด 4. ค่าปรับ เฉพาะเมื่อสั่งริบมัดจำตอนเช็คเอาท์</div>
+          </div>
+          <div class="drawer-pill">
+            <div style="font-size:10.5px; color:#64748b; font-weight:700;">💵 เงินสดในลิ้นชักจริงวันนี้ (รวมมัดจำเงินสดสุทธิ)</div>
+            <div style="font-size:16px; font-weight:900; color:#047857;">฿2,200</div>
+          </div>
+        </div>
+        <div class="deposit-grid">
+          <div class="dep-card">
+            <div style="font-size:11px; color:#64748b; font-weight:700;">รับมัดจำกุญแจวันนี้</div>
+            <div style="font-size:16px; font-weight:900; color:#92400e;">+฿400</div>
+            <div style="font-size:10.5px; color:#64748b;">สด ฿200 (101) • โอน ฿200 (102)</div>
+          </div>
+          <div class="dep-card">
+            <div style="font-size:11px; color:#64748b; font-weight:700;">คืนมัดจำกุญแจวันนี้</div>
+            <div style="font-size:16px; font-weight:900; color:#047857;">-฿0</div>
+            <div style="font-size:10.5px; color:#64748b;">ไม่มีเช็คเอาท์คืนมัดจำ</div>
+          </div>
+          <div class="dep-card">
+            <div style="font-size:11px; color:#64748b; font-weight:700;">หัก/ริบเป็นค่าปรับวันนี้</div>
+            <div style="font-size:16px; font-weight:900; color:#e11d48;">฿0</div>
+            <div style="font-size:10.5px; color:#64748b;">โอนเข้าหมวด 4. ค่าปรับแล้ว</div>
+          </div>
+          <div class="dep-card active-held">
+            <div style="font-size:11px; color:#78350f; font-weight:700;">มัดจำกุญแจที่ถืออยู่ (ห้องพักปัจจุบัน)</div>
+            <div style="font-size:16px; font-weight:900; color:#451a03;">฿400</div>
+            <div style="font-size:10.5px; color:#92400e;">ห้อง 101 (฿200), ห้อง 102 (฿200)</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================================= -->
+    <!--                                   วันที่ 2 (DAY 2)                                   -->
+    <!-- ================================================================================= -->
+    <section class="day-section" id="day-2">
+      <div class="day-header-bar">
+        <div>
+          <h2 class="day-title">
+            📊 รายงานเงินสดประจำวัน — วันที่ 2 (Day 2)
+            <span class="badge-closed">✅ รูปแบบหน้าจอใหม่</span>
+          </h2>
+          <p class="cutoff-note">⏱️ ตัดรอบค่าห้องพัก: <b>09:45 น.</b> (นับรวม Early Check-in 06:45–09:44 น. เป็นของวันนี้) • ตัดรอบรายการอื่น/กะดึก: <b>06:45 น.</b></p>
+        </div>
+      </div>
+
+      <div class="events-strip">
+        <b>📌 เหตุการณ์ที่เกิดขึ้นในวันที่ 2:</b>
+        <b>ห้อง 101</b> เช็คเอาท์คืนมัดจำสด -200 •
+        <b>ห้อง 102</b> พักคืนที่ 2 (ตัดจ่ายล่วงหน้าค่าห้อง 800 + มอไซค์ 250) และขอยกเลิกมอไซค์ของวันที่ 3 พนักงานคืนเงินสดทันที -250 •
+        <b>ห้อง 103</b> โอน KBANK จ่ายค่าห้องคืนที่ 2 (750) + ซื้อน้ำเปล่า POS สด 40 •
+        <b>ห้อง 105</b> เช็คอินก่อนเวลา 07:30 น. พัก 2 คืน โอน SCB 1,900 (ค่าห้อง 1,500 + Early 200 + มัดจำ 200) •
+        <b>ห้อง 106</b> เช็คอิน 3 คืน (ลดเหลือคืนละ 700 + เตียงเสริมวันที่ 2,3 วันละ 300) รูดบัตรเครดิต 2,700 •
+        <b>ห้อง 201 (จองไว้เมื่อวาน)</b> เดินทางมาเช็คอินจริง (ดึงเงินจอง 1,600 มาใช้) + เก็บมัดจำกุญแจสด 200
+      </div>
+
+      <div class="report-grid">
+        <!-- คอลัมน์ซ้าย: ฝั่งรายได้ -->
+        <div class="col-card">
+          <div class="col-head rev">
+            <span>ฝั่งรายได้ (Revenue)</span>
+            <span class="head-pill">ไม่รวมมัดจำกุญแจ</span>
+          </div>
+          <div class="col-body">
+            <div class="sub-box">
+              <div class="row-line" style="border-bottom:1px solid #e2e8f0; padding-bottom:6px; margin-bottom:6px; font-weight:900; font-size:13.5px;">
+                <span>1. รายได้ค่าห้อง</span>
+                <span class="text-indigo">฿4,000</span>
+              </div>
+              <div class="pl-3">
+                <div class="row-line">
+                  <span>1.1 รายได้ค่าห้อง (ตามราคาเป้าหมาย)</span>
+                  <span class="amt">฿3,900</span>
+                </div>
+                <div class="row-line pl-3">
+                  <span>1.1.1 ค้างคืน <span class="hint">102 (฿800) + 103 (฿750) + 105 (฿750) + 106 (฿800) + 201 (฿800)</span></span>
+                  <span class="amt">฿3,900</span>
+                </div>
+                <div class="row-line pl-3">
+                  <span>1.1.2 ชั่วคราว</span>
+                  <span class="amt">฿0</span>
+                </div>
+                <div class="row-line" style="margin-top:6px;">
+                  <span>1.2 รายได้ส่วนเพิ่ม</span>
+                  <span class="amt text-emerald">+฿200</span>
+                </div>
+                <div class="row-line pl-3">
+                  <span>1.2.1 เข้าก่อน/ออกช้า (Early-Late) <span class="hint">ห้อง 105 (Early Check-in 07:30 น. +฿200)</span></span>
+                  <span class="amt">฿200</span>
+                </div>
+                <div class="row-line pl-3">
+                  <span>1.2.2 ส่วนเพิ่มค่าห้อง</span>
+                  <span class="amt">฿0</span>
+                </div>
+                <div class="row-line text-rose" style="margin-top:6px; border-top:1px solid #e2e8f0; padding-top:4px;">
+                  <span>1.3 ส่วนลด (ต่ำกว่าราคาเป้าหมาย) <span class="hint">ห้อง 106 (ลดจาก 800 เหลือ 700 = -฿100)</span></span>
+                  <span class="amt">-฿100</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>2. ค่าส่วนเสริม (เตียงเสริม/ผ้าห่ม/มอไซค์)</b><span class="hint">ห้อง 102 (มอไซค์วันที่ 2: ฿250) + ห้อง 106 (เตียงเสริมวันที่ 2: ฿300)</span></span>
+              <span class="amt">฿550</span>
+            </div>
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>3. ค่ามินิบาร์ (อาหาร/เครื่องดื่ม)</b><span class="hint">ห้อง 103 (น้ำเปล่า POS 2 ขวด)</span></span>
+              <span class="amt">฿40</span>
+            </div>
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>4. ค่าปรับ (เสียหาย/สูบบุหรี่/ริบมัดจำ)</b></span>
+              <span class="amt">฿0</span>
+            </div>
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>5. ค่าบริการอื่นๆ</b></span>
+              <span class="amt">฿0</span>
+            </div>
+            <div class="row-line text-slate-muted">
+              <span>6. ยกเลิก (Voided)</span>
+              <span class="amt">฿0</span>
+            </div>
+          </div>
+          <div class="col-foot">
+            <div class="row-line"><span>รวมรายได้ทั้งหมด (ก่อนหักส่วนลด)</span><span class="amt">฿4,690</span></div>
+            <div class="row-line text-rose"><span>หัก ส่วนลดค่าห้อง</span><span class="amt">-฿100</span></div>
+            <div class="row-line" style="border-top:1px solid #cbd5e1; padding-top:6px; margin-top:4px; font-size:15px; font-weight:900;">
+              <span>รวมรายได้สุทธิ</span>
+              <span class="text-indigo">฿4,590</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- คอลัมน์กลาง: ฝั่งรับชำระเงิน -->
+        <div class="col-card">
+          <div class="col-head pay">
+            <span>ฝั่งรับชำระเงิน (Payments)</span>
+            <span class="head-pill">แยกตามช่องทาง</span>
+          </div>
+          <div class="col-body">
+            <div class="pay-box-cash">
+              <div class="row-line">
+                <span><b>💵 เงินสด</b><span class="hint">ห้อง 103 (ซื้อน้ำเปล่า POS ฿40)</span></span>
+                <span class="amt text-emerald" style="font-size:14px;">฿40</span>
+              </div>
+            </div>
+            <div class="pay-box-transfer">
+              <div class="row-line" style="border-bottom:1px solid #bfdbfe; padding-bottom:5px; margin-bottom:5px;">
+                <span><b>📱 โอนเงิน (รวมทุกบัญชี)</b></span>
+                <span class="amt text-sky" style="font-size:14px;">฿2,450</span>
+              </div>
+              <div class="row-line pl-3">
+                <span>• บัญชี SCB <span class="hint">ห้อง 105 (ค่าห้อง 2 คืน 1,500 + Early 200 = ฿1,700)</span></span>
+                <span class="amt">฿1,700</span>
+              </div>
+              <div class="row-line pl-3" style="margin-top:4px;">
+                <span>• บัญชี KBANK <span class="hint">ห้อง 103 (จ่ายค่าห้องคืนที่ 2 = ฿750)</span></span>
+                <span class="amt">฿750</span>
+              </div>
+            </div>
+            <div class="pay-box-credit">
+              <div class="row-line">
+                <span><b>💳 บัตรเครดิต</b><span class="hint">ห้อง 106 (ค่าห้อง 3 คืน 2,100 + เตียงเสริม 2 คืน 600)</span></span>
+                <span class="amt text-purple" style="font-size:14px;">฿2,700</span>
+              </div>
+            </div>
+            <div class="pay-box-void">
+              <div class="row-line">
+                <span><b>ยกเลิก / คืนเงินทอน</b><span class="hint">ห้อง 102 (คืนเงินสดทันที ยกเลิกมอเตอร์ไซค์วันที่ 3)</span></span>
+                <span class="amt text-rose">-฿250</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-foot">
+            <div class="row-line"><span>รวมรับชำระ</span><span class="amt">฿4,940</span></div>
+            <div class="row-line text-amber"><span>หัก ค่าใช้จ่ายหน้าร้าน (Petty Cash)</span><span class="amt">-฿0</span></div>
+            <div class="row-line" style="border-top:1px solid #cbd5e1; padding-top:6px; margin-top:4px; font-size:15px; font-weight:900;">
+              <span>รวมรับชำระสุทธิ</span>
+              <span class="text-emerald">฿4,940</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- คอลัมน์ขวา: จ่ายล่วงหน้า & เงินรับจองล่วงหน้า -->
+        <div class="right-stack">
+          <!-- กล่องจ่ายล่วงหน้า -->
+          <div class="col-card">
+            <div class="col-head adv">
+              <div>
+                <div>🏨 จ่ายล่วงหน้า (พักหลายคืน)</div>
+                <div style="font-size:10px; font-weight:500; color:#bae6fd;">รวมตัดบริการเสริมรายวัน &amp; หักคืนเงินสดอัตโนมัติ</div>
+              </div>
+            </div>
+            <div class="col-body">
+              <div class="row-line"><span>ยอดยกมา</span><span class="amt">฿2,100</span></div>
+              <div class="row-line text-emerald"><span>+ รับเพิ่มวันนี้</span><span class="amt">+฿3,250</span></div>
+              <div class="row-line text-rose"><span>- ใช้ไปวันนี้ (ตัดเป็นค่าห้อง/บริการ)</span><span class="amt">-฿1,300</span></div>
+              <div class="row-line" style="border-top:2px solid #f1f5f9; padding-top:6px; font-weight:900;">
+                <span>ยอดคงเหลือยกไป</span>
+                <span class="text-sky" style="font-size:14.5px;">฿4,050</span>
+              </div>
+              <button class="toggle-breakdown-btn sky" onclick="toggleBox(this)">
+                <span>🔍 ดูแจกแจงรายห้อง (4 ห้อง)</span>
+                <span>▲ ซ่อน</span>
+              </button>
+              <div class="room-bd-list">
+                <div class="room-bd-item">
+                  <div class="room-bd-top">
+                    <span>ห้อง 102 • ลูกค้าพัก 3 คืน</span>
+                    <span class="text-sky">ยกไป ฿800</span>
+                  </div>
+                  <div class="room-bd-grid">
+                    <span>ยกมา: ฿2,100</span>
+                    <span class="text-emerald">+เพิ่ม: ฿0</span>
+                    <span class="text-rose">-ใช้ไป: ฿1,300</span>
+                  </div>
+                  <div class="room-bd-note">ค่าห้อง ฿800 • บริการเสริม ฿250 • คืนเงินสด -฿250</div>
+                </div>
+                <div class="room-bd-item">
+                  <div class="room-bd-top">
+                    <span>ห้อง 105 • ลูกค้า Early Check-in</span>
+                    <span class="text-sky">ยกไป ฿750</span>
+                  </div>
+                  <div class="room-bd-grid">
+                    <span>ยกมา: ฿0</span>
+                    <span class="text-emerald">+เพิ่ม: ฿750</span>
+                    <span class="text-rose">-ใช้ไป: ฿0</span>
+                  </div>
+                  <div class="room-bd-note">ค่าห้อง ฿750 • บริการเสริม (Early) ฿200</div>
+                </div>
+                <div class="room-bd-item">
+                  <div class="room-bd-top">
+                    <span>ห้อง 106 • ลูกค้าพัก 3 คืน</span>
+                    <span class="text-sky">ยกไป ฿1,700</span>
+                  </div>
+                  <div class="room-bd-grid">
+                    <span>ยกมา: ฿0</span>
+                    <span class="text-emerald">+เพิ่ม: ฿1,700</span>
+                    <span class="text-rose">-ใช้ไป: ฿0</span>
+                  </div>
+                  <div class="room-bd-note">ค่าห้อง ฿700 • บริการเสริม (เตียงเสริม) ฿300</div>
+                </div>
+                <div class="room-bd-item">
+                  <div class="room-bd-top">
+                    <span>ห้อง 201 • ลูกค้าจองมาเช็คอิน</span>
+                    <span class="text-sky">ยกไป ฿800</span>
+                  </div>
+                  <div class="room-bd-grid">
+                    <span>ยกมา: ฿0</span>
+                    <span class="text-emerald">+เพิ่ม: ฿800</span>
+                    <span class="text-rose">-ใช้ไป: ฿0</span>
+                  </div>
+                  <div class="room-bd-note">ค่าห้อง ฿800 • ดึงเงินจอง ฿1,600</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- กล่องเงินรับจองล่วงหน้า -->
+          <div class="col-card">
+            <div class="col-head res">
+              <div>
+                <div>📅 เงินรับจองล่วงหน้า</div>
+                <div style="font-size:10px; font-weight:500; color:#e9d5ff;">ลูกค้าโอนจองล่วงหน้า ยังไม่เช็คอินเข้าพัก</div>
+              </div>
+            </div>
+            <div class="col-body">
+              <div class="row-line"><span>ยอดยกมา</span><span class="amt">฿2,100</span></div>
+              <div class="row-line text-emerald"><span>+ รับจองเพิ่มวันนี้</span><span class="amt">+฿0</span></div>
+              <div class="row-line text-rose"><span>- ใช้ไปวันนี้ (เข้าพักวันนี้)</span><span class="amt">-฿1,600</span></div>
+              <div class="row-line" style="border-top:2px solid #f1f5f9; padding-top:6px; font-weight:900;">
+                <span>ยอดคงเหลือยกไป</span>
+                <span class="text-purple" style="font-size:14.5px;">฿500</span>
+              </div>
+              <button class="toggle-breakdown-btn purple" onclick="toggleBox(this)">
+                <span>🔍 ดูแจกแจงรายห้อง (2 ห้อง)</span>
+                <span>▲ ซ่อน</span>
+              </button>
+              <div class="room-bd-list">
+                <div class="room-bd-item">
+                  <div class="room-bd-top">
+                    <span>ห้อง 201 • ลูกค้าจองล่วงหน้า #1</span>
+                    <span class="text-purple">ยกไป ฿0</span>
+                  </div>
+                  <div class="room-bd-grid">
+                    <span>ยกมา: ฿1,600</span>
+                    <span class="text-emerald">+เพิ่ม: ฿0</span>
+                    <span class="text-rose">-ใช้ไป: ฿1,600</span>
+                  </div>
+                  <div class="room-bd-note">เช็คอินเข้าพักวันนี้ (ดึงเงินจองไปใช้)</div>
+                </div>
+                <div class="room-bd-item">
+                  <div class="room-bd-top">
+                    <span>ห้อง 202 • ลูกค้าจองล่วงหน้า #2</span>
+                    <span class="text-purple">ยกไป ฿500</span>
+                  </div>
+                  <div class="room-bd-grid">
+                    <span>ยกมา: ฿500</span>
+                    <span class="text-emerald">+เพิ่ม: ฿0</span>
+                    <span class="text-rose">-ใช้ไป: ฿0</span>
+                  </div>
+                  <div class="room-bd-note">กำหนดเข้าพัก วันที่ 3</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Reconciliation Bar -->
+      <div class="recon-bar">
+        <div class="recon-cell">
+          <div class="lbl">รวมรายได้สุทธิ (ฝั่งซ้าย)</div>
+          <div class="val" style="color:#a5b4fc;">฿4,590</div>
+        </div>
+        <div class="recon-cell">
+          <div class="lbl">รวมรับชำระสุทธิ (ฝั่งกลาง)</div>
+          <div class="val" style="color:#34d399;">฿4,940</div>
+        </div>
+        <div class="recon-cell">
+          <div class="lbl">การเคลื่อนไหวเงินล่วงหน้า/รับจอง</div>
+          <div class="val" style="color:#7dd3fc;">+฿350</div>
+        </div>
+        <div class="recon-cell">
+          <div class="lbl">ส่วนต่าง (รับชำระสุทธิ - รายได้สุทธิ)</div>
+          <div class="val" style="color:#fcd34d;">+฿350</div>
+        </div>
+      </div>
+
+      <!-- Key Deposit Box -->
+      <div class="deposit-bar">
+        <div class="deposit-top">
+          <div>
+            <b style="font-size:13.5px; color:#78350f;">🔑 กล่องแยกบัญชี: สรุปเงินมัดจำกุญแจ (ไม่รวมในรายได้ค่าห้อง)</b>
+            <div style="font-size:11px; color:#92400e;">รับมัดจำห้อง 105 (โอน 200) &amp; ห้อง 201 (สด 200) • คืนมัดจำห้อง 101 (สด -200)</div>
+          </div>
+          <div class="drawer-pill">
+            <div style="font-size:10.5px; color:#64748b; font-weight:700;">💵 เงินสดในลิ้นชักจริงวันนี้ (รวมมัดจำเงินสดสุทธิ)</div>
+            <div style="font-size:16px; font-weight:900; color:#e11d48;">-฿210</div>
+          </div>
+        </div>
+        <div class="deposit-grid">
+          <div class="dep-card">
+            <div style="font-size:11px; color:#64748b; font-weight:700;">รับมัดจำกุญแจวันนี้</div>
+            <div style="font-size:16px; font-weight:900; color:#92400e;">+฿400</div>
+            <div style="font-size:10.5px; color:#64748b;">สด ฿200 (201) • โอน ฿200 (105)</div>
+          </div>
+          <div class="dep-card">
+            <div style="font-size:11px; color:#64748b; font-weight:700;">คืนมัดจำกุญแจวันนี้</div>
+            <div style="font-size:16px; font-weight:900; color:#047857;">-฿200</div>
+            <div style="font-size:10.5px; color:#64748b;">คืนให้ห้อง 101 ตอนเช็คเอาท์</div>
+          </div>
+          <div class="dep-card">
+            <div style="font-size:11px; color:#64748b; font-weight:700;">หัก/ริบเป็นค่าปรับวันนี้</div>
+            <div style="font-size:16px; font-weight:900; color:#e11d48;">฿0</div>
+            <div style="font-size:10.5px; color:#64748b;">โอนเข้าหมวด 4. ค่าปรับแล้ว</div>
+          </div>
+          <div class="dep-card active-held">
+            <div style="font-size:11px; color:#78350f; font-weight:700;">มัดจำกุญแจที่ถืออยู่ (ห้องพักปัจจุบัน)</div>
+            <div style="font-size:16px; font-weight:900; color:#451a03;">฿600</div>
+            <div style="font-size:10.5px; color:#92400e;">ห้อง 102, 105, 201 (ห้องละ ฿200)</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================================= -->
+    <!--                                   วันที่ 3 (DAY 3)                                   -->
+    <!-- ================================================================================= -->
+    <section class="day-section" id="day-3">
+      <div class="day-header-bar">
+        <div>
+          <h2 class="day-title">
+            📊 รายงานเงินสดประจำวัน — วันที่ 3 (Day 3)
+            <span class="badge-closed">✅ รูปแบบหน้าจอใหม่</span>
+          </h2>
+          <p class="cutoff-note">⏱️ ตัดรอบค่าห้องพัก: <b>09:45 น.</b> (นับรวม Early Check-in 06:45–09:44 น. เป็นของวันนี้) • ตัดรอบรายการอื่น/กะดึก: <b>06:45 น.</b></p>
+        </div>
+      </div>
+
+      <div class="events-strip">
+        <b>📌 เหตุการณ์ที่เกิดขึ้นในวันที่ 3:</b>
+        <b>ห้อง 103</b> เช็คเอาท์ปกติ •
+        พักต่อเนื่องและตัดยอดจ่ายล่วงหน้า 4 ห้อง: <b>ห้อง 102</b> (คืนที่ 3 ค่าห้อง 800; มอไซค์ 250 ถูกยกเลิกไปแล้ว), <b>ห้อง 105</b> (คืนที่ 2 ค่าห้อง 750), <b>ห้อง 106</b> (คืนที่ 2 ค่าห้อง 700 + เตียงเสริม 300), <b>ห้อง 201</b> (คืนที่ 2 ค่าห้อง 800) •
+        <b>ห้อง 202 (จองไว้ตั้งแต่วันที่ 1)</b> เดินทางมาเช็คอินจริง (ดึงเงินจอง 500 + จ่ายเงินสดเพิ่ม 1,300 = 1,800 ตัดค่าห้องคืนแรก 900 และพักเป็นจ่ายล่วงหน้าคืนถัดไป 900)
+      </div>
+
+      <div class="report-grid">
+        <!-- คอลัมน์ซ้าย: ฝั่งรายได้ -->
+        <div class="col-card">
+          <div class="col-head rev">
+            <span>ฝั่งรายได้ (Revenue)</span>
+            <span class="head-pill">ไม่รวมมัดจำกุญแจ</span>
+          </div>
+          <div class="col-body">
+            <div class="sub-box">
+              <div class="row-line" style="border-bottom:1px solid #e2e8f0; padding-bottom:6px; margin-bottom:6px; font-weight:900; font-size:13.5px;">
+                <span>1. รายได้ค่าห้อง</span>
+                <span class="text-indigo">฿3,950</span>
+              </div>
+              <div class="pl-3">
+                <div class="row-line">
+                  <span>1.1 รายได้ค่าห้อง (ตามราคาเป้าหมาย)</span>
+                  <span class="amt">฿4,050</span>
+                </div>
+                <div class="row-line pl-3">
+                  <span>1.1.1 ค้างคืน <span class="hint">102 (฿800) + 105 (฿750) + 106 (฿800) + 201 (฿800) + 202 (฿900)</span></span>
+                  <span class="amt">฿4,050</span>
+                </div>
+                <div class="row-line pl-3">
+                  <span>1.1.2 ชั่วคราว</span>
+                  <span class="amt">฿0</span>
+                </div>
+                <div class="row-line" style="margin-top:6px;">
+                  <span>1.2 รายได้ส่วนเพิ่ม</span>
+                  <span class="amt text-emerald">+฿0</span>
+                </div>
+                <div class="row-line pl-3">
+                  <span>1.2.1 เข้าก่อน/ออกช้า (Early-Late)</span>
+                  <span class="amt">฿0</span>
+                </div>
+                <div class="row-line pl-3">
+                  <span>1.2.2 ส่วนเพิ่มค่าห้อง</span>
+                  <span class="amt">฿0</span>
+                </div>
+                <div class="row-line text-rose" style="margin-top:6px; border-top:1px solid #e2e8f0; padding-top:4px;">
+                  <span>1.3 ส่วนลด (ต่ำกว่าราคาเป้าหมาย) <span class="hint">ห้อง 106 (ลดจาก 800 เหลือ 700 = -฿100)</span></span>
+                  <span class="amt">-฿100</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>2. ค่าส่วนเสริม (เตียงเสริม/ผ้าห่ม/มอไซค์)</b><span class="hint">ห้อง 106 (เตียงเสริมวันที่ 3: ฿300)</span></span>
+              <span class="amt">฿300</span>
+            </div>
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>3. ค่ามินิบาร์ (อาหาร/เครื่องดื่ม)</b></span>
+              <span class="amt">฿0</span>
+            </div>
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>4. ค่าปรับ (เสียหาย/สูบบุหรี่/ริบมัดจำ)</b></span>
+              <span class="amt">฿0</span>
+            </div>
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>5. ค่าบริการอื่นๆ</b></span>
+              <span class="amt">฿0</span>
+            </div>
+            <div class="row-line text-slate-muted">
+              <span>6. ยกเลิก (Voided) <span class="hint">ห้อง 102 (มอเตอร์ไซค์วันที่ 3 ที่ยกเลิกไว้)</span></span>
+              <span class="amt">฿250</span>
+            </div>
+          </div>
+          <div class="col-foot">
+            <div class="row-line"><span>รวมรายได้ทั้งหมด (ก่อนหักส่วนลด)</span><span class="amt">฿4,350</span></div>
+            <div class="row-line text-rose"><span>หัก ส่วนลดค่าห้อง</span><span class="amt">-฿100</span></div>
+            <div class="row-line" style="border-top:1px solid #cbd5e1; padding-top:6px; margin-top:4px; font-size:15px; font-weight:900;">
+              <span>รวมรายได้สุทธิ</span>
+              <span class="text-indigo">฿4,250</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- คอลัมน์กลาง: ฝั่งรับชำระเงิน -->
+        <div class="col-card">
+          <div class="col-head pay">
+            <span>ฝั่งรับชำระเงิน (Payments)</span>
+            <span class="head-pill">แยกตามช่องทาง</span>
+          </div>
+          <div class="col-body">
+            <div class="pay-box-cash">
+              <div class="row-line">
+                <span><b>💵 เงินสด</b><span class="hint">ห้อง 202 (จ่ายค่าห้องส่วนที่เหลือวันเช็คอิน)</span></span>
+                <span class="amt text-emerald" style="font-size:14px;">฿1,300</span>
+              </div>
+            </div>
+            <div class="pay-box-transfer">
+              <div class="row-line" style="border-bottom:1px solid #bfdbfe; padding-bottom:5px; margin-bottom:5px;">
+                <span><b>📱 โอนเงิน (รวมทุกบัญชี)</b></span>
+                <span class="amt text-sky" style="font-size:14px;">฿0</span>
+              </div>
+              <div class="row-line pl-3"><span>• บัญชี SCB</span><span class="amt">฿0</span></div>
+              <div class="row-line pl-3" style="margin-top:4px;"><span>• บัญชี KBANK</span><span class="amt">฿0</span></div>
+            </div>
+            <div class="pay-box-credit">
+              <div class="row-line">
+                <span><b>💳 บัตรเครดิต</b></span>
+                <span class="amt text-purple" style="font-size:14px;">฿0</span>
+              </div>
+            </div>
+            <div class="pay-box-void">
+              <div class="row-line">
+                <span><b>ยกเลิก / คืนเงินทอน</b></span>
+                <span class="amt text-rose">-฿0</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-foot">
+            <div class="row-line"><span>รวมรับชำระ</span><span class="amt">฿1,300</span></div>
+            <div class="row-line text-amber"><span>หัก ค่าใช้จ่ายหน้าร้าน (Petty Cash)</span><span class="amt">-฿0</span></div>
+            <div class="row-line" style="border-top:1px solid #cbd5e1; padding-top:6px; margin-top:4px; font-size:15px; font-weight:900;">
+              <span>รวมรับชำระสุทธิ</span>
+              <span class="text-emerald">฿1,300</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- คอลัมน์ขวา: จ่ายล่วงหน้า & เงินรับจองล่วงหน้า -->
+        <div class="right-stack">
+          <!-- กล่องจ่ายล่วงหน้า -->
+          <div class="col-card">
+            <div class="col-head adv">
+              <div>
+                <div>🏨 จ่ายล่วงหน้า (พักหลายคืน)</div>
+                <div style="font-size:10px; font-weight:500; color:#bae6fd;">ลูกค้าเช็คอินแล้ว ชำระล่วงหน้าสำหรับคืนถัดไป</div>
+              </div>
+            </div>
+            <div class="col-body">
+              <div class="row-line"><span>ยอดยกมา</span><span class="amt">฿4,050</span></div>
+              <div class="row-line text-emerald"><span>+ รับเพิ่มวันนี้</span><span class="amt">+฿900</span></div>
+              <div class="row-line text-rose"><span>- ใช้ไปวันนี้ (ตัดเป็นค่าห้อง/บริการ)</span><span class="amt">-฿3,350</span></div>
+              <div class="row-line" style="border-top:2px solid #f1f5f9; padding-top:6px; font-weight:900;">
+                <span>ยอดคงเหลือยกไป</span>
+                <span class="text-sky" style="font-size:14.5px;">฿1,600</span>
+              </div>
+              <button class="toggle-breakdown-btn sky" onclick="toggleBox(this)">
+                <span>🔍 ดูแจกแจงรายห้อง (5 ห้อง)</span>
+                <span>▲ ซ่อน</span>
+              </button>
+              <div class="room-bd-list">
+                <div class="room-bd-item">
+                  <div class="room-bd-top">
+                    <span>ห้อง 102 • คืนที่ 3 (คืนสุดท้าย)</span>
+                    <span class="text-sky">ยกไป ฿0</span>
+                  </div>
+                  <div class="room-bd-grid">
+                    <span>ยกมา: ฿800</span>
+                    <span class="text-emerald">+เพิ่ม: ฿0</span>
+                    <span class="text-rose">-ใช้ไป: ฿800</span>
+                  </div>
+                  <div class="room-bd-note">ค่าห้อง ฿800</div>
+                </div>
+                <div class="room-bd-item">
+                  <div class="room-bd-top">
+                    <span>ห้อง 105 • คืนที่ 2 (คืนสุดท้าย)</span>
+                    <span class="text-sky">ยกไป ฿0</span>
+                  </div>
+                  <div class="room-bd-grid">
+                    <span>ยกมา: ฿750</span>
+                    <span class="text-emerald">+เพิ่ม: ฿0</span>
+                    <span class="text-rose">-ใช้ไป: ฿750</span>
+                  </div>
+                  <div class="room-bd-note">ค่าห้อง ฿750</div>
+                </div>
+                <div class="room-bd-item">
+                  <div class="room-bd-top">
+                    <span>ห้อง 106 • คืนที่ 2 (จาก 3 คืน)</span>
+                    <span class="text-sky">ยกไป ฿700</span>
+                  </div>
+                  <div class="room-bd-grid">
+                    <span>ยกมา: ฿1,700</span>
+                    <span class="text-emerald">+เพิ่ม: ฿0</span>
+                    <span class="text-rose">-ใช้ไป: ฿1,000</span>
+                  </div>
+                  <div class="room-bd-note">ค่าห้อง ฿700 • บริการเสริม (เตียงเสริม) ฿300</div>
+                </div>
+                <div class="room-bd-item">
+                  <div class="room-bd-top">
+                    <span>ห้อง 201 • คืนที่ 2 (คืนสุดท้าย)</span>
+                    <span class="text-sky">ยกไป ฿0</span>
+                  </div>
+                  <div class="room-bd-grid">
+                    <span>ยกมา: ฿800</span>
+                    <span class="text-emerald">+เพิ่ม: ฿0</span>
+                    <span class="text-rose">-ใช้ไป: ฿800</span>
+                  </div>
+                  <div class="room-bd-note">ค่าห้อง ฿800</div>
+                </div>
+                <div class="room-bd-item">
+                  <div class="room-bd-top">
+                    <span>ห้อง 202 • ลูกค้าจองมาเช็คอิน (2 คืน)</span>
+                    <span class="text-sky">ยกไป ฿900</span>
+                  </div>
+                  <div class="room-bd-grid">
+                    <span>ยกมา: ฿0</span>
+                    <span class="text-emerald">+เพิ่ม: ฿900</span>
+                    <span class="text-rose">-ใช้ไป: ฿0</span>
+                  </div>
+                  <div class="room-bd-note">ค่าห้อง ฿900 • ดึงเงินจอง ฿500 + จ่ายสดเพิ่ม ฿1,300</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- กล่องเงินรับจองล่วงหน้า -->
+          <div class="col-card">
+            <div class="col-head res">
+              <div>
+                <div>📅 เงินรับจองล่วงหน้า</div>
+                <div style="font-size:10px; font-weight:500; color:#e9d5ff;">ลูกค้าโอนจองล่วงหน้า ยังไม่เช็คอินเข้าพัก</div>
+              </div>
+            </div>
+            <div class="col-body">
+              <div class="row-line"><span>ยอดยกมา</span><span class="amt">฿500</span></div>
+              <div class="row-line text-emerald"><span>+ รับจองเพิ่มวันนี้</span><span class="amt">+฿0</span></div>
+              <div class="row-line text-rose"><span>- ใช้ไปวันนี้ (เข้าพักวันนี้)</span><span class="amt">-฿500</span></div>
+              <div class="row-line" style="border-top:2px solid #f1f5f9; padding-top:6px; font-weight:900;">
+                <span>ยอดคงเหลือยกไป</span>
+                <span class="text-purple" style="font-size:14.5px;">฿0</span>
+              </div>
+              <button class="toggle-breakdown-btn purple" onclick="toggleBox(this)">
+                <span>🔍 ดูแจกแจงรายห้อง (1 ห้อง)</span>
+                <span>▲ ซ่อน</span>
+              </button>
+              <div class="room-bd-list">
+                <div class="room-bd-item">
+                  <div class="room-bd-top">
+                    <span>ห้อง 202 • ลูกค้าจองล่วงหน้า #2</span>
+                    <span class="text-purple">ยกไป ฿0</span>
+                  </div>
+                  <div class="room-bd-grid">
+                    <span>ยกมา: ฿500</span>
+                    <span class="text-emerald">+เพิ่ม: ฿0</span>
+                    <span class="text-rose">-ใช้ไป: ฿500</span>
+                  </div>
+                  <div class="room-bd-note">เช็คอินเข้าพักวันนี้ (ดึงเงินจองไปใช้)</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Reconciliation Bar -->
+      <div class="recon-bar">
+        <div class="recon-cell">
+          <div class="lbl">รวมรายได้สุทธิ (ฝั่งซ้าย)</div>
+          <div class="val" style="color:#a5b4fc;">฿4,250</div>
+        </div>
+        <div class="recon-cell">
+          <div class="lbl">รวมรับชำระสุทธิ (ฝั่งกลาง)</div>
+          <div class="val" style="color:#34d399;">฿1,300</div>
+        </div>
+        <div class="recon-cell">
+          <div class="lbl">การเคลื่อนไหวเงินล่วงหน้า/รับจอง</div>
+          <div class="val" style="color:#7dd3fc;">-฿2,950</div>
+        </div>
+        <div class="recon-cell">
+          <div class="lbl">ส่วนต่าง (รับชำระสุทธิ - รายได้สุทธิ)</div>
+          <div class="val" style="color:#fb7185;">-฿2,950</div>
+        </div>
+      </div>
+
+      <!-- Key Deposit Box -->
+      <div class="deposit-bar">
+        <div class="deposit-top">
+          <div>
+            <b style="font-size:13.5px; color:#78350f;">🔑 กล่องแยกบัญชี: สรุปเงินมัดจำกุญแจ (ไม่รวมในรายได้ค่าห้อง)</b>
+            <div style="font-size:11px; color:#92400e;">ไม่มีรับหรือคืนมัดจำกุญแจในวันที่ 3 • ยอดมัดจำที่ถืออยู่คงเดิม ฿600</div>
+          </div>
+          <div class="drawer-pill">
+            <div style="font-size:10.5px; color:#64748b; font-weight:700;">💵 เงินสดในลิ้นชักจริงวันนี้ (รวมมัดจำเงินสดสุทธิ)</div>
+            <div style="font-size:16px; font-weight:900; color:#047857;">฿1,300</div>
+          </div>
+        </div>
+        <div class="deposit-grid">
+          <div class="dep-card">
+            <div style="font-size:11px; color:#64748b; font-weight:700;">รับมัดจำกุญแจวันนี้</div>
+            <div style="font-size:16px; font-weight:900; color:#92400e;">+฿0</div>
+            <div style="font-size:10.5px; color:#64748b;">สด ฿0 • โอน ฿0</div>
+          </div>
+          <div class="dep-card">
+            <div style="font-size:11px; color:#64748b; font-weight:700;">คืนมัดจำกุญแจวันนี้</div>
+            <div style="font-size:16px; font-weight:900; color:#047857;">-฿0</div>
+            <div style="font-size:10.5px; color:#64748b;">ไม่มีคืนมัดจำวันนี้</div>
+          </div>
+          <div class="dep-card">
+            <div style="font-size:11px; color:#64748b; font-weight:700;">หัก/ริบเป็นค่าปรับวันนี้</div>
+            <div style="font-size:16px; font-weight:900; color:#e11d48;">฿0</div>
+            <div style="font-size:10.5px; color:#64748b;">โอนเข้าหมวด 4. ค่าปรับแล้ว</div>
+          </div>
+          <div class="dep-card active-held">
+            <div style="font-size:11px; color:#78350f; font-weight:700;">มัดจำกุญแจที่ถืออยู่ (ห้องพักปัจจุบัน)</div>
+            <div style="font-size:16px; font-weight:900; color:#451a03;">฿600</div>
+            <div style="font-size:10.5px; color:#92400e;">ห้อง 102, 105, 201 (ห้องละ ฿200)</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================================= -->
+    <!--                                   วันที่ 4 (DAY 4)                                   -->
+    <!-- ================================================================================= -->
+    <section class="day-section" id="day-4">
+      <div class="day-header-bar">
+        <div>
+          <h2 class="day-title">
+            📊 รายงานเงินสดประจำวัน — วันที่ 4 (Day 4)
+            <span class="badge-closed">✅ รูปแบบหน้าจอใหม่</span>
+          </h2>
+          <p class="cutoff-note">⏱️ ตัดรอบค่าห้องพัก: <b>09:45 น.</b> (นับรวม Early Check-in 06:45–09:44 น. เป็นของวันนี้) • ตัดรอบรายการอื่น/กะดึก: <b>06:45 น.</b></p>
+        </div>
+      </div>
+
+      <div class="events-strip">
+        <b>📌 เหตุการณ์ที่เกิดขึ้นในวันที่ 4:</b>
+        <b>ห้อง 102</b> และ <b>ห้อง 201</b> เช็คเอาท์ คืนมัดจำกุญแจเงินสดห้องละ -200 (รวม -400) •
+        <b>ห้อง 105</b> เช็คเอาท์แต่ทำกุญแจหาย สั่งริบมัดจำกุญแจ 200 เป็นรายได้หมวด 4. ค่าปรับ •
+        พักต่อเนื่องและตัดยอดจ่ายล่วงหน้าคืนสุดท้าย 2 ห้อง: <b>ห้อง 106</b> (คืนที่ 3 ค่าห้อง 700), <b>ห้อง 202</b> (คืนที่ 2 ค่าห้อง 900) •
+        <b>ห้อง 107</b> เช็คอินใหม่ 1 คืน จ่ายเงินสด 750
+      </div>
+
+      <div class="report-grid">
+        <!-- คอลัมน์ซ้าย: ฝั่งรายได้ -->
+        <div class="col-card">
+          <div class="col-head rev">
+            <span>ฝั่งรายได้ (Revenue)</span>
+            <span class="head-pill">ไม่รวมมัดจำกุญแจ</span>
+          </div>
+          <div class="col-body">
+            <div class="sub-box">
+              <div class="row-line" style="border-bottom:1px solid #e2e8f0; padding-bottom:6px; margin-bottom:6px; font-weight:900; font-size:13.5px;">
+                <span>1. รายได้ค่าห้อง</span>
+                <span class="text-indigo">฿2,350</span>
+              </div>
+              <div class="pl-3">
+                <div class="row-line">
+                  <span>1.1 รายได้ค่าห้อง (ตามราคาเป้าหมาย)</span>
+                  <span class="amt">฿2,450</span>
+                </div>
+                <div class="row-line pl-3">
+                  <span>1.1.1 ค้างคืน <span class="hint">ห้อง 106 (฿800) + ห้อง 107 (฿750) + ห้อง 202 (฿900)</span></span>
+                  <span class="amt">฿2,450</span>
+                </div>
+                <div class="row-line pl-3">
+                  <span>1.1.2 ชั่วคราว</span>
+                  <span class="amt">฿0</span>
+                </div>
+                <div class="row-line" style="margin-top:6px;">
+                  <span>1.2 รายได้ส่วนเพิ่ม</span>
+                  <span class="amt text-emerald">+฿0</span>
+                </div>
+                <div class="row-line pl-3"><span>1.2.1 เข้าก่อน/ออกช้า (Early-Late)</span><span class="amt">฿0</span></div>
+                <div class="row-line pl-3"><span>1.2.2 ส่วนเพิ่มค่าห้อง</span><span class="amt">฿0</span></div>
+                <div class="row-line text-rose" style="margin-top:6px; border-top:1px solid #e2e8f0; padding-top:4px;">
+                  <span>1.3 ส่วนลด (ต่ำกว่าราคาเป้าหมาย) <span class="hint">ห้อง 106 (ลดจาก 800 เหลือ 700 = -฿100)</span></span>
+                  <span class="amt">-฿100</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>2. ค่าส่วนเสริม (เตียงเสริม/ผ้าห่ม/มอไซค์)</b></span>
+              <span class="amt">฿0</span>
+            </div>
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>3. ค่ามินิบาร์ (อาหาร/เครื่องดื่ม)</b></span>
+              <span class="amt">฿0</span>
+            </div>
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>4. ค่าปรับ (เสียหาย/สูบบุหรี่/ริบมัดจำ)</b><span class="hint">ห้อง 105 (ริบมัดจำกุญแจหายตอนเช็คเอาท์)</span></span>
+              <span class="amt">฿200</span>
+            </div>
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>5. ค่าบริการอื่นๆ</b></span>
+              <span class="amt">฿0</span>
+            </div>
+            <div class="row-line text-slate-muted">
+              <span>6. ยกเลิก (Voided)</span>
+              <span class="amt">฿0</span>
+            </div>
+          </div>
+          <div class="col-foot">
+            <div class="row-line"><span>รวมรายได้ทั้งหมด (ก่อนหักส่วนลด)</span><span class="amt">฿2,650</span></div>
+            <div class="row-line text-rose"><span>หัก ส่วนลดค่าห้อง</span><span class="amt">-฿100</span></div>
+            <div class="row-line" style="border-top:1px solid #cbd5e1; padding-top:6px; margin-top:4px; font-size:15px; font-weight:900;">
+              <span>รวมรายได้สุทธิ</span>
+              <span class="text-indigo">฿2,550</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- คอลัมน์กลาง: ฝั่งรับชำระเงิน -->
+        <div class="col-card">
+          <div class="col-head pay">
+            <span>ฝั่งรับชำระเงิน (Payments)</span>
+            <span class="head-pill">แยกตามช่องทาง</span>
+          </div>
+          <div class="col-body">
+            <div class="pay-box-cash">
+              <div class="row-line">
+                <span><b>💵 เงินสด</b><span class="hint">ห้อง 107 (เช็คอินจ่ายค่าห้อง 1 คืน)</span></span>
+                <span class="amt text-emerald" style="font-size:14px;">฿750</span>
+              </div>
+            </div>
+            <div class="pay-box-transfer">
+              <div class="row-line" style="border-bottom:1px solid #bfdbfe; padding-bottom:5px; margin-bottom:5px;">
+                <span><b>📱 โอนเงิน (รวมทุกบัญชี)</b></span>
+                <span class="amt text-sky" style="font-size:14px;">฿0</span>
+              </div>
+              <div class="row-line pl-3"><span>• บัญชี SCB</span><span class="amt">฿0</span></div>
+              <div class="row-line pl-3" style="margin-top:4px;"><span>• บัญชี KBANK</span><span class="amt">฿0</span></div>
+            </div>
+            <div class="pay-box-credit">
+              <div class="row-line">
+                <span><b>💳 บัตรเครดิต</b></span>
+                <span class="amt text-purple" style="font-size:14px;">฿0</span>
+              </div>
+            </div>
+            <div class="pay-box-void">
+              <div class="row-line">
+                <span><b>ยกเลิก / คืนเงินทอน</b></span>
+                <span class="amt text-rose">-฿0</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-foot">
+            <div class="row-line"><span>รวมรับชำระ</span><span class="amt">฿750</span></div>
+            <div class="row-line text-amber"><span>หัก ค่าใช้จ่ายหน้าร้าน (Petty Cash)</span><span class="amt">-฿0</span></div>
+            <div class="row-line" style="border-top:1px solid #cbd5e1; padding-top:6px; margin-top:4px; font-size:15px; font-weight:900;">
+              <span>รวมรับชำระสุทธิ</span>
+              <span class="text-emerald">฿750</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- คอลัมน์ขวา: จ่ายล่วงหน้า & เงินรับจองล่วงหน้า -->
+        <div class="right-stack">
+          <!-- กล่องจ่ายล่วงหน้า -->
+          <div class="col-card">
+            <div class="col-head adv">
+              <div>
+                <div>🏨 จ่ายล่วงหน้า (พักหลายคืน)</div>
+                <div style="font-size:10px; font-weight:500; color:#bae6fd;">ลูกค้าเช็คอินแล้ว ชำระล่วงหน้าสำหรับคืนถัดไป</div>
+              </div>
+            </div>
+            <div class="col-body">
+              <div class="row-line"><span>ยอดยกมา</span><span class="amt">฿1,600</span></div>
+              <div class="row-line text-emerald"><span>+ รับเพิ่มวันนี้</span><span class="amt">+฿0</span></div>
+              <div class="row-line text-rose"><span>- ใช้ไปวันนี้ (ตัดเป็นค่าห้อง/บริการ)</span><span class="amt">-฿1,600</span></div>
+              <div class="row-line" style="border-top:2px solid #f1f5f9; padding-top:6px; font-weight:900;">
+                <span>ยอดคงเหลือยกไป</span>
+                <span class="text-sky" style="font-size:14.5px;">฿0</span>
+              </div>
+              <button class="toggle-breakdown-btn sky" onclick="toggleBox(this)">
+                <span>🔍 ดูแจกแจงรายห้อง (2 ห้อง)</span>
+                <span>▲ ซ่อน</span>
+              </button>
+              <div class="room-bd-list">
+                <div class="room-bd-item">
+                  <div class="room-bd-top">
+                    <span>ห้อง 106 • คืนที่ 3 (คืนสุดท้าย)</span>
+                    <span class="text-sky">ยกไป ฿0</span>
+                  </div>
+                  <div class="room-bd-grid">
+                    <span>ยกมา: ฿700</span>
+                    <span class="text-emerald">+เพิ่ม: ฿0</span>
+                    <span class="text-rose">-ใช้ไป: ฿700</span>
+                  </div>
+                  <div class="room-bd-note">ค่าห้อง ฿700</div>
+                </div>
+                <div class="room-bd-item">
+                  <div class="room-bd-top">
+                    <span>ห้อง 202 • คืนที่ 2 (คืนสุดท้าย)</span>
+                    <span class="text-sky">ยกไป ฿0</span>
+                  </div>
+                  <div class="room-bd-grid">
+                    <span>ยกมา: ฿900</span>
+                    <span class="text-emerald">+เพิ่ม: ฿0</span>
+                    <span class="text-rose">-ใช้ไป: ฿900</span>
+                  </div>
+                  <div class="room-bd-note">ค่าห้อง ฿900</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- กล่องเงินรับจองล่วงหน้า -->
+          <div class="col-card">
+            <div class="col-head res">
+              <div>
+                <div>📅 เงินรับจองล่วงหน้า</div>
+                <div style="font-size:10px; font-weight:500; color:#e9d5ff;">ลูกค้าโอนจองล่วงหน้า ยังไม่เช็คอินเข้าพัก</div>
+              </div>
+            </div>
+            <div class="col-body">
+              <div class="row-line"><span>ยอดยกมา</span><span class="amt">฿0</span></div>
+              <div class="row-line text-emerald"><span>+ รับจองเพิ่มวันนี้</span><span class="amt">+฿0</span></div>
+              <div class="row-line text-rose"><span>- ใช้ไปวันนี้ (เข้าพักวันนี้)</span><span class="amt">-฿0</span></div>
+              <div class="row-line" style="border-top:2px solid #f1f5f9; padding-top:6px; font-weight:900;">
+                <span>ยอดคงเหลือยกไป</span>
+                <span class="text-purple" style="font-size:14.5px;">฿0</span>
+              </div>
+              <button class="toggle-breakdown-btn purple" onclick="toggleBox(this)">
+                <span>🔍 ดูแจกแจงรายห้อง (0 ห้อง)</span>
+                <span>▲ ซ่อน</span>
+              </button>
+              <div class="room-bd-list">
+                <div class="room-bd-item" style="text-align:center; color:#94a3b8;">
+                  ไม่มีรายการเงินรับจองล่วงหน้าในวันนี้
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Reconciliation Bar -->
+      <div class="recon-bar">
+        <div class="recon-cell">
+          <div class="lbl">รวมรายได้สุทธิ (ฝั่งซ้าย)</div>
+          <div class="val" style="color:#a5b4fc;">฿2,550</div>
+        </div>
+        <div class="recon-cell">
+          <div class="lbl">รวมรับชำระสุทธิ (ฝั่งกลาง)</div>
+          <div class="val" style="color:#34d399;">฿750</div>
+        </div>
+        <div class="recon-cell">
+          <div class="lbl">การเคลื่อนไหวเงินล่วงหน้า/รับจอง</div>
+          <div class="val" style="color:#7dd3fc;">-฿1,600</div>
+        </div>
+        <div class="recon-cell">
+          <div class="lbl">ส่วนต่าง (รับชำระสุทธิ - รายได้สุทธิ)</div>
+          <div class="val" style="color:#fb7185;">-฿1,800</div>
+        </div>
+      </div>
+
+      <!-- Key Deposit Box -->
+      <div class="deposit-bar">
+        <div class="deposit-top">
+          <div>
+            <b style="font-size:13.5px; color:#78350f;">🔑 กล่องแยกบัญชี: สรุปเงินมัดจำกุญแจ (ไม่รวมในรายได้ค่าห้อง)</b>
+            <div style="font-size:11px; color:#92400e;">คืนมัดจำห้อง 102, 201 (-฿400) • ริบมัดจำห้อง 105 (฿200) โอนเข้าหมวด 4. ค่าปรับ (ทำให้ส่วนต่างด้านบนรวมยอดริบมัดจำ -฿200 เป็น -฿1,800 พอดี)</div>
+          </div>
+          <div class="drawer-pill">
+            <div style="font-size:10.5px; color:#64748b; font-weight:700;">💵 เงินสดในลิ้นชักจริงวันนี้ (รวมมัดจำเงินสดสุทธิ)</div>
+            <div style="font-size:16px; font-weight:900; color:#047857;">฿350</div>
+          </div>
+        </div>
+        <div class="deposit-grid">
+          <div class="dep-card">
+            <div style="font-size:11px; color:#64748b; font-weight:700;">รับมัดจำกุญแจวันนี้</div>
+            <div style="font-size:16px; font-weight:900; color:#92400e;">+฿0</div>
+            <div style="font-size:10.5px; color:#64748b;">สด ฿0 • โอน ฿0</div>
+          </div>
+          <div class="dep-card">
+            <div style="font-size:11px; color:#64748b; font-weight:700;">คืนมัดจำกุญแจวันนี้</div>
+            <div style="font-size:16px; font-weight:900; color:#047857;">-฿400</div>
+            <div style="font-size:10.5px; color:#64748b;">คืนห้อง 102 (฿200) &amp; 201 (฿200)</div>
+          </div>
+          <div class="dep-card">
+            <div style="font-size:11px; color:#64748b; font-weight:700;">หัก/ริบเป็นค่าปรับวันนี้</div>
+            <div style="font-size:16px; font-weight:900; color:#e11d48;">฿200</div>
+            <div style="font-size:10.5px; color:#64748b;">ห้อง 105 (โอนเข้าหมวด 4. ค่าปรับแล้ว)</div>
+          </div>
+          <div class="dep-card active-held">
+            <div style="font-size:11px; color:#78350f; font-weight:700;">มัดจำกุญแจที่ถืออยู่ (ห้องพักปัจจุบัน)</div>
+            <div style="font-size:16px; font-weight:900; color:#451a03;">฿0</div>
+            <div style="font-size:10.5px; color:#92400e;">คืน/ริบครบทุกห้องแล้ว</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================================= -->
+    <!--                                   วันที่ 5 (DAY 5)                                   -->
+    <!-- ================================================================================= -->
+    <section class="day-section" id="day-5">
+      <div class="day-header-bar">
+        <div>
+          <h2 class="day-title">
+            📊 รายงานเงินสดประจำวัน — วันที่ 5 (Day 5)
+            <span class="badge-closed">✅ รูปแบบหน้าจอใหม่</span>
+          </h2>
+          <p class="cutoff-note">⏱️ ตัดรอบค่าห้องพัก: <b>09:45 น.</b> (นับรวม Early Check-in 06:45–09:44 น. เป็นของวันนี้) • ตัดรอบรายการอื่น/กะดึก: <b>06:45 น.</b></p>
+        </div>
+      </div>
+
+      <div class="events-strip">
+        <b>📌 เหตุการณ์ที่เกิดขึ้นในวันที่ 5:</b>
+        <b>ห้อง 106</b> และ <b>ห้อง 202</b> เช็คเอาท์ตามเวลาปกติ •
+        <b>ห้อง 107</b> เช็คเอาท์เกินเวลา คิดค่าปรับออกช้า (Late Check-out) จ่ายเงินสด 200 บาท
+      </div>
+
+      <div class="report-grid">
+        <!-- คอลัมน์ซ้าย: ฝั่งรายได้ -->
+        <div class="col-card">
+          <div class="col-head rev">
+            <span>ฝั่งรายได้ (Revenue)</span>
+            <span class="head-pill">ไม่รวมมัดจำกุญแจ</span>
+          </div>
+          <div class="col-body">
+            <div class="sub-box">
+              <div class="row-line" style="border-bottom:1px solid #e2e8f0; padding-bottom:6px; margin-bottom:6px; font-weight:900; font-size:13.5px;">
+                <span>1. รายได้ค่าห้อง</span>
+                <span class="text-indigo">฿200</span>
+              </div>
+              <div class="pl-3">
+                <div class="row-line">
+                  <span>1.1 รายได้ค่าห้อง (ตามราคาเป้าหมาย)</span>
+                  <span class="amt">฿0</span>
+                </div>
+                <div class="row-line pl-3"><span>1.1.1 ค้างคืน</span><span class="amt">฿0</span></div>
+                <div class="row-line pl-3"><span>1.1.2 ชั่วคราว</span><span class="amt">฿0</span></div>
+                <div class="row-line" style="margin-top:6px;">
+                  <span>1.2 รายได้ส่วนเพิ่ม</span>
+                  <span class="amt text-emerald">+฿200</span>
+                </div>
+                <div class="row-line pl-3">
+                  <span>1.2.1 เข้าก่อน/ออกช้า (Early-Late) <span class="hint">ห้อง 107 (ค่าปรับออกช้า Late Check-out +฿200)</span></span>
+                  <span class="amt">฿200</span>
+                </div>
+                <div class="row-line pl-3"><span>1.2.2 ส่วนเพิ่มค่าห้อง</span><span class="amt">฿0</span></div>
+                <div class="row-line text-rose" style="margin-top:6px; border-top:1px solid #e2e8f0; padding-top:4px;">
+                  <span>1.3 ส่วนลด (ต่ำกว่าราคาเป้าหมาย)</span>
+                  <span class="amt">-฿0</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>2. ค่าส่วนเสริม (เตียงเสริม/ผ้าห่ม/มอไซค์)</b></span>
+              <span class="amt">฿0</span>
+            </div>
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>3. ค่ามินิบาร์ (อาหาร/เครื่องดื่ม)</b></span>
+              <span class="amt">฿0</span>
+            </div>
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>4. ค่าปรับ (เสียหาย/สูบบุหรี่/ริบมัดจำ)</b></span>
+              <span class="amt">฿0</span>
+            </div>
+            <div class="row-line" style="border-bottom:1px solid #f1f5f9; padding-bottom:5px;">
+              <span><b>5. ค่าบริการอื่นๆ</b></span>
+              <span class="amt">฿0</span>
+            </div>
+            <div class="row-line text-slate-muted">
+              <span>6. ยกเลิก (Voided)</span>
+              <span class="amt">฿0</span>
+            </div>
+          </div>
+          <div class="col-foot">
+            <div class="row-line"><span>รวมรายได้ทั้งหมด (ก่อนหักส่วนลด)</span><span class="amt">฿200</span></div>
+            <div class="row-line text-rose"><span>หัก ส่วนลดค่าห้อง</span><span class="amt">-฿0</span></div>
+            <div class="row-line" style="border-top:1px solid #cbd5e1; padding-top:6px; margin-top:4px; font-size:15px; font-weight:900;">
+              <span>รวมรายได้สุทธิ</span>
+              <span class="text-indigo">฿200</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- คอลัมน์กลาง: ฝั่งรับชำระเงิน -->
+        <div class="col-card">
+          <div class="col-head pay">
+            <span>ฝั่งรับชำระเงิน (Payments)</span>
+            <span class="head-pill">แยกตามช่องทาง</span>
+          </div>
+          <div class="col-body">
+            <div class="pay-box-cash">
+              <div class="row-line">
+                <span><b>💵 เงินสด</b><span class="hint">ห้อง 107 (จ่ายค่าปรับออกช้า Late Check-out)</span></span>
+                <span class="amt text-emerald" style="font-size:14px;">฿200</span>
+              </div>
+            </div>
+            <div class="pay-box-transfer">
+              <div class="row-line" style="border-bottom:1px solid #bfdbfe; padding-bottom:5px; margin-bottom:5px;">
+                <span><b>📱 โอนเงิน (รวมทุกบัญชี)</b></span>
+                <span class="amt text-sky" style="font-size:14px;">฿0</span>
+              </div>
+              <div class="row-line pl-3"><span>• บัญชี SCB</span><span class="amt">฿0</span></div>
+              <div class="row-line pl-3" style="margin-top:4px;"><span>• บัญชี KBANK</span><span class="amt">฿0</span></div>
+            </div>
+            <div class="pay-box-credit">
+              <div class="row-line">
+                <span><b>💳 บัตรเครดิต</b></span>
+                <span class="amt text-purple" style="font-size:14px;">฿0</span>
+              </div>
+            </div>
+            <div class="pay-box-void">
+              <div class="row-line">
+                <span><b>ยกเลิก / คืนเงินทอน</b></span>
+                <span class="amt text-rose">-฿0</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-foot">
+            <div class="row-line"><span>รวมรับชำระ</span><span class="amt">฿200</span></div>
+            <div class="row-line text-amber"><span>หัก ค่าใช้จ่ายหน้าร้าน (Petty Cash)</span><span class="amt">-฿0</span></div>
+            <div class="row-line" style="border-top:1px solid #cbd5e1; padding-top:6px; margin-top:4px; font-size:15px; font-weight:900;">
+              <span>รวมรับชำระสุทธิ</span>
+              <span class="text-emerald">฿200</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- คอลัมน์ขวา: จ่ายล่วงหน้า & เงินรับจองล่วงหน้า -->
+        <div class="right-stack">
+          <div class="col-card">
+            <div class="col-head adv">
+              <div>
+                <div>🏨 จ่ายล่วงหน้า (พักหลายคืน)</div>
+                <div style="font-size:10px; font-weight:500; color:#bae6fd;">ลูกค้าเช็คอินแล้ว ชำระล่วงหน้าสำหรับคืนถัดไป</div>
+              </div>
+            </div>
+            <div class="col-body">
+              <div class="row-line"><span>ยอดยกมา</span><span class="amt">฿0</span></div>
+              <div class="row-line text-emerald"><span>+ รับเพิ่มวันนี้</span><span class="amt">+฿0</span></div>
+              <div class="row-line text-rose"><span>- ใช้ไปวันนี้ (ตัดเป็นค่าห้อง/บริการ)</span><span class="amt">-฿0</span></div>
+              <div class="row-line" style="border-top:2px solid #f1f5f9; padding-top:6px; font-weight:900;">
+                <span>ยอดคงเหลือยกไป</span>
+                <span class="text-sky" style="font-size:14.5px;">฿0</span>
+              </div>
+              <button class="toggle-breakdown-btn sky" onclick="toggleBox(this)">
+                <span>🔍 ดูแจกแจงรายห้อง (0 ห้อง)</span>
+                <span>▲ ซ่อน</span>
+              </button>
+              <div class="room-bd-list">
+                <div class="room-bd-item" style="text-align:center; color:#94a3b8;">
+                  ไม่มีรายการจ่ายล่วงหน้าในวันนี้ (เช็คเอาท์ครบทุกห้องแล้ว)
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-card">
+            <div class="col-head res">
+              <div>
+                <div>📅 เงินรับจองล่วงหน้า</div>
+                <div style="font-size:10px; font-weight:500; color:#e9d5ff;">ลูกค้าโอนจองล่วงหน้า ยังไม่เช็คอินเข้าพัก</div>
+              </div>
+            </div>
+            <div class="col-body">
+              <div class="row-line"><span>ยอดยกมา</span><span class="amt">฿0</span></div>
+              <div class="row-line text-emerald"><span>+ รับจองเพิ่มวันนี้</span><span class="amt">+฿0</span></div>
+              <div class="row-line text-rose"><span>- ใช้ไปวันนี้ (เข้าพักวันนี้)</span><span class="amt">-฿0</span></div>
+              <div class="row-line" style="border-top:2px solid #f1f5f9; padding-top:6px; font-weight:900;">
+                <span>ยอดคงเหลือยกไป</span>
+                <span class="text-purple" style="font-size:14.5px;">฿0</span>
+              </div>
+              <button class="toggle-breakdown-btn purple" onclick="toggleBox(this)">
+                <span>🔍 ดูแจกแจงรายห้อง (0 ห้อง)</span>
+                <span>▲ ซ่อน</span>
+              </button>
+              <div class="room-bd-list">
+                <div class="room-bd-item" style="text-align:center; color:#94a3b8;">
+                  ไม่มีรายการเงินรับจองล่วงหน้าในวันนี้
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Reconciliation Bar -->
+      <div class="recon-bar">
+        <div class="recon-cell">
+          <div class="lbl">รวมรายได้สุทธิ (ฝั่งซ้าย)</div>
+          <div class="val" style="color:#a5b4fc;">฿200</div>
+        </div>
+        <div class="recon-cell">
+          <div class="lbl">รวมรับชำระสุทธิ (ฝั่งกลาง)</div>
+          <div class="val" style="color:#34d399;">฿200</div>
+        </div>
+        <div class="recon-cell">
+          <div class="lbl">การเคลื่อนไหวเงินล่วงหน้า/รับจอง</div>
+          <div class="val" style="color:#7dd3fc;">+฿0</div>
+        </div>
+        <div class="recon-cell">
+          <div class="lbl">ส่วนต่าง (รับชำระสุทธิ - รายได้สุทธิ)</div>
+          <div class="val" style="color:#34d399;">฿0</div>
+        </div>
+      </div>
+
+      <!-- Key Deposit Box -->
+      <div class="deposit-bar">
+        <div class="deposit-top">
+          <div>
+            <b style="font-size:13.5px; color:#78350f;">🔑 กล่องแยกบัญชี: สรุปเงินมัดจำกุญแจ (ไม่รวมในรายได้ค่าห้อง)</b>
+            <div style="font-size:11px; color:#92400e;">เช็คเอาท์ครบทุกห้องแล้ว • ยอดคงเหลือทุกรายการเป็น ฿0</div>
+          </div>
+          <div class="drawer-pill">
+            <div style="font-size:10.5px; color:#64748b; font-weight:700;">💵 เงินสดในลิ้นชักจริงวันนี้ (รวมมัดจำเงินสดสุทธิ)</div>
+            <div style="font-size:16px; font-weight:900; color:#047857;">฿200</div>
+          </div>
+        </div>
+        <div class="deposit-grid">
+          <div class="dep-card">
+            <div style="font-size:11px; color:#64748b; font-weight:700;">รับมัดจำกุญแจวันนี้</div>
+            <div style="font-size:16px; font-weight:900; color:#92400e;">+฿0</div>
+            <div style="font-size:10.5px; color:#64748b;">สด ฿0 • โอน ฿0</div>
+          </div>
+          <div class="dep-card">
+            <div style="font-size:11px; color:#64748b; font-weight:700;">คืนมัดจำกุญแจวันนี้</div>
+            <div style="font-size:16px; font-weight:900; color:#047857;">-฿0</div>
+            <div style="font-size:10.5px; color:#64748b;">ไม่มีคืนมัดจำ</div>
+          </div>
+          <div class="dep-card">
+            <div style="font-size:11px; color:#64748b; font-weight:700;">หัก/ริบเป็นค่าปรับวันนี้</div>
+            <div style="font-size:16px; font-weight:900; color:#e11d48;">฿0</div>
+            <div style="font-size:10.5px; color:#64748b;">ไม่มีริบมัดจำ</div>
+          </div>
+          <div class="dep-card active-held">
+            <div style="font-size:11px; color:#78350f; font-weight:700;">มัดจำกุญแจที่ถืออยู่ (ห้องพักปัจจุบัน)</div>
+            <div style="font-size:16px; font-weight:900; color:#451a03;">฿0</div>
+            <div style="font-size:10.5px; color:#92400e;">ไม่มีห้องพักคงค้าง</div>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
+
+  <script>
+    function filterDay(dayId, btn) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      document.querySelectorAll('.day-section').forEach(sec => {
+        if (dayId === 'all' || sec.id === dayId) {
+          sec.style.display = 'block';
+        } else {
+          sec.style.display = 'none';
+        }
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function toggleBox(btn) {
+      const list = btn.nextElementSibling;
+      const indicator = btn.querySelector('span:last-child');
+      if (!list) return;
+      if (list.style.display === 'none') {
+        list.style.display = 'flex';
+        if (indicator) indicator.textContent = '▲ ซ่อน';
+      } else {
+        list.style.display = 'none';
+        if (indicator) indicator.textContent = '▼ เปิดดู';
+      }
+    }
+  </script>
 </body>
 </html>
