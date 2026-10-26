@@ -61,6 +61,18 @@ type BalanceBox = {
   carriedForward: number;
 };
 
+type BoxRoomBreakdownItem = {
+  bookingId: string;
+  roomNo: string;
+  guestName: string;
+  checkInDateStr: string;
+  broughtForward: number;
+  addedToday: number;
+  usedToday: number;
+  carriedForward: number;
+  note?: string;
+};
+
 export default function DailyReport({ dateOffset }: { dateOffset: number }) {
   const { getNow } = useSimulatedTime();
   const [loading, setLoading] = useState(true);
@@ -104,6 +116,10 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
     usedToday: 0,
     carriedForward: 0,
   });
+  const [advanceBreakdown, setAdvanceBreakdown] = useState<BoxRoomBreakdownItem[]>([]);
+  const [reservationBreakdown, setReservationBreakdown] = useState<BoxRoomBreakdownItem[]>([]);
+  const [showAdvanceDetails, setShowAdvanceDetails] = useState(false);
+  const [showReservationDetails, setShowReservationDetails] = useState(false);
 
   // Separate Key Deposit Box (แยกจากหมวดบัญชีรายได้ตามข้อ 6)
   const [keyDepositBox, setKeyDepositBox] = useState({
@@ -473,30 +489,10 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
         }
       });
 
-      // 1C. รายได้ที่ไม่ใช่ค่าห้องพัก (ตัดรอบ 06:45 - 06:44:59 วันถัดไป ตามกฎข้อ 8)
-      txsIn0645Window.forEach((tx) => {
-        if (tx.transaction_type !== "revenue") return;
-        if (tx.category === "key_deposit" || tx.category === "ค่ามัดจำกุญแจ" || tx.category === "คืนมัดจำกุญแจ") return;
-
-        const isRoomOrEarlyLate =
-          tx.category === "room_charge" ||
-          tx.category.includes("ค่าห้องพัก") ||
-          tx.category === "early_in_fee" ||
-          tx.category === "late_out_fee" ||
-          tx.category.includes("ค่าปรับออกช้า") ||
-          tx.category.includes("ออกช้า") ||
-          tx.category.includes("เข้าก่อน");
-        if (isRoomOrEarlyLate) return;
-
-        const amt = Number(tx.amount || 0);
-        if (tx.category.includes("(Voided)")) {
-          revVoid += Math.abs(amt);
-          return;
-        }
-
-        const cleanCat = tx.category.trim();
+      // Helper: จัดหมวดหมู่รายได้ที่ไม่ใช่ค่าห้องพักตามการตั้งค่า
+      const addCategorizedRevenue = (rawCategory: string, amt: number) => {
+        const cleanCat = rawCategory.replace(" (Voided)", "").trim();
         const mappedCat = posCategoryMap[cleanCat];
-
         if (mappedCat === "addon") {
           revAddon += amt;
         } else if (mappedCat === "minibar") {
@@ -526,9 +522,37 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
         } else {
           revOther += amt;
         }
+      };
+
+      // 1C. รายได้ที่ไม่ใช่ค่าห้องพัก (ตัดรอบ 06:45 - 06:44:59 วันถัดไป ตามกฎข้อ 8)
+      txsIn0645Window.forEach((tx) => {
+        if (tx.transaction_type !== "revenue") return;
+        if (tx.category === "key_deposit" || tx.category === "ค่ามัดจำกุญแจ" || tx.category === "คืนมัดจำกุญแจ") return;
+
+        const isRoomOrEarlyLate =
+          tx.category === "room_charge" ||
+          tx.category.includes("ค่าห้องพัก") ||
+          tx.category === "early_in_fee" ||
+          tx.category === "late_out_fee" ||
+          tx.category.includes("ค่าปรับออกช้า") ||
+          tx.category.includes("ออกช้า") ||
+          tx.category.includes("เข้าก่อน");
+        if (isRoomOrEarlyLate) return;
+
+        // หากเป็นบริการเสริมรายวันที่มีระบุวันที่ใน notes ชัดเจน แต่ไม่ใช่วันรายงานนี้ ให้ข้าม (ไปรับรู้ในวันที่ตรงกับ target_date)
+        const noteDateMatch = String(tx.notes || "").match(/ประจำวันที่\s*(\d{4}-\d{2}-\d{2})/);
+        if (noteDateMatch && noteDateMatch[1] !== reportDateStr) return;
+
+        const amt = Number(tx.amount || 0);
+        if (tx.category.includes("(Voided)")) {
+          revVoid += Math.abs(amt);
+          return;
+        }
+
+        addCategorizedRevenue(tx.category, amt);
       });
 
-      // 1D. บริการเสริมรายวัน (booking_daily_extras) ของวันนี้ที่ยังไม่ได้ถูกสร้างเป็นแถวใน ledger_transactions
+      // 1D. บริการเสริมรายวัน (booking_daily_extras) ของวันนี้ที่ยังไม่ได้ถูกสร้างเป็นแถวใน ledger_transactions วันนี้
       allDailyExtras.forEach((de) => {
         if (de.target_date !== reportDateStr) return;
         const b = bookingMap[de.booking_id];
@@ -539,21 +563,25 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
         const extrasForBooking = dailyExtrasByBooking[de.booking_id] || [];
         const firstDate = ratesForBooking[0]?.target_date || extrasForBooking[0]?.target_date || "";
 
-        const alreadyInLedgerToday = txsIn0645Window.some(
-          (tx) =>
-            tx.booking_id === de.booking_id &&
-            tx.transaction_type === "revenue" &&
-            String(tx.category || "").replace(" (Voided)", "").trim() === baseCat &&
-            (String(tx.notes || "").includes(de.target_date) ||
-              (de.target_date === firstDate && !String(tx.notes || "").includes("ประจำวันที่ ")))
-        );
+        const alreadyInLedgerToday = txsIn0645Window.some((tx) => {
+          if (tx.booking_id !== de.booking_id || tx.transaction_type !== "revenue") return false;
+          if (String(tx.category || "").replace(" (Voided)", "").trim() !== baseCat) return false;
+          const noteDateMatch = String(tx.notes || "").match(/ประจำวันที่\s*(\d{4}-\d{2}-\d{2})/);
+          if (noteDateMatch) return noteDateMatch[1] === de.target_date;
+          return de.target_date === firstDate;
+        });
         if (alreadyInLedgerToday) return;
 
         const amt = Number(de.amount || 0);
         if (isVoid) {
           revVoid += Math.abs(amt);
         } else {
-          revAddon += amt;
+          // ใช้หมวดที่ตั้งค่าไว้ หากไม่พบใน posCategoryMap ให้ถือเป็นค่าส่วนเสริม (addon) ตามค่าเริ่มต้นของบริการเสริมรายวัน
+          if (posCategoryMap[baseCat]) {
+            addCategorizedRevenue(baseCat, amt);
+          } else {
+            revAddon += amt;
+          }
         }
       });
 
@@ -751,11 +779,46 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
       let resBF = 0,
         resAdd = 0,
         resUsed = 0;
+      const advItems: BoxRoomBreakdownItem[] = [];
+      const resItems: BoxRoomBreakdownItem[] = [];
+
+      // แปลงเวลา ISO/UTC เป็นวันที่ตามเขตเวลาไทย (Asia/Bangkok, +07:00)
+      const toThaiDateStr = (isoStr?: string | null): string => {
+        if (!isoStr) return "";
+        const trimmed = String(isoStr).trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+        const d = new Date(trimmed);
+        if (isNaN(d.getTime())) return trimmed.slice(0, 10);
+        const thaiTime = new Date(d.getTime() + 7 * 3600 * 1000);
+        return thaiTime.toISOString().slice(0, 10);
+      };
+
+      // ตรวจสอบว่าบริการเสริมรายวัน (booking_daily_extras) ถูกสร้างเป็นแถวใน ledger_transactions ของบิลนั้นแล้วหรือยัง
+      const isDailyExtraPostedInLedger = (
+        de: any,
+        validBookingTxs: LedgerTransaction[],
+        firstStayDate: string
+      ) => {
+        const baseCat = String(de.category || "").replace(" (Voided)", "").trim();
+        return validBookingTxs.some((tx) => {
+          if (tx.transaction_type !== "revenue" || tx.category.includes("(Voided)")) return false;
+          if (String(tx.category || "").replace(" (Voided)", "").trim() !== baseCat) return false;
+          const noteDateMatch = String(tx.notes || "").match(/ประจำวันที่\s*(\d{4}-\d{2}-\d{2})/);
+          if (noteDateMatch) return noteDateMatch[1] === de.target_date;
+          return de.target_date === firstStayDate;
+        });
+      };
 
       allBookings.forEach((b) => {
         if (b.status === "cancelled") return;
         const bTxs = (txsByBooking[b.id] || []).filter((t) => !t.category.includes("(Voided)"));
         const bRates = dailyRatesByBooking[b.id] || [];
+        const bExtras = (dailyExtrasByBooking[b.id] || []).filter(
+          (de) => !String(de.category || "").includes("(Voided)")
+        );
+        const firstStayDate =
+          bRates[0]?.target_date ||
+          (dailyExtrasByBooking[b.id]?.[0]?.target_date ? String(dailyExtrasByBooking[b.id][0].target_date) : "");
 
         // ยอดรับชำระสะสม (หักส่วนที่เป็นมัดจำกุญแจ และหักส่วนที่คืนเงินทอนทันทีออก)
         const rawPaidBeforeToday = bTxs
@@ -796,63 +859,121 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
           .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
         const paidToday = Math.max(0, rawPaidToday - refundedChangeToday);
 
-        if (paidBeforeToday === 0 && paidToday === 0) return;
+        if (paidBeforeToday === 0 && rawPaidToday === 0 && refundedChangeToday === 0) return;
 
-        // ตรวจสอบว่าเช็คอินเมื่อไหร่
-        const checkInDateStr = (b.actual_check_in_time || b.check_in_time || "").slice(0, 10);
+        // ตรวจสอบวันเข้าพักคืนแรกโดยยึดตารางราคาค่าห้องรายวัน (target_date) หรือเวลาไทย (Asia/Bangkok)
+        const checkInDateStr =
+          bRates[0]?.target_date ||
+          toThaiDateStr(b.actual_check_in_time || b.check_in_time);
         const isStillReservedAfterToday =
           b.status === "reserved" || checkInDateStr > reportDateStr;
         const wasReservedBeforeToday =
           b.status === "reserved" || checkInDateStr >= reportDateStr;
 
         // กรณีเป็นรายการ "รับจอง" (ยังไม่เข้าพักก่อนวันนี้)
-        if (wasReservedBeforeToday && (b.status === "reserved" || (b.created_at && new Date(b.created_at).getTime() < start0645.getTime()) || checkInDateStr > reportDateStr)) {
+        if (
+          wasReservedBeforeToday &&
+          (b.status === "reserved" ||
+            (b.created_at && new Date(b.created_at).getTime() < start0645.getTime()) ||
+            checkInDateStr > reportDateStr)
+        ) {
+          let bResBF = 0;
+          let bResAdd = 0;
+          let bResUsed = 0;
           if (paidBeforeToday > 0) {
-            resBF += paidBeforeToday;
+            bResBF = paidBeforeToday;
           }
           if (isStillReservedAfterToday) {
-            if (paidToday > 0) resAdd += paidToday;
+            if (paidToday > 0) bResAdd = paidToday;
           } else if (checkInDateStr === reportDateStr && paidBeforeToday > 0) {
-            // วันนี้ลูกค้ารายการจองเข้ามาเช็คอินแล้ว -> ยอดจองถูกดึงไปใช้ (หรือโอนไปเป็นค่าห้องวันนี้/จ่ายล่วงหน้า)
-            resUsed += paidBeforeToday;
+            // วันนี้ลูกค้ารายการจองเข้ามาเช็คอินแล้ว -> ยอดจองถูกดึงไปใช้ (โอนไปเป็นค่าห้องวันนี้/จ่ายล่วงหน้า)
+            bResUsed = paidBeforeToday;
+          }
+          const bResCF = Math.max(0, bResBF + bResAdd - bResUsed);
+          if (bResBF > 0 || bResAdd > 0 || bResUsed > 0 || bResCF > 0) {
+            resBF += bResBF;
+            resAdd += bResAdd;
+            resUsed += bResUsed;
+            resItems.push({
+              bookingId: b.id,
+              roomNo: roomMap[b.room_id]?.room_no || "-",
+              guestName: b.guest_name || "ลูกค้าจอง",
+              checkInDateStr,
+              broughtForward: bResBF,
+              addedToday: bResAdd,
+              usedToday: bResUsed,
+              carriedForward: bResCF,
+              note:
+                bResUsed > 0
+                  ? "เช็คอินเข้าพักวันนี้ (ดึงเงินจองไปใช้)"
+                  : checkInDateStr
+                  ? `กำหนดเข้าพัก ${checkInDateStr}`
+                  : "รอเช็คอิน",
+            });
           }
         }
 
-        // กรณีเช็คอินแล้ว และมีหลายคืน (จ่ายล่วงหน้าสำหรับคืนถัดไป)
-        if (!isStillReservedAfterToday && bRates.length > 1) {
+        // กรณีเช็คอินแล้ว และมีหลายคืนหรือมีบริการเสริมรายวัน (จ่ายล่วงหน้าสำหรับคืนถัดไป)
+        if (!isStillReservedAfterToday && (bRates.length > 1 || bExtras.length > 0)) {
           const chargesBeforeToday = bRates
             .filter((r) => r.target_date < reportDateStr)
             .reduce((s, r) => s + Number(r.amount || 0), 0);
           const nonRoomBeforeToday = bTxs
-            .filter(
-              (t) =>
-                t.transaction_type === "revenue" &&
-                Number(t.amount) > 0 &&
-                t.category !== "room_charge" &&
-                t.category !== "ค่าห้องพัก" &&
-                !t.category.includes("มัดจำกุญแจ") &&
-                new Date(t.created_at).getTime() < start0645.getTime()
-            )
+            .filter((t) => {
+              if (
+                t.transaction_type !== "revenue" ||
+                Number(t.amount) <= 0 ||
+                t.category === "room_charge" ||
+                t.category === "ค่าห้องพัก" ||
+                t.category.includes("มัดจำกุญแจ")
+              ) {
+                return false;
+              }
+              const noteDateMatch = String(t.notes || "").match(/ประจำวันที่\s*(\d{4}-\d{2}-\d{2})/);
+              if (noteDateMatch) return noteDateMatch[1] < reportDateStr;
+              return new Date(t.created_at).getTime() < start0645.getTime();
+            })
             .reduce((s, t) => s + Number(t.amount), 0);
+          const unpostedExtrasBeforeToday = bExtras
+            .filter(
+              (de) =>
+                String(de.target_date) < reportDateStr &&
+                !isDailyExtraPostedInLedger(de, bTxs, firstStayDate)
+            )
+            .reduce((s, de) => s + Number(de.amount || 0), 0);
 
           const chargeToday = bRates
             .filter((r) => r.target_date === reportDateStr)
             .reduce((s, r) => s + Number(r.amount || 0), 0);
           const nonRoomToday = bTxs
-            .filter(
-              (t) =>
-                t.transaction_type === "revenue" &&
-                Number(t.amount) > 0 &&
-                t.category !== "room_charge" &&
-                t.category !== "ค่าห้องพัก" &&
-                !t.category.includes("มัดจำกุญแจ") &&
-                new Date(t.created_at).getTime() >= start0645.getTime() &&
-                new Date(t.created_at).getTime() < end0645.getTime()
-            )
+            .filter((t) => {
+              if (
+                t.transaction_type !== "revenue" ||
+                Number(t.amount) <= 0 ||
+                t.category === "room_charge" ||
+                t.category === "ค่าห้องพัก" ||
+                t.category.includes("มัดจำกุญแจ")
+              ) {
+                return false;
+              }
+              const noteDateMatch = String(t.notes || "").match(/ประจำวันที่\s*(\d{4}-\d{2}-\d{2})/);
+              if (noteDateMatch) return noteDateMatch[1] === reportDateStr;
+              const txTime = new Date(t.created_at).getTime();
+              return txTime >= start0645.getTime() && txTime < end0645.getTime();
+            })
             .reduce((s, t) => s + Number(t.amount), 0);
+          const unpostedExtrasToday = bExtras
+            .filter(
+              (de) =>
+                String(de.target_date) === reportDateStr &&
+                !isDailyExtraPostedInLedger(de, bTxs, firstStayDate)
+            )
+            .reduce((s, de) => s + Number(de.amount || 0), 0);
 
-          const totalChargesBeforeToday = chargesBeforeToday + nonRoomBeforeToday;
-          const totalChargesToday = chargeToday + nonRoomToday;
+          const totalChargesBeforeToday =
+            chargesBeforeToday + nonRoomBeforeToday + unpostedExtrasBeforeToday;
+          const totalChargesToday =
+            chargeToday + nonRoomToday + unpostedExtrasToday;
 
           // ยอดจ่ายล่วงหน้ายกมาจากเมื่อวาน (เฉพาะคนที่เช็คอินก่อนวันนี้)
           const bAdvBF =
@@ -862,21 +983,55 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
           // หากเพิ่งเช็คอินวันนี้แต่มีเงินจองยกมา ให้นับรวมในยอดที่นำมาจัดสรรวันนี้
           const transferredFromRes =
             checkInDateStr === reportDateStr ? paidBeforeToday : 0;
-          const totalAvailableToday = paidToday + transferredFromRes;
+          const netPaidDeltaToday = rawPaidToday - refundedChangeToday;
+          const totalAvailableToday = netPaidDeltaToday + transferredFromRes;
 
           // เงินที่รับเพิ่มในวันนี้และเกินกว่าค่าใช้จ่ายของวันนี้ = รับจ่ายล่วงหน้าเพิ่มวันนี้
           const advAddedForBooking = Math.max(0, totalAvailableToday - totalChargesToday);
-          // ยอดจ่ายล่วงหน้าที่ถูกตัดมาใช้เป็นค่าห้องพักของวันนี้
+          // ยอดจ่ายล่วงหน้าที่ถูกตัดมาใช้เป็นค่าห้องพัก/บริการเสริมของวันนี้ (รวมกรณีคืนเงินสดจากการยกเลิกรายการล่วงหน้า)
           const advUsedForBooking = Math.min(
             bAdvBF,
             Math.max(0, totalChargesToday - totalAvailableToday)
           );
+          const bAdvCF = Math.max(0, bAdvBF + advAddedForBooking - advUsedForBooking);
 
-          advBF += bAdvBF;
-          advAdd += advAddedForBooking;
-          advUsed += advUsedForBooking;
+          if (bAdvBF > 0 || advAddedForBooking > 0 || advUsedForBooking > 0 || bAdvCF > 0) {
+            advBF += bAdvBF;
+            advAdd += advAddedForBooking;
+            advUsed += advUsedForBooking;
+
+            const noteParts: string[] = [];
+            if (chargeToday > 0) noteParts.push(`ค่าห้อง ฿${chargeToday.toLocaleString()}`);
+            if (nonRoomToday + unpostedExtrasToday > 0) {
+              noteParts.push(`บริการเสริม ฿${(nonRoomToday + unpostedExtrasToday).toLocaleString()}`);
+            }
+            if (refundedChangeToday > 0) {
+              noteParts.push(`คืนเงินสด -฿${refundedChangeToday.toLocaleString()}`);
+            }
+            if (transferredFromRes > 0) {
+              noteParts.push(`ดึงเงินจอง ฿${transferredFromRes.toLocaleString()}`);
+            }
+
+            advItems.push({
+              bookingId: b.id,
+              roomNo: roomMap[b.room_id]?.room_no || "-",
+              guestName: b.guest_name || "ผู้เข้าพัก",
+              checkInDateStr,
+              broughtForward: bAdvBF,
+              addedToday: advAddedForBooking,
+              usedToday: advUsedForBooking,
+              carriedForward: bAdvCF,
+              note: noteParts.join(" • "),
+            });
+          }
         }
       });
+
+      advItems.sort((a, b) => a.roomNo.localeCompare(b.roomNo, undefined, { numeric: true }));
+      resItems.sort((a, b) => a.roomNo.localeCompare(b.roomNo, undefined, { numeric: true }));
+
+      setAdvanceBreakdown(advItems);
+      setReservationBreakdown(resItems);
 
       setAdvanceBox({
         broughtForward: advBF,
@@ -1152,13 +1307,56 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
                   <span className="font-bold">+{fmt(advanceBox.addedToday)}</span>
                 </div>
                 <div className="flex justify-between text-rose-600">
-                  <span>- ใช้ไปวันนี้ (ตัดเป็นค่าห้อง)</span>
+                  <span>- ใช้ไปวันนี้ (ตัดเป็นค่าห้อง/บริการ)</span>
                   <span className="font-bold">-{fmt(advanceBox.usedToday)}</span>
                 </div>
               </div>
-              <div className="flex justify-between items-center pt-2.5 border-t-2 border-slate-100 font-black text-slate-900">
-                <span>ยอดคงเหลือยกไป</span>
-                <span className="text-base text-sky-700">{fmt(advanceBox.carriedForward)}</span>
+              <div className="space-y-2 pt-2.5 border-t-2 border-slate-100">
+                <div className="flex justify-between items-center font-black text-slate-900">
+                  <span>ยอดคงเหลือยกไป</span>
+                  <span className="text-base text-sky-700">{fmt(advanceBox.carriedForward)}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanceDetails((prev) => !prev)}
+                  className="w-full py-1.5 px-2.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 text-xs font-bold flex items-center justify-between transition-colors"
+                >
+                  <span>🔍 ดูแจกแจงรายห้อง ({advanceBreakdown.length} ห้อง)</span>
+                  <span>{showAdvanceDetails ? "▲ ซ่อน" : "▼ เปิดดู"}</span>
+                </button>
+                {showAdvanceDetails && (
+                  <div className="mt-2 space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                    {advanceBreakdown.length === 0 ? (
+                      <div className="text-xs text-slate-400 text-center py-2 bg-slate-50 rounded-lg">
+                        ไม่มีรายการจ่ายล่วงหน้าในวันนี้
+                      </div>
+                    ) : (
+                      advanceBreakdown.map((item) => (
+                        <div
+                          key={item.bookingId}
+                          className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-[11px] space-y-1"
+                        >
+                          <div className="flex justify-between items-center font-bold text-slate-800">
+                            <span>
+                              ห้อง {item.roomNo} • {item.guestName}
+                            </span>
+                            <span className="text-sky-700 font-black">
+                              ยกไป {fmt(item.carriedForward)}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-1 text-[10px] text-slate-600">
+                            <span>ยกมา: {fmt(item.broughtForward)}</span>
+                            <span className="text-emerald-700">+เพิ่ม: {fmt(item.addedToday)}</span>
+                            <span className="text-rose-600">-ใช้ไป: {fmt(item.usedToday)}</span>
+                          </div>
+                          {item.note && (
+                            <div className="text-[10px] text-slate-500 italic">{item.note}</div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1184,9 +1382,52 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
                   <span className="font-bold">-{fmt(reservationBox.usedToday)}</span>
                 </div>
               </div>
-              <div className="flex justify-between items-center pt-2.5 border-t-2 border-slate-100 font-black text-slate-900">
-                <span>ยอดคงเหลือยกไป</span>
-                <span className="text-base text-purple-700">{fmt(reservationBox.carriedForward)}</span>
+              <div className="space-y-2 pt-2.5 border-t-2 border-slate-100">
+                <div className="flex justify-between items-center font-black text-slate-900">
+                  <span>ยอดคงเหลือยกไป</span>
+                  <span className="text-base text-purple-700">{fmt(reservationBox.carriedForward)}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowReservationDetails((prev) => !prev)}
+                  className="w-full py-1.5 px-2.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 text-xs font-bold flex items-center justify-between transition-colors"
+                >
+                  <span>🔍 ดูแจกแจงรายห้อง ({reservationBreakdown.length} ห้อง)</span>
+                  <span>{showReservationDetails ? "▲ ซ่อน" : "▼ เปิดดู"}</span>
+                </button>
+                {showReservationDetails && (
+                  <div className="mt-2 space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                    {reservationBreakdown.length === 0 ? (
+                      <div className="text-xs text-slate-400 text-center py-2 bg-slate-50 rounded-lg">
+                        ไม่มีรายการเงินรับจองล่วงหน้าในวันนี้
+                      </div>
+                    ) : (
+                      reservationBreakdown.map((item) => (
+                        <div
+                          key={item.bookingId}
+                          className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-[11px] space-y-1"
+                        >
+                          <div className="flex justify-between items-center font-bold text-slate-800">
+                            <span>
+                              ห้อง {item.roomNo} • {item.guestName}
+                            </span>
+                            <span className="text-purple-700 font-black">
+                              ยกไป {fmt(item.carriedForward)}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-1 text-[10px] text-slate-600">
+                            <span>ยกมา: {fmt(item.broughtForward)}</span>
+                            <span className="text-emerald-700">+เพิ่ม: {fmt(item.addedToday)}</span>
+                            <span className="text-rose-600">-ใช้ไป: {fmt(item.usedToday)}</span>
+                          </div>
+                          {item.note && (
+                            <div className="text-[10px] text-slate-500 italic">{item.note}</div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
