@@ -73,6 +73,13 @@ type BoxRoomBreakdownItem = {
   note?: string;
 };
 
+type HeldDepositRoomItem = {
+  bookingId: string;
+  roomNo: string;
+  guestName: string;
+  amount: number;
+};
+
 export default function DailyReport({ dateOffset }: { dateOffset: number }) {
   const { getNow } = useSimulatedTime();
   const [loading, setLoading] = useState(true);
@@ -118,11 +125,14 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
   });
   const [advanceBreakdown, setAdvanceBreakdown] = useState<BoxRoomBreakdownItem[]>([]);
   const [reservationBreakdown, setReservationBreakdown] = useState<BoxRoomBreakdownItem[]>([]);
+  const [showAdvanceChangeDetails, setShowAdvanceChangeDetails] = useState(false);
+  const [showReservationChangeDetails, setShowReservationChangeDetails] = useState(false);
   const [showAdvanceDetails, setShowAdvanceDetails] = useState(false);
   const [showReservationDetails, setShowReservationDetails] = useState(false);
 
-  // Separate Key Deposit Box (แยกจากหมวดบัญชีรายได้ตามข้อ 6)
+  // Separate Key Deposit Box & Mode 1A Cash Handover (แยกจากหมวดบัญชีรายได้ตามข้อ 6)
   const [keyDepositBox, setKeyDepositBox] = useState({
+    broughtForward: 0,
     receivedToday: 0,
     receivedCashToday: 0,
     receivedTransferToday: 0,
@@ -130,6 +140,8 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
     forfeitedToday: 0,
     activeHeldTotal: 0,
   });
+  const [heldDepositRooms, setHeldDepositRooms] = useState<HeldDepositRoomItem[]>([]);
+  const [showHeldDepositRooms, setShowHeldDepositRooms] = useState(false);
 
   useEffect(() => {
     async function fetchDailyData() {
@@ -597,6 +609,17 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
       setOtherRevenue(revOther);
       setVoidedRevenue(revVoid);
 
+      // แปลงเวลา ISO/UTC เป็นวันที่ตามเขตเวลาไทย (Asia/Bangkok, +07:00)
+      const toThaiDateStr = (isoStr?: string | null): string => {
+        if (!isoStr) return "";
+        const trimmed = String(isoStr).trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+        const d = new Date(trimmed);
+        if (isNaN(d.getTime())) return trimmed.slice(0, 10);
+        const thaiTime = new Date(d.getTime() + 7 * 3600 * 1000);
+        return thaiTime.toISOString().slice(0, 10);
+      };
+
       // =========================================================================
       // 2. คำนวณเงินมัดจำกุญแจ (Key Deposit Box) และแยกออกจากยอดรับชำระค่าห้อง/บริการ
       // =========================================================================
@@ -611,6 +634,7 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
       });
 
       let totalActiveHeldDeposit = 0;
+      const heldRooms: HeldDepositRoomItem[] = [];
 
       Object.entries(txsByBooking).forEach(([bId, bTxs]) => {
         const validTxs = bTxs.filter((t) => !t.category.includes("(Voided)"));
@@ -667,6 +691,7 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
 
         let cumulativePaid = 0;
         let cumulativeDepHeld = 0;
+        let depHeldUpToEnd0645 = 0;
         validTxs
           .filter((t) => t.transaction_type === "payment" && Number(t.amount) < 0)
           .forEach((pTx) => {
@@ -676,20 +701,52 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
             const depAddedByThisTx = Math.max(0, newHeld - cumulativeDepHeld);
             cumulativeDepHeld = newHeld;
             depositPortionByPaymentTxId[pTx.id] = depAddedByThisTx;
+            if (new Date(pTx.created_at).getTime() < end0645.getTime()) {
+              depHeldUpToEnd0645 += depAddedByThisTx;
+            }
           });
 
-        const refundedAll = validTxs
-          .filter((t) => t.category.includes("คืนมัดจำกุญแจ"))
+        const refundedUpToEnd0645 = validTxs
+          .filter(
+            (t) =>
+              t.category.includes("คืนมัดจำกุญแจ") &&
+              new Date(t.created_at).getTime() < end0645.getTime()
+          )
           .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
-        const forfeitedAll = validTxs
-          .filter((t) => t.category.includes("ริบมัดจำ"))
+        const forfeitedUpToEnd0645 = validTxs
+          .filter(
+            (t) =>
+              t.category.includes("ริบมัดจำ") &&
+              new Date(t.created_at).getTime() < end0645.getTime()
+          )
           .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
 
         const b = bookingMap[bId];
-        if (b && b.status === "checked_in") {
-          totalActiveHeldDeposit += Math.max(0, cumulativeDepHeld - refundedAll - forfeitedAll);
+        if (b && b.status !== "cancelled") {
+          const checkInDateStr =
+            rates[0]?.target_date || toThaiDateStr(b.actual_check_in_time || b.check_in_time);
+          const isCheckedInByEndOfDay =
+            b.status !== "reserved" && checkInDateStr <= reportDateStr;
+          const hasNotCheckedOutByEndOfDay =
+            b.status === "checked_in" ||
+            (b.status === "checked_out" &&
+              b.check_out_time &&
+              new Date(b.check_out_time).getTime() >= end0645.getTime());
+          const remDep = Math.max(0, depHeldUpToEnd0645 - refundedUpToEnd0645 - forfeitedUpToEnd0645);
+          if (isCheckedInByEndOfDay && hasNotCheckedOutByEndOfDay && remDep > 0) {
+            totalActiveHeldDeposit += remDep;
+            heldRooms.push({
+              bookingId: b.id,
+              roomNo: roomMap[b.room_id]?.room_no || "-",
+              guestName: b.guest_name || "ผู้เข้าพัก",
+              amount: remDep,
+            });
+          }
         }
       });
+
+      heldRooms.sort((a, b) => a.roomNo.localeCompare(b.roomNo, undefined, { numeric: true }));
+      setHeldDepositRooms(heldRooms);
 
       // =========================================================================
       // 3. คำนวณฝั่งรับชำระเงิน (Middle Column) และกล่องมัดจำกุญแจวันนี้
@@ -758,7 +815,13 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
       setPayVoidRefund(voidRefundToday);
       setTotalExpense(expenseToday);
 
+      const depBroughtForward = Math.max(
+        0,
+        totalActiveHeldDeposit - depReceivedToday + depRefundedToday + depForfeitedToday
+      );
+
       setKeyDepositBox({
+        broughtForward: depBroughtForward,
         receivedToday: depReceivedToday,
         receivedCashToday: depReceivedCashToday,
         receivedTransferToday: depReceivedTransferToday,
@@ -781,17 +844,6 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
         resUsed = 0;
       const advItems: BoxRoomBreakdownItem[] = [];
       const resItems: BoxRoomBreakdownItem[] = [];
-
-      // แปลงเวลา ISO/UTC เป็นวันที่ตามเขตเวลาไทย (Asia/Bangkok, +07:00)
-      const toThaiDateStr = (isoStr?: string | null): string => {
-        if (!isoStr) return "";
-        const trimmed = String(isoStr).trim();
-        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-        const d = new Date(trimmed);
-        if (isNaN(d.getTime())) return trimmed.slice(0, 10);
-        const thaiTime = new Date(d.getTime() + 7 * 3600 * 1000);
-        return thaiTime.toISOString().slice(0, 10);
-      };
 
       // ตรวจสอบว่าบริการเสริมรายวัน (booking_daily_extras) ถูกสร้างเป็นแถวใน ledger_transactions ของบิลนั้นแล้วหรือยัง
       const isDailyExtraPostedInLedger = (
@@ -1079,19 +1131,25 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
 
   // ส่วนต่างกระทบยอด (Reconciliation)
   const reconciliationDiff = netPaymentReceived - netTotalRevenue;
-  const netAdvanceMovement =
-    advanceBox.addedToday -
-    advanceBox.usedToday +
-    (reservationBox.addedToday - reservationBox.usedToday);
+  const netAdvanceToday = advanceBox.addedToday - advanceBox.usedToday;
+  const netReservationToday = reservationBox.addedToday - reservationBox.usedToday;
+  const netAdvanceMovement = netAdvanceToday + netReservationToday;
+  const explainedDiff = netAdvanceMovement - keyDepositBox.forfeitedToday;
 
-  // ยอดเงินสดในลิ้นชักจริง (รวมรับ/คืนมัดจำกุญแจเงินสด)
-  const physicalCashInDrawer =
-    payCash -
-    totalExpense +
-    keyDepositBox.receivedCashToday -
-    keyDepositBox.refundedToday;
+  // คำนวณการส่งเงินสด & เงินสดสำรองมัดจำกุญแจตามระบบ 1A (แยกกองมัดจำกุญแจไว้ในลิ้นชักเท่ากับจำนวนห้องที่ยังไม่เช็คเอาท์)
+  const cashReceivedTodayTotal = payCash + keyDepositBox.receivedCashToday;
+  const cashPaidOutTodayTotal = totalExpense + payVoidRefund + keyDepositBox.refundedToday;
+  const totalCashInDrawerBeforeReserve =
+    keyDepositBox.broughtForward + cashReceivedTodayTotal - cashPaidOutTodayTotal;
+  const cashToHandOver = totalCashInDrawerBeforeReserve - keyDepositBox.activeHeldTotal;
 
   const fmt = (n: number) => `฿${Number(n || 0).toLocaleString()}`;
+  const fmtSigned = (n: number) =>
+    n > 0
+      ? `+฿${Number(n).toLocaleString()}`
+      : n < 0
+      ? `-฿${Math.abs(Number(n)).toLocaleString()}`
+      : "฿0";
 
   return (
     <div className="space-y-6">
@@ -1296,67 +1354,103 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
               <h3 className="font-black text-sm">🏨 จ่ายล่วงหน้า (พักหลายคืน)</h3>
               <p className="text-[11px] text-sky-200">ลูกค้าเช็คอินแล้ว ชำระล่วงหน้าสำหรับคืนถัดไป</p>
             </div>
-            <div className="p-4 flex-1 flex flex-col justify-between text-sm space-y-2">
+            <div className="p-4 flex-1 flex flex-col justify-between text-sm space-y-2.5">
               <div className="space-y-2">
-                <div className="flex justify-between text-slate-600">
+                <div className="flex justify-between items-center text-slate-600">
                   <span>ยอดยกมา</span>
                   <span className="font-bold text-slate-800">{fmt(advanceBox.broughtForward)}</span>
                 </div>
-                <div className="flex justify-between text-emerald-700">
-                  <span>+ รับเพิ่มวันนี้</span>
-                  <span className="font-bold">+{fmt(advanceBox.addedToday)}</span>
-                </div>
-                <div className="flex justify-between text-rose-600">
-                  <span>- ใช้ไปวันนี้ (ตัดเป็นค่าห้อง/บริการ)</span>
-                  <span className="font-bold">-{fmt(advanceBox.usedToday)}</span>
+
+                {/* แถวสรุปยอดรวมรับ-ใช้วันนี้ (คลิกเพื่อกางดู +รับ / -ใช้ และรายชื่อห้อง) */}
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvanceChangeDetails((prev) => !prev)}
+                    className="w-full py-2 px-2.5 rounded-xl bg-sky-50/80 hover:bg-sky-100/80 border border-sky-200 flex justify-between items-center transition-colors text-left"
+                  >
+                    <span className="font-bold text-sky-950 text-xs flex items-center gap-1">
+                      <span>{showAdvanceChangeDetails ? "▾" : "▸"}</span>
+                      <span>ยอดรวมรับ-ใช้วันนี้</span>
+                      <span className="text-[10px] font-semibold text-sky-600 underline">
+                        (คลิกดู)
+                      </span>
+                    </span>
+                    <span
+                      className={`font-black text-sm ${
+                        netAdvanceToday > 0
+                          ? "text-emerald-700"
+                          : netAdvanceToday < 0
+                          ? "text-rose-600"
+                          : "text-slate-700"
+                      }`}
+                    >
+                      {fmtSigned(netAdvanceToday)}
+                    </span>
+                  </button>
+
+                  {showAdvanceChangeDetails && (
+                    <div className="mt-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5 text-xs">
+                      <div className="flex justify-between text-emerald-700">
+                        <span>+ ยอดที่รับเพิ่มวันนี้</span>
+                        <span className="font-bold">+{fmt(advanceBox.addedToday)}</span>
+                      </div>
+                      <div className="flex justify-between text-rose-600">
+                        <span>- ยอดที่ใช้ไปวันนี้ (ตัดค่าห้อง/บริการ)</span>
+                        <span className="font-bold">-{fmt(advanceBox.usedToday)}</span>
+                      </div>
+
+                      <div className="pt-1.5 border-t border-slate-200">
+                        <button
+                          type="button"
+                          onClick={() => setShowAdvanceDetails((prev) => !prev)}
+                          className="w-full py-1 px-2 rounded-lg bg-white hover:bg-sky-50 text-sky-800 border border-sky-200 text-[11px] font-bold flex items-center justify-between transition-colors"
+                        >
+                          <span>🔍 ดูรายชื่อห้อง ({advanceBreakdown.length} ห้อง)</span>
+                          <span>{showAdvanceDetails ? "▲ ซ่อนรายชื่อ" : "▼ แสดงรายชื่อ"}</span>
+                        </button>
+
+                        {showAdvanceDetails && (
+                          <div className="mt-2 space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                            {advanceBreakdown.length === 0 ? (
+                              <div className="text-[11px] text-slate-400 text-center py-2 bg-white rounded-lg">
+                                ไม่มีรายการจ่ายล่วงหน้าในวันนี้
+                              </div>
+                            ) : (
+                              advanceBreakdown.map((item) => (
+                                <div
+                                  key={item.bookingId}
+                                  className="p-2 rounded-lg bg-white border border-slate-200 text-[11px] space-y-1"
+                                >
+                                  <div className="flex justify-between items-center font-bold text-slate-800">
+                                    <span>
+                                      ห้อง {item.roomNo} • {item.guestName}
+                                    </span>
+                                    <span className="text-sky-700 font-black">
+                                      ยกไป {fmt(item.carriedForward)}
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-1 text-[10px] text-slate-600">
+                                    <span>ยกมา: {fmt(item.broughtForward)}</span>
+                                    <span className="text-emerald-700">+เพิ่ม: {fmt(item.addedToday)}</span>
+                                    <span className="text-rose-600">-ใช้ไป: {fmt(item.usedToday)}</span>
+                                  </div>
+                                  {item.note && (
+                                    <div className="text-[10px] text-slate-500 italic">{item.note}</div>
+                                  )}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
-              <div className="space-y-2 pt-2.5 border-t-2 border-slate-100">
-                <div className="flex justify-between items-center font-black text-slate-900">
-                  <span>ยอดคงเหลือยกไป</span>
-                  <span className="text-base text-sky-700">{fmt(advanceBox.carriedForward)}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowAdvanceDetails((prev) => !prev)}
-                  className="w-full py-1.5 px-2.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 text-xs font-bold flex items-center justify-between transition-colors"
-                >
-                  <span>🔍 ดูแจกแจงรายห้อง ({advanceBreakdown.length} ห้อง)</span>
-                  <span>{showAdvanceDetails ? "▲ ซ่อน" : "▼ เปิดดู"}</span>
-                </button>
-                {showAdvanceDetails && (
-                  <div className="mt-2 space-y-1.5 max-h-60 overflow-y-auto pr-1">
-                    {advanceBreakdown.length === 0 ? (
-                      <div className="text-xs text-slate-400 text-center py-2 bg-slate-50 rounded-lg">
-                        ไม่มีรายการจ่ายล่วงหน้าในวันนี้
-                      </div>
-                    ) : (
-                      advanceBreakdown.map((item) => (
-                        <div
-                          key={item.bookingId}
-                          className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-[11px] space-y-1"
-                        >
-                          <div className="flex justify-between items-center font-bold text-slate-800">
-                            <span>
-                              ห้อง {item.roomNo} • {item.guestName}
-                            </span>
-                            <span className="text-sky-700 font-black">
-                              ยกไป {fmt(item.carriedForward)}
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-3 gap-1 text-[10px] text-slate-600">
-                            <span>ยกมา: {fmt(item.broughtForward)}</span>
-                            <span className="text-emerald-700">+เพิ่ม: {fmt(item.addedToday)}</span>
-                            <span className="text-rose-600">-ใช้ไป: {fmt(item.usedToday)}</span>
-                          </div>
-                          {item.note && (
-                            <div className="text-[10px] text-slate-500 italic">{item.note}</div>
-                          )}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                )}
+
+              <div className="pt-2.5 border-t-2 border-slate-100 flex justify-between items-center font-black text-slate-900">
+                <span>ยอดคงเหลือยกไป</span>
+                <span className="text-base text-sky-700">{fmt(advanceBox.carriedForward)}</span>
               </div>
             </div>
           </div>
@@ -1367,67 +1461,103 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
               <h3 className="font-black text-sm">📅 เงินรับจองล่วงหน้า</h3>
               <p className="text-[11px] text-purple-200">ลูกค้าโอนจองล่วงหน้า ยังไม่เช็คอินเข้าพัก</p>
             </div>
-            <div className="p-4 flex-1 flex flex-col justify-between text-sm space-y-2">
+            <div className="p-4 flex-1 flex flex-col justify-between text-sm space-y-2.5">
               <div className="space-y-2">
-                <div className="flex justify-between text-slate-600">
+                <div className="flex justify-between items-center text-slate-600">
                   <span>ยอดยกมา</span>
                   <span className="font-bold text-slate-800">{fmt(reservationBox.broughtForward)}</span>
                 </div>
-                <div className="flex justify-between text-emerald-700">
-                  <span>+ รับจองเพิ่มวันนี้</span>
-                  <span className="font-bold">+{fmt(reservationBox.addedToday)}</span>
-                </div>
-                <div className="flex justify-between text-rose-600">
-                  <span>- ใช้ไปวันนี้ (เข้าพักวันนี้)</span>
-                  <span className="font-bold">-{fmt(reservationBox.usedToday)}</span>
+
+                {/* แถวสรุปยอดรวมรับ-ใช้วันนี้ (คลิกเพื่อกางดู +รับจอง / -ใช้ไป และรายชื่อห้อง) */}
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setShowReservationChangeDetails((prev) => !prev)}
+                    className="w-full py-2 px-2.5 rounded-xl bg-purple-50/80 hover:bg-purple-100/80 border border-purple-200 flex justify-between items-center transition-colors text-left"
+                  >
+                    <span className="font-bold text-purple-950 text-xs flex items-center gap-1">
+                      <span>{showReservationChangeDetails ? "▾" : "▸"}</span>
+                      <span>ยอดรวมรับ-ใช้วันนี้</span>
+                      <span className="text-[10px] font-semibold text-purple-600 underline">
+                        (คลิกดู)
+                      </span>
+                    </span>
+                    <span
+                      className={`font-black text-sm ${
+                        netReservationToday > 0
+                          ? "text-emerald-700"
+                          : netReservationToday < 0
+                          ? "text-rose-600"
+                          : "text-slate-700"
+                      }`}
+                    >
+                      {fmtSigned(netReservationToday)}
+                    </span>
+                  </button>
+
+                  {showReservationChangeDetails && (
+                    <div className="mt-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5 text-xs">
+                      <div className="flex justify-between text-emerald-700">
+                        <span>+ ยอดที่รับจองเพิ่มวันนี้</span>
+                        <span className="font-bold">+{fmt(reservationBox.addedToday)}</span>
+                      </div>
+                      <div className="flex justify-between text-rose-600">
+                        <span>- ยอดที่ใช้ไปวันนี้ (เข้าพักวันนี้)</span>
+                        <span className="font-bold">-{fmt(reservationBox.usedToday)}</span>
+                      </div>
+
+                      <div className="pt-1.5 border-t border-slate-200">
+                        <button
+                          type="button"
+                          onClick={() => setShowReservationDetails((prev) => !prev)}
+                          className="w-full py-1 px-2 rounded-lg bg-white hover:bg-purple-50 text-purple-800 border border-purple-200 text-[11px] font-bold flex items-center justify-between transition-colors"
+                        >
+                          <span>🔍 ดูรายชื่อห้อง ({reservationBreakdown.length} ห้อง)</span>
+                          <span>{showReservationDetails ? "▲ ซ่อนรายชื่อ" : "▼ แสดงรายชื่อ"}</span>
+                        </button>
+
+                        {showReservationDetails && (
+                          <div className="mt-2 space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                            {reservationBreakdown.length === 0 ? (
+                              <div className="text-[11px] text-slate-400 text-center py-2 bg-white rounded-lg">
+                                ไม่มีรายการเงินรับจองล่วงหน้าในวันนี้
+                              </div>
+                            ) : (
+                              reservationBreakdown.map((item) => (
+                                <div
+                                  key={item.bookingId}
+                                  className="p-2 rounded-lg bg-white border border-slate-200 text-[11px] space-y-1"
+                                >
+                                  <div className="flex justify-between items-center font-bold text-slate-800">
+                                    <span>
+                                      ห้อง {item.roomNo} • {item.guestName}
+                                    </span>
+                                    <span className="text-purple-700 font-black">
+                                      ยกไป {fmt(item.carriedForward)}
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-1 text-[10px] text-slate-600">
+                                    <span>ยกมา: {fmt(item.broughtForward)}</span>
+                                    <span className="text-emerald-700">+เพิ่ม: {fmt(item.addedToday)}</span>
+                                    <span className="text-rose-600">-ใช้ไป: {fmt(item.usedToday)}</span>
+                                  </div>
+                                  {item.note && (
+                                    <div className="text-[10px] text-slate-500 italic">{item.note}</div>
+                                  )}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
-              <div className="space-y-2 pt-2.5 border-t-2 border-slate-100">
-                <div className="flex justify-between items-center font-black text-slate-900">
-                  <span>ยอดคงเหลือยกไป</span>
-                  <span className="text-base text-purple-700">{fmt(reservationBox.carriedForward)}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowReservationDetails((prev) => !prev)}
-                  className="w-full py-1.5 px-2.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 text-xs font-bold flex items-center justify-between transition-colors"
-                >
-                  <span>🔍 ดูแจกแจงรายห้อง ({reservationBreakdown.length} ห้อง)</span>
-                  <span>{showReservationDetails ? "▲ ซ่อน" : "▼ เปิดดู"}</span>
-                </button>
-                {showReservationDetails && (
-                  <div className="mt-2 space-y-1.5 max-h-60 overflow-y-auto pr-1">
-                    {reservationBreakdown.length === 0 ? (
-                      <div className="text-xs text-slate-400 text-center py-2 bg-slate-50 rounded-lg">
-                        ไม่มีรายการเงินรับจองล่วงหน้าในวันนี้
-                      </div>
-                    ) : (
-                      reservationBreakdown.map((item) => (
-                        <div
-                          key={item.bookingId}
-                          className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-[11px] space-y-1"
-                        >
-                          <div className="flex justify-between items-center font-bold text-slate-800">
-                            <span>
-                              ห้อง {item.roomNo} • {item.guestName}
-                            </span>
-                            <span className="text-purple-700 font-black">
-                              ยกไป {fmt(item.carriedForward)}
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-3 gap-1 text-[10px] text-slate-600">
-                            <span>ยกมา: {fmt(item.broughtForward)}</span>
-                            <span className="text-emerald-700">+เพิ่ม: {fmt(item.addedToday)}</span>
-                            <span className="text-rose-600">-ใช้ไป: {fmt(item.usedToday)}</span>
-                          </div>
-                          {item.note && (
-                            <div className="text-[10px] text-slate-500 italic">{item.note}</div>
-                          )}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                )}
+
+              <div className="pt-2.5 border-t-2 border-slate-100 flex justify-between items-center font-black text-slate-900">
+                <span>ยอดคงเหลือยกไป</span>
+                <span className="text-base text-purple-700">{fmt(reservationBox.carriedForward)}</span>
               </div>
             </div>
           </div>
@@ -1436,24 +1566,43 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
 
       {/* ==================== แถบสรุปกระทบยอดด้านล่าง (Bottom Reconciliation Bar) ==================== */}
       <div className="bg-slate-900 text-white p-5 rounded-2xl shadow-md border-t-4 border-indigo-500">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
-          <div className="bg-slate-800/90 p-3.5 rounded-xl border border-slate-700">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
+          <div className="md:col-span-3 bg-slate-800/90 p-3.5 rounded-xl border border-slate-700 flex flex-col justify-between">
             <div className="text-xs text-slate-400 font-bold">รวมรายได้สุทธิ (ฝั่งซ้าย)</div>
-            <div className="text-2xl font-black text-indigo-300 mt-0.5">{fmt(netTotalRevenue)}</div>
+            <div className="text-2xl font-black text-indigo-300 mt-1">{fmt(netTotalRevenue)}</div>
           </div>
-          <div className="bg-slate-800/90 p-3.5 rounded-xl border border-slate-700">
+
+          <div className="md:col-span-3 bg-slate-800/90 p-3.5 rounded-xl border border-slate-700 flex flex-col justify-between">
             <div className="text-xs text-slate-400 font-bold">รวมรับชำระสุทธิ (ฝั่งกลาง)</div>
-            <div className="text-2xl font-black text-emerald-400 mt-0.5">{fmt(netPaymentReceived)}</div>
+            <div className="text-2xl font-black text-emerald-400 mt-1">{fmt(netPaymentReceived)}</div>
           </div>
-          <div className="bg-slate-800/90 p-3.5 rounded-xl border border-slate-700">
-            <div className="text-xs text-slate-400 font-bold">การเคลื่อนไหวเงินล่วงหน้า/รับจอง</div>
-            <div className="text-xl font-black text-sky-300 mt-0.5">
-              {netAdvanceMovement >= 0 ? `+${fmt(netAdvanceMovement)}` : `-${fmt(Math.abs(netAdvanceMovement))}`}
+
+          <div className="md:col-span-3 bg-slate-800/90 p-3.5 rounded-xl border border-slate-700 flex flex-col justify-between">
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-slate-300 font-bold">ที่มาของส่วนต่าง (ล่วงหน้า + รับจอง)</span>
+              <span className="text-base font-black text-sky-300">{fmtSigned(explainedDiff)}</span>
+            </div>
+            <div className="mt-1.5 pt-1.5 border-t border-slate-700/80 space-y-0.5 text-[11px] text-slate-300">
+              <div className="flex justify-between">
+                <span>• จ่ายล่วงหน้าวันนี้ (+รับ - ใช้):</span>
+                <span className="font-bold text-sky-200">{fmtSigned(netAdvanceToday)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>• เงินรับจองวันนี้ (+รับ - ใช้):</span>
+                <span className="font-bold text-purple-200">{fmtSigned(netReservationToday)}</span>
+              </div>
+              {keyDepositBox.forfeitedToday > 0 && (
+                <div className="flex justify-between text-rose-300">
+                  <span>• หัก ริบมัดจำกุญแจเป็นค่าปรับ:</span>
+                  <span className="font-bold">-{fmt(keyDepositBox.forfeitedToday)}</span>
+                </div>
+              )}
             </div>
           </div>
+
           <div
-            className={`p-3.5 rounded-xl border ${
-              reconciliationDiff === 0
+            className={`md:col-span-3 p-3.5 rounded-xl border flex flex-col justify-between ${
+              reconciliationDiff === explainedDiff
                 ? "bg-emerald-950/60 border-emerald-700"
                 : "bg-amber-950/60 border-amber-600"
             }`}
@@ -1461,61 +1610,201 @@ export default function DailyReport({ dateOffset }: { dateOffset: number }) {
             <div className="text-xs text-slate-300 font-bold">
               ส่วนต่าง (รับชำระสุทธิ - รายได้สุทธิ)
             </div>
-            <div
-              className={`text-2xl font-black mt-0.5 ${
-                reconciliationDiff === 0
-                  ? "text-emerald-400"
-                  : reconciliationDiff > 0
-                  ? "text-amber-300"
-                  : "text-rose-400"
-              }`}
-            >
-              {reconciliationDiff > 0 ? "+" : ""}
-              {fmt(reconciliationDiff)}
+            <div className="flex items-baseline justify-between gap-2 mt-1">
+              <div
+                className={`text-2xl font-black ${
+                  reconciliationDiff === 0
+                    ? "text-emerald-400"
+                    : reconciliationDiff > 0
+                    ? "text-amber-300"
+                    : "text-rose-400"
+                }`}
+              >
+                {fmtSigned(reconciliationDiff)}
+              </div>
+              {reconciliationDiff === explainedDiff && (
+                <span className="text-[11px] font-bold text-emerald-300 bg-emerald-900/60 px-2 py-0.5 rounded-full">
+                  ✅ ยอดตรงกัน
+                </span>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* ==================== กล่องแยกต่างหาก: สรุปเงินมัดจำกุญแจ (ตามข้อ 6) ==================== */}
-      <div className="bg-amber-50/90 border-2 border-amber-200 rounded-2xl p-5 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 mb-4 border-b border-amber-200">
+      {/* ==================== กล่องแยกต่างหาก: สรุปเงินมัดจำกุญแจ & การส่งเงินสดแบบ 1A ==================== */}
+      <div className="bg-amber-50/90 border-2 border-amber-200 rounded-2xl p-5 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-amber-200">
           <div>
             <h3 className="font-black text-amber-950 text-base flex items-center gap-2">
-              <span>🔑</span> กล่องแยกบัญชี: สรุปเงินมัดจำกุญแจ (ไม่รวมในรายได้ค่าห้อง)
+              <span>🔑</span> กล่องแยกบัญชี: สรุปเงินมัดจำกุญแจ &amp; การส่งเงินสดประจำวัน/กะ (ระบบ 1A)
             </h3>
             <p className="text-xs text-amber-800 mt-0.5">
-              เงินมัดจำกุญแจเป็นเงินพักรอคืนลูกค้า จะถูกนับเป็นรายได้หมวด &quot;4. ค่าปรับ&quot; เฉพาะเมื่อมีการสั่งริบมัดจำตอนเช็คเอาท์เท่านั้น
+              แยกกองเงินสดสำรองมัดจำกุญแจไว้ในลิ้นชักเท่ากับจำนวนห้องที่ยังไม่เช็คเอาท์เสมอ เพื่อให้พนักงานรู้ยอดเงินสดที่ต้องนำส่งผู้จัดการได้อย่างชัดเจน
             </p>
-          </div>
-          <div className="bg-white border border-amber-300 px-3.5 py-2 rounded-xl text-right shrink-0">
-            <div className="text-[11px] font-bold text-slate-500">💵 เงินสดในลิ้นชักจริงวันนี้ (รวมมัดจำเงินสดสุทธิ)</div>
-            <div className="text-lg font-black text-emerald-700">{fmt(physicalCashInDrawer)}</div>
           </div>
         </div>
 
+        {/* 4 การ์ดสรุปความเคลื่อนไหวมัดจำกุญแจ */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
           <div className="bg-white p-3.5 rounded-xl border border-amber-200/80">
-            <div className="text-xs font-bold text-slate-500">รับมัดจำกุญแจวันนี้</div>
+            <div className="text-xs font-bold text-slate-500">มัดจำกุญแจยกมา (ต้นวัน)</div>
+            <div className="text-xl font-black text-slate-800 mt-1">{fmt(keyDepositBox.broughtForward)}</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">เงินสดสำรองมัดจำในลิ้นชักต้นวัน</div>
+          </div>
+          <div className="bg-white p-3.5 rounded-xl border border-amber-200/80">
+            <div className="text-xs font-bold text-slate-500">+ รับมัดจำกุญแจวันนี้</div>
             <div className="text-xl font-black text-amber-800 mt-1">+{fmt(keyDepositBox.receivedToday)}</div>
             <div className="text-[11px] text-slate-500 mt-0.5">
               สด {fmt(keyDepositBox.receivedCashToday)} • โอน {fmt(keyDepositBox.receivedTransferToday)}
             </div>
           </div>
           <div className="bg-white p-3.5 rounded-xl border border-amber-200/80">
-            <div className="text-xs font-bold text-slate-500">คืนมัดจำกุญแจวันนี้</div>
-            <div className="text-xl font-black text-emerald-700 mt-1">-{fmt(keyDepositBox.refundedToday)}</div>
-            <div className="text-[11px] text-slate-500 mt-0.5">คืนให้ลูกค้าตอนเช็คเอาท์</div>
+            <div className="text-xs font-bold text-slate-500">- คืน / ริบมัดจำวันนี้</div>
+            <div className="text-xl font-black text-emerald-700 mt-1">
+              -{fmt(keyDepositBox.refundedToday + keyDepositBox.forfeitedToday)}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-0.5">
+              คืนสด {fmt(keyDepositBox.refundedToday)}
+              {keyDepositBox.forfeitedToday > 0 ? ` • ริบเป็นค่าปรับ ${fmt(keyDepositBox.forfeitedToday)}` : ""}
+            </div>
           </div>
-          <div className="bg-white p-3.5 rounded-xl border border-amber-200/80">
-            <div className="text-xs font-bold text-slate-500">หัก/ริบเป็นค่าปรับวันนี้</div>
-            <div className="text-xl font-black text-rose-600 mt-1">{fmt(keyDepositBox.forfeitedToday)}</div>
-            <div className="text-[11px] text-slate-500 mt-0.5">โอนเข้าหมวด 4. ค่าปรับแล้ว</div>
-          </div>
-          <div className="bg-amber-100/70 p-3.5 rounded-xl border border-amber-300">
-            <div className="text-xs font-bold text-amber-900">มัดจำกุญแจที่ถืออยู่ (ห้องพักปัจจุบัน)</div>
+          <div className="bg-amber-100/80 p-3.5 rounded-xl border border-amber-300">
+            <div className="text-xs font-bold text-amber-900">= มัดจำที่ต้องกันไว้ในลิ้นชัก (ปลายวัน)</div>
             <div className="text-xl font-black text-amber-950 mt-1">{fmt(keyDepositBox.activeHeldTotal)}</div>
-            <div className="text-[11px] text-amber-800 mt-0.5">ยอดมัดจำที่รอคืนของห้องที่ยังไม่เช็คเอาท์</div>
+            <div className="text-[11px] text-amber-800 mt-0.5">
+              สำหรับห้องที่ยังไม่เช็คเอาท์ ({heldDepositRooms.length} ห้อง)
+            </div>
+          </div>
+        </div>
+
+        {/* ตารางคำนวณการส่งเงินสด & เงินสดสำรองมัดจำกุญแจ (สำหรับเก็บเงิน / เซ็นรับ) */}
+        <div className="bg-white rounded-xl border-2 border-amber-300 overflow-hidden">
+          <div className="px-4 py-2.5 bg-amber-100/90 border-b border-amber-200 flex flex-wrap justify-between items-center gap-2">
+            <span className="font-black text-amber-950 text-sm">
+              💵 ตารางคำนวณเงินสดในลิ้นชัก &amp; ยอดเงินสดส่งผู้จัดการ (สำหรับเก็บเงิน / เซ็นรับ)
+            </span>
+            <span className="text-[11px] font-bold text-amber-800 bg-white px-2.5 py-0.5 rounded-full border border-amber-300">
+              ไม่มีวงเงิน Petty Cash แยก • กันเงินสดมัดจำตามจำนวนกุญแจห้องที่ยังพักอยู่
+            </span>
+          </div>
+
+          <div className="p-4 space-y-2 text-sm">
+            {/* บรรทัด 1: ยกมาต้นวัน */}
+            <div className="flex justify-between items-center py-1 border-b border-slate-100 text-slate-700">
+              <span>1. เงินสดสำรองมัดจำกุญแจยกมาในลิ้นชัก (ต้นวัน)</span>
+              <span className="font-bold text-slate-900">{fmt(keyDepositBox.broughtForward)}</span>
+            </div>
+
+            {/* บรรทัด 2: + เงินสดรับวันนี้ */}
+            <div className="flex justify-between items-center py-1 border-b border-slate-100 text-emerald-800">
+              <span>
+                2. + เงินสดรับวันนี้{" "}
+                <span className="text-xs text-slate-500">
+                  (ค่าห้อง/บริการเงินสด {fmt(payCash)} + มัดจำกุญแจจ่ายสด {fmt(keyDepositBox.receivedCashToday)})
+                </span>
+              </span>
+              <span className="font-bold">+{fmt(cashReceivedTodayTotal)}</span>
+            </div>
+
+            {/* บรรทัด 3: - เงินสดจ่ายวันนี้ */}
+            <div className="flex justify-between items-center py-1 border-b border-slate-100 text-rose-700">
+              <span>
+                3. - เงินสดจ่ายออกวันนี้{" "}
+                <span className="text-xs text-slate-500">
+                  (รายจ่ายหน้าร้าน/คืนเงิน {fmt(totalExpense + payVoidRefund)} + คืนมัดจำกุญแจห้องออกวันนี้{" "}
+                  {fmt(keyDepositBox.refundedToday)})
+                </span>
+              </span>
+              <span className="font-bold">-{fmt(cashPaidOutTodayTotal)}</span>
+            </div>
+
+            {/* บรรทัด 4: = เงินสดรวมที่มีอยู่ในลิ้นชักจริง */}
+            <div className="flex justify-between items-center py-2 px-3 rounded-lg bg-slate-100 font-black text-slate-900">
+              <span>= เงินสดรวมที่มีอยู่ในลิ้นชักจริง (ก่อนหักมัดจำห้องที่ยังพักอยู่)</span>
+              <span className="text-base">{fmt(totalCashInDrawerBeforeReserve)}</span>
+            </div>
+
+            {/* บรรทัด 5: - หัก เงินมัดจำกุญแจที่ต้องกันไว้ในลิ้นชัก */}
+            <div className="py-1.5 px-3 rounded-lg bg-amber-50/80 border border-amber-200/80 space-y-2">
+              <div className="flex flex-wrap justify-between items-center gap-2 text-amber-950 font-bold">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span>
+                    - หัก เงินมัดจำกุญแจที่ต้องกันไว้ในลิ้นชัก (สำหรับห้องที่ยังไม่เช็คเอาท์ {heldDepositRooms.length} ห้อง)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowHeldDepositRooms((prev) => !prev)}
+                    className="px-2 py-0.5 rounded-md bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold transition-colors"
+                  >
+                    🔍 {showHeldDepositRooms ? "ซ่อนรายชื่อห้อง ▲" : "ดูรายชื่อห้องที่ถือมัดจำ ▼"}
+                  </button>
+                </div>
+                <span className="font-black text-amber-900">-{fmt(keyDepositBox.activeHeldTotal)}</span>
+              </div>
+
+              {showHeldDepositRooms && (
+                <div className="pt-2 border-t border-amber-200/70">
+                  {heldDepositRooms.length === 0 ? (
+                    <div className="text-xs text-slate-500 py-1">
+                      ไม่มีห้องที่ถือเงินมัดจำกุญแจค้างอยู่ ณ สิ้นวัน
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                      {heldDepositRooms.map((r) => (
+                        <div
+                          key={r.bookingId}
+                          className="px-2.5 py-1.5 rounded-lg bg-white border border-amber-200 flex justify-between items-center text-xs"
+                        >
+                          <span className="font-bold text-slate-800">
+                            ห้อง {r.roomNo} • {r.guestName}
+                          </span>
+                          <span className="font-black text-amber-800">{fmt(r.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* บรรทัด 6: ยอดเงินสดที่ต้องนำส่งผู้จัดการ / เซ็นรับ */}
+            <div
+              className={`p-3.5 rounded-xl border-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+                cashToHandOver >= 0
+                  ? "bg-emerald-50 border-emerald-400 text-emerald-950"
+                  : "bg-rose-50 border-rose-400 text-rose-950"
+              }`}
+            >
+              <div>
+                <div className="font-black text-base flex items-center gap-1.5">
+                  <span>{cashToHandOver >= 0 ? "👉" : "⚠️"}</span>
+                  <span>
+                    {cashToHandOver >= 0
+                      ? "ยอดเงินสดที่พนักงานต้องนำส่งผู้จัดการ / เซ็นรับ"
+                      : "เงินสดในลิ้นชักติดลบ (ต้องเบิกเงินสดเติมเข้าลิ้นชักให้พนักงาน)"}
+                  </span>
+                </div>
+                <div className="text-xs mt-0.5 opacity-85">
+                  {cashToHandOver >= 0
+                    ? `พนักงานนำส่งเงินสดยอดนี้ให้ผู้จัดการ และเหลือเงินสดติดลิ้นชักไว้ ${fmt(
+                        keyDepositBox.activeHeldTotal
+                      )} สำหรับคืนมัดจำกุญแจลูกค้า`
+                    : `เนื่องจากลูกค้าโอนมัดจำหรือมีรายจ่ายเงินสด ทำให้เงินสดในลิ้นชักขาดอยู่ ${fmt(
+                        Math.abs(cashToHandOver)
+                      )} ผู้จัดการต้องเติมเงินสดจำนวนนี้เข้าลิ้นชักเพื่อให้มีเงินสำรองมัดจำครบ ${fmt(
+                        keyDepositBox.activeHeldTotal
+                      )}`}
+                </div>
+              </div>
+              <div
+                className={`text-2xl font-black shrink-0 ${
+                  cashToHandOver >= 0 ? "text-emerald-700" : "text-rose-700"
+                }`}
+              >
+                {cashToHandOver >= 0 ? fmt(cashToHandOver) : fmtSigned(cashToHandOver)}
+              </div>
+            </div>
           </div>
         </div>
       </div>
