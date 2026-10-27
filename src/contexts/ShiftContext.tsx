@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { computeShiftDrawer } from "@/lib/cashHandover";
 
 export interface Shift {
   id: string;
@@ -128,28 +129,9 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
         shiftData.operator_name = shiftData.staff_name;
       }
 
-      // คำนวณยอดเงินสดจาก Ledger
-      const { data: ledgers } = await supabase
-        .from('ledger_transactions')
-        .select('amount, category, transaction_type')
-        .eq('shift_id', shiftData.id);
-        
-      let cashReceived = 0;
-      let cashExpenses = 0;
-
-      if (ledgers) {
-        ledgers.forEach(txn => {
-          if (txn.category === 'cash' && txn.transaction_type === 'payment') {
-            // การรับชำระเงินถูกบันทึกเป็นค่าลบ (-) เพื่อหักล้างหนี้
-            cashReceived += Math.abs(Number(txn.amount));
-          } else if (txn.transaction_type === 'expense' || (txn.transaction_type === 'deposit' && Number(txn.amount) < 0 && (txn.category.includes('คืนมัดจำ') || txn.category.includes('คืนเงินทอน')))) {
-            // ค่าใช้จ่ายถูกบันทึกเป็นลบ
-            cashExpenses += Math.abs(Number(txn.amount));
-          }
-        });
-      }
-      
-      shiftData.expected_cash = shiftData.initial_cash + cashReceived - cashExpenses;
+      // คำนวณยอดเงินสดในลิ้นชักจาก Ledger (รับเงินสด - ค่าใช้จ่าย/คืนเงินสด - ยอดที่ส่งเงินระหว่างกะไปแล้ว)
+      const drawer = await computeShiftDrawer(shiftData);
+      shiftData.expected_cash = drawer.drawer;
     
       // อัปเดตตาราง shifts ด้วยเพื่อความแน่ใจ
       supabase.from('shifts').update({ expected_cash: shiftData.expected_cash }).eq('id', shiftData.id).then();

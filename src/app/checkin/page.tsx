@@ -8,7 +8,9 @@ import CleaningNoteModal from "@/app/components/CleaningNoteModal";
 import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
 import { useShift } from "@/contexts/ShiftContext";
 import ShiftManager from "@/app/components/ShiftManager";
+import ShiftExpenseButton from "@/app/components/ShiftExpenseModal";
 import { logActivity } from "@/lib/activityLog";
+import { computeActiveHeldDeposit } from "@/lib/keyDeposit";
 
 export type RoomStatus = {
   id: string;
@@ -39,6 +41,7 @@ export type RoomStatus = {
     c_all?: number;
     c_today?: number;
   has_key_deposit?: boolean;
+  held_key_deposit?: number; // มัดจำกุญแจที่ถืออยู่จริง (เฉพาะห้องที่เช็คอินแล้ว)
   map_x?: number;
   map_y?: number;
   map_width?: number;
@@ -56,6 +59,7 @@ export default function CheckinPage() {
   const [noteRoom, setNoteRoom] = useState<{ id: string; room_no: string } | null>(null);
   
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
+  const [showKeyRooms, setShowKeyRooms] = useState(false);
   const [floorPlans, setFloorPlans] = useState<Record<string, string>>({});
   const [showClearRoomsPinModal, setShowClearRoomsPinModal] = useState(false);
   const [clearRoomsPin, setClearRoomsPin] = useState("");
@@ -240,6 +244,8 @@ export default function CheckinPage() {
     // [NEW] Fetch ledger transactions for active bookings to calculate unpaid balances
     const activeBookingIds = allTargetBookings?.map(b => b.id) || [];
     const financialSummary: Record<string, { charges: number, payments: number, balance: number, c_all: number, c_today: number, has_key_deposit?: boolean }> = {};
+    const ledgersByBooking: Record<string, { booking_id: string; amount: number; category: string; transaction_type: string }[]> = {};
+    const heldDepositByBooking: Record<string, number> = {};
       
       const dailyRatesMap: Record<string, number> = {};
       const targetDateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth()+1).padStart(2,'0')}-${String(targetDate.getDate()).padStart(2,'0')}`;
@@ -320,6 +326,15 @@ export default function CheckinPage() {
           .in('booking_id', activeBookingIds);
           
         if (!ledgerError && ledgers) {
+          ledgers.forEach(tx => {
+            if (tx.booking_id) {
+              if (!ledgersByBooking[tx.booking_id]) ledgersByBooking[tx.booking_id] = [];
+              ledgersByBooking[tx.booking_id].push(tx);
+            }
+          });
+          Object.entries(ledgersByBooking).forEach(([bid, txs]) => {
+            heldDepositByBooking[bid] = computeActiveHeldDeposit(txs);
+          });
           ledgers.forEach(tx => {
             if (tx.booking_id) {
               const cat = String(tx.category || '');
@@ -478,6 +493,7 @@ export default function CheckinPage() {
               finalRoom.c_all = financialSummary[activeBooking.id]?.c_all || 0;
               finalRoom.c_today = financialSummary[activeBooking.id]?.c_today || 0;
               finalRoom.has_key_deposit = financialSummary[activeBooking.id]?.has_key_deposit;
+              finalRoom.held_key_deposit = heldDepositByBooking[activeBooking.id] || 0;
               finalRoom.actual_price = getDailyPrice(activeBooking);
             }
           }
@@ -865,6 +881,48 @@ export default function CheckinPage() {
           </button>
         </div>
       )}
+
+      {/* แถบสรุปมัดจำกุญแจคงเหลือปัจจุบัน + รายจ่ายกะนี้ (ไม่แสดงสำหรับแม่บ้าน) */}
+      {!isHousekeeper && dateOffset === 0 && !loading && (() => {
+        const keyRooms = rooms
+          .filter(r => r.status === 'occupied' && (r.held_key_deposit || 0) > 0)
+          .sort((a, b) => a.room_no.localeCompare(b.room_no, undefined, { numeric: true }));
+        const keyTotal = keyRooms.reduce((s, r) => s + (r.held_key_deposit || 0), 0);
+        return (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-3 py-2 shadow-xs space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setShowKeyRooms(p => !p)}
+                className="flex items-center gap-2 text-left"
+                title="ยอดรวมมัดจำกุญแจของทุกห้องที่ยังไม่เช็คเอาท์ (ต้องกันเงินสดไว้ในลิ้นชักเพื่อคืนลูกค้า)"
+              >
+                <span className="text-lg">🔑</span>
+                <span className="text-xs sm:text-sm font-bold text-amber-900">มัดจำกุญแจคงเหลือปัจจุบัน:</span>
+                <span className="text-base sm:text-lg font-black text-amber-800">฿{keyTotal.toLocaleString()}</span>
+                <span className="text-[11px] font-bold text-amber-700 bg-white border border-amber-200 rounded-full px-2 py-0.5">
+                  {keyRooms.length} ห้อง {showKeyRooms ? '▲' : '▼'}
+                </span>
+              </button>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-amber-800 hidden md:inline">ต้องกันเงินสดจำนวนนี้ไว้ในลิ้นชักเพื่อคืนลูกค้าตอนเช็คเอาท์</span>
+                {activeShift && !activeShift.housekeeper_only && <ShiftExpenseButton compact />}
+              </div>
+            </div>
+            {showKeyRooms && (
+              <div className="flex flex-wrap gap-1.5 pt-1 border-t border-amber-200">
+                {keyRooms.length === 0 ? (
+                  <span className="text-xs text-amber-700">ไม่มีห้องที่ถือเงินมัดจำกุญแจอยู่</span>
+                ) : keyRooms.map(r => (
+                  <span key={r.id} className="text-[11px] bg-white border border-amber-200 rounded-lg px-2 py-0.5 font-bold text-slate-700">
+                    ห้อง {r.room_no} <span className="text-amber-700">฿{(r.held_key_deposit || 0).toLocaleString()}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {isManagerOrAdmin ? (
         <>
@@ -1275,6 +1333,11 @@ export default function CheckinPage() {
                         {/* Financial Summary for Occupied Rooms */}
                         {room.status === 'occupied' && (
                           <div className="absolute bottom-0 left-0 right-0 w-full h-[14px] sm:h-[18px] flex items-center justify-center gap-0.5 sm:gap-1 text-[7px] sm:text-[9.5px] font-bold z-30 whitespace-nowrap bg-white/60 backdrop-blur-[1px] border-t border-slate-300/40 text-slate-500 tracking-tight overflow-hidden px-0.5">
+                            {(room.held_key_deposit || 0) > 0 && (
+                              <span className="text-amber-700 font-black pr-0.5 mr-0.5 border-r border-slate-300/60" title="มัดจำกุญแจที่ต้องคืนลูกค้าเป็นเงินสดตอนเช็คเอาท์">
+                                🔑{room.held_key_deposit}
+                              </span>
+                            )}
                             <span>{room.total_charges || 0}</span>
                             <span className="text-slate-300 font-bold">-</span>
                             <span>{room.total_payments || 0}</span>
