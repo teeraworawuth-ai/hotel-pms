@@ -66,7 +66,7 @@ export default function GuestReport({ dateOffset }: GuestReportProps) {
     return ia - ib;
   });
 
-  if (loading) return <div className="py-10 text-center text-slate-500">กำลังประมวลผลข้อมูล...</div>;
+  if (loading) return <div className="py-10 text-center text-slate-500">กำลังประมวลผลข้อมูลผู้เข้าพัก...</div>;
 
   if (cards.length === 0) return (
     <div className="py-20 text-center bg-white rounded-xl shadow-sm border border-slate-200">
@@ -155,7 +155,7 @@ export default function GuestReport({ dateOffset }: GuestReportProps) {
 
                     {/* Center Section (Room No & Price) */}
                     <div className="flex-1 w-full h-full flex flex-col items-center justify-start pt-[18px] sm:pt-6 pb-[14px] sm:pb-[18px]">
-                      <div className="absolute top-0 text-[15px] sm:text-xl top-[1px] sm:top-1 font-black text-slate-700 leading-none flex items-center justify-center gap-0 mix-blend-multiply">
+                      <div className="absolute top-[1px] sm:top-1 text-[15px] sm:text-xl font-black text-slate-700 leading-none flex items-center justify-center gap-0 mix-blend-multiply">
                         <span>{c.roomNo}</span>
                         <div className="flex items-center text-[13px] leading-none -space-x-1 -ml-0.5">
                           {icons && icons.length > 0 ? (
@@ -174,7 +174,7 @@ export default function GuestReport({ dateOffset }: GuestReportProps) {
                             )}
                           </div>
                           {/* Line 2: Difference */}
-                          <div className="h-[8px] sm:h-[10px] sm:h-[12px] flex items-center justify-center">
+                          <div className="h-[8px] sm:h-[12px] flex items-center justify-center">
                             {c.diffText && (
                               <span className={`${c.diffColor} text-[7.5px] sm:text-[10px] leading-none font-bold`}>({c.diffText})</span>
                             )}
@@ -216,29 +216,33 @@ export default function GuestReport({ dateOffset }: GuestReportProps) {
       {selected && (() => {
         const DAY_MS = 24 * 60 * 60 * 1000;
         const MAX_SPAN = 3 * DAY_MS;
+        const PAD_MS = 6 * 60 * 60 * 1000; // เผื่อขอบซ้าย-ขวา 6 ชม. เพื่อให้เลื่อนดูไฟก่อนเช็คอิน/หลังเช็คเอาท์ได้
         const stayStart = new Date(selected.checkIn).getTime();
         const stayEnd = new Date(selected.checkOut).getTime();
         const segStart = new Date(selected.segStart).getTime();
         const segEnd = new Date(selected.segEnd).getTime();
 
+        const paddedStart = stayStart - PAD_MS;
+        const paddedEnd = stayEnd + PAD_MS;
+
         let maxBoundStart: number;
         let maxBoundEnd: number;
 
-        if (stayEnd - stayStart <= MAX_SPAN) {
-          maxBoundStart = stayStart;
-          maxBoundEnd = stayEnd;
+        if (paddedEnd - paddedStart <= MAX_SPAN) {
+          maxBoundStart = paddedStart;
+          maxBoundEnd = paddedEnd;
         } else {
           let start = segStart - DAY_MS;
           let end = start + MAX_SPAN;
-          if (start < stayStart) {
-            start = stayStart;
+          if (start < paddedStart) {
+            start = paddedStart;
             end = start + MAX_SPAN;
-          } else if (end > stayEnd) {
-            end = stayEnd;
+          } else if (end > paddedEnd) {
+            end = paddedEnd;
             start = end - MAX_SPAN;
           }
-          maxBoundStart = Math.max(stayStart, start);
-          maxBoundEnd = Math.min(stayEnd, end);
+          maxBoundStart = Math.max(paddedStart, start);
+          maxBoundEnd = Math.min(paddedEnd, end);
         }
 
         const isMultiNight = selected.totalNights > 1;
@@ -247,11 +251,11 @@ export default function GuestReport({ dateOffset }: GuestReportProps) {
 
         return (
           <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-3 sm:p-4" onClick={() => setSelected(null)}>
-            <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto p-4 sm:p-5" onClick={e => e.stopPropagation()}>
+            <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto p-4 sm:p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
               <div className="flex justify-between items-start mb-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-2xl font-black text-slate-800">{selected.roomNo}</span>
+                    <span className="text-2xl font-black text-slate-800">ห้อง {selected.roomNo}</span>
                     <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded text-xs font-bold">{selected.location}</span>
                     {isMultiNight && (
                       <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs font-black">
@@ -264,7 +268,7 @@ export default function GuestReport({ dateOffset }: GuestReportProps) {
                       </span>
                     )}
                   </div>
-                  <div className="text-sm font-semibold text-slate-700 mt-0.5">{selected.guestName}</div>
+                  <div className="text-sm font-semibold text-slate-700 mt-0.5">{selected.guestName || "ลูกค้าทั่วไป"}</div>
                   <div className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                     <span>เช็คอิน: {fmtDt(selected.checkIn)}</span>
                     <span>-</span>
@@ -292,7 +296,7 @@ export default function GuestReport({ dateOffset }: GuestReportProps) {
                     )}
                   </div>
                 </div>
-                <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+                <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700 text-2xl leading-none p-1">×</button>
               </div>
 
               <EnergyRangeChart
@@ -302,7 +306,7 @@ export default function GuestReport({ dateOffset }: GuestReportProps) {
                 maxBoundStartMs={maxBoundStart}
                 maxBoundEndMs={maxBoundEnd}
                 focusStartMs={segStart}
-                focusEndMs={segEnd}
+                focusEndMs={Math.max(segEnd, segStart + 30 * 60000)}
                 activeNightLabel={isMultiNight ? `คืนที่ ${selected.nightNo}/${selected.totalNights}` : 'รอบคืนนี้'}
               />
             </div>

@@ -9,12 +9,21 @@ export interface StayWindow {
 
 // ช่วงเวลาเข้าพักจริง:
 // - เข้า: actual_check_in_time ถ้ามี ไม่เช่นนั้นใช้ check_in_time
-// - ออก: ถ้าเช็คเอาท์แล้วใช้ actual_check_out_time (ข้อมูลเก่าใช้ check_out_time) / ถ้ายังพักอยู่ใช้เวลาปัจจุบัน
-export function getStayWindow(b: any, now: Date): StayWindow {
+// - ออก: ถ้าเช็คเอาท์แล้ว (หรือห้องไม่ได้มีสถานะ occupied แล้วและเลยกำหนดออก) ใช้ actual_check_out_time / check_out_time
+//        ถ้ายังพักอยู่จริง ใช้เวลาปัจจุบัน
+export function getStayWindow(b: any, now: Date, room?: any): StayWindow {
   const checkIn = new Date(b.actual_check_in_time || b.check_in_time);
   const scheduledOut = new Date(b.check_out_time);
-  const ended = b.status === 'checked_out';
-  const checkOut = ended ? new Date(b.actual_check_out_time || b.check_out_time) : now;
+  const roomObj = room ?? (Array.isArray(b.rooms) ? b.rooms[0] : b.rooms);
+  const isRoomStillOccupiedByThisBooking =
+    roomObj && roomObj.status
+      ? roomObj.status === 'occupied' &&
+        (!roomObj.check_in_time || Math.abs(new Date(roomObj.check_in_time).getTime() - new Date(b.check_in_time).getTime()) < 24 * 3600000)
+      : now.getTime() <= scheduledOut.getTime() + 6 * 3600000;
+
+  const ended = b.status === 'checked_out' || (b.status === 'checked_in' && !isRoomStillOccupiedByThisBooking && now.getTime() > scheduledOut.getTime());
+  const rawCheckOut = ended ? new Date(b.actual_check_out_time || b.check_out_time) : now;
+  const checkOut = rawCheckOut.getTime() < checkIn.getTime() ? scheduledOut : rawCheckOut;
   return { checkIn, checkOut, ended, scheduledOut };
 }
 

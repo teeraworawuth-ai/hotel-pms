@@ -42,28 +42,37 @@ export async function GET(request: Request) {
   const { start: startOfDay, end: endOfDay, dateStr } = businessWindow(dateOffset);
   const now = new Date();
 
-  const { data: bookingsData, error: bErr } = await supabase
-    .from('bookings')
-    .select('*, rooms ( room_no, room_type, location, sort_order, price_night, price_temp )')
-    .in('status', STAY_STATUSES)
-    .lte('check_in_time', new Date(endOfDay.getTime() + DAY).toISOString())
-    .or('status.eq.checked_in,check_out_time.gte.' + startOfDay.toISOString());
+  const [bookingsRes, settingsRes, dailyPricingRes] = await Promise.all([
+    supabase
+      .from('bookings')
+      .select('*, rooms ( id, room_no, room_type, location, sort_order, price_night, price_temp, status, check_in_time, check_out_time )')
+      .in('status', STAY_STATUSES)
+      .lte('check_in_time', new Date(endOfDay.getTime() + DAY).toISOString())
+      .or(`status.eq.checked_in,check_out_time.gte.${new Date(startOfDay.getTime() - DAY).toISOString()}`),
+    supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'locations_order')
+      .maybeSingle(),
+    supabase
+      .from('daily_pricing_settings')
+      .select('rate_plan_id')
+      .eq('target_date', dateStr)
+      .maybeSingle(),
+  ]);
 
-  if (bErr || !bookingsData) {
+  if (bookingsRes.error || !bookingsRes.data) {
     return NextResponse.json({ error: 'Failed to process' }, { status: 500 });
   }
 
-  const { data: settingsData } = await supabase
-    .from('system_settings')
-    .select('value')
-    .eq('key', 'locations_order')
-    .maybeSingle();
-  const locationsOrder: string[] = (settingsData?.value as string[]) || [];
+  const bookingsData = bookingsRes.data;
+  const locationsOrder: string[] = (settingsRes.data?.value as string[]) || [];
 
   // หา "คืน" ที่เริ่มในวันธุรกิจที่เลือก
   const items: any[] = [];
   bookingsData.forEach((b: any) => {
-    const w = getStayWindow(b, now);
+    const room = Array.isArray(b.rooms) ? b.rooms[0] : b.rooms;
+    const w = getStayWindow(b, now, room);
     if (w.checkIn > now) return;
     // เช็คอินแล้วออก/ย้ายภายใน 10 นาที = เช็คอินผิดห้อง/ไม่ตั้งใจ -> ไม่แสดงในรายงานผู้เข้าพัก
     if (w.ended && (w.checkOut.getTime() - w.checkIn.getTime()) <= 10 * 60000) return;
@@ -78,7 +87,7 @@ export async function GET(request: Request) {
         items.push({
           b,
           w,
-          seg: { start: s.start, end: segActualEnd },
+          seg: { start: s.start, end: Math.max(s.start, segActualEnd) },
           nightNo: i + 1,
           totalNights: allSegs.length,
         });
@@ -90,67 +99,101 @@ export async function GET(request: Request) {
     return NextResponse.json({ cards: [], locationsOrder, dateStr }, { headers: { 'Cache-Control': 'no-store' } });
   }
 
-  // ราคาของวันนั้น
+  // ดึงราคาของแต่ละคืนใน booking_daily_rates และราคาตาม Rate Plan (Smart Pricing) พร้อมกัน
   const bookingIds = Array.from(new Set(items.map(it => it.b.id)));
-  const { data: rates } = await supabase
-    .from('booking_daily_rates')
-    .select('booking_id, amount, target_date')
-    .in('booking_id', bookingIds)
-    .eq('target_date', dateStr);
-  const rateMap: Record<string, number> = {};
-  (rates || []).forEach((r: any) => { rateMap[r.booking_id] = Number(r.amount); });
+  const ratePlanId = dailyPricingRes.data?.rate_plan_id;
 
-  // ราคาตั้งไว้ตามประเภทห้อง (Smart Pricing ของวันนั้น)
-  const { data: smartPrices } = await supabase
-    .from('smart_prices')
-    .select('room_type, price')
-    .eq('target_date', dateStr);
+  const [ratesRes, basePricesRes, calPricesRes] = await Promise.all([
+    supabase
+      .from('booking_daily_rates')
+      .select('booking_id, amount, target_date')
+      .in('booking_id', bookingIds)
+      .order('target_date', { ascending: true }),
+    ratePlanId
+      ? supabase.from('rate_plan_room_types').select('room_type, base_price').eq('rate_plan_id', ratePlanId)
+      : Promise.resolve({ data: null }),
+    ratePlanId
+      ? supabase.from('rate_plan_calendar').select('room_type, price').eq('rate_plan_id', ratePlanId).eq('target_date', dateStr)
+      : Promise.resolve({ data: null }),
+  ]);
+
+  const rateMapByDate: Record<string, number> = {};
+  const ratesListByBooking: Record<string, number[]> = {};
+  (ratesRes.data || []).forEach((r: any) => {
+    if (!ratesListByBooking[r.booking_id]) ratesListByBooking[r.booking_id] = [];
+    ratesListByBooking[r.booking_id].push(Number(r.amount));
+    if (r.target_date === dateStr) {
+      rateMapByDate[r.booking_id] = Number(r.amount);
+    }
+  });
+
   const smartPricesMap: Record<string, number> = {};
-  (smartPrices || []).forEach((sp: any) => { smartPricesMap[sp.room_type] = Number(sp.price); });
+  if (basePricesRes.data) {
+    basePricesRes.data.forEach((bp: any) => { smartPricesMap[bp.room_type] = Number(bp.base_price); });
+  }
+  if (calPricesRes.data) {
+    calPricesRes.data.forEach((cp: any) => { smartPricesMap[cp.room_type] = Number(cp.price); });
+  }
 
-  // ข้อมูลไฟของห้องที่เกี่ยวข้อง ครอบคลุมทุกคืนที่จะแสดง
-  const roomIds = Array.from(new Set(items.map(it => it.b.room_id)));
+  // ดึงข้อมูลไฟของห้องที่เกี่ยวข้องแบบขนานตาม room_id (ใช้ Index room_id เร็วขึ้น ~50 เท่า)
+  const roomIds = Array.from(new Set(items.map(it => it.b.room_id).filter(Boolean)));
   const minStart = Math.min(...items.map(it => it.seg.start));
   const maxEnd = Math.max(...items.map(it => it.seg.end));
-  let energy: any[] = [];
-  let from = 0;
-  const limit = 1000;
-  while (true) {
-    const { data } = await supabase
-      .from('energy_logs')
-      .select('room_id, wattage, recorded_at')
-      .in('room_id', roomIds)
-      .gte('recorded_at', new Date(minStart).toISOString())
-      .lte('recorded_at', new Date(maxEnd).toISOString())
-      .order('recorded_at', { ascending: true })
-      .range(from, from + limit - 1);
-    if (!data) break;
-    energy = energy.concat(data);
-    if (data.length < limit) break;
-    from += limit;
-  }
+  const minStartIso = new Date(minStart).toISOString();
+  const maxEndIso = new Date(maxEnd).toISOString();
+
+  const energyByRoom: Record<string, { wattage: number; tMs: number }[]> = {};
+  await Promise.all(
+    roomIds.map(async (rId) => {
+      const { data } = await supabase
+        .from('energy_logs')
+        .select('wattage, recorded_at')
+        .eq('room_id', rId)
+        .gte('recorded_at', minStartIso)
+        .lte('recorded_at', maxEndIso)
+        .limit(1000);
+      if (data && data.length > 0) {
+        energyByRoom[rId] = data
+          .map((l: any) => ({
+            wattage: Number(l.wattage) || 0,
+            tMs: new Date(l.recorded_at).getTime(),
+          }))
+          .filter(l => Number.isFinite(l.tMs))
+          .sort((a, b) => a.tMs - b.tMs);
+      } else {
+        energyByRoom[rId] = [];
+      }
+    })
+  );
 
   const cards = items.map(({ b, w, seg, nightNo, totalNights }) => {
     const room = Array.isArray(b.rooms) ? b.rooms[0] : b.rooms;
-    const logs = energy.filter(l => {
-      if (l.room_id !== b.room_id) return false;
-      const t = new Date(l.recorded_at).getTime();
-      return t >= seg.start && t <= seg.end;
-    });
+    const roomLogs = (energyByRoom[b.room_id] || []).filter(
+      l => l.tMs >= seg.start && l.tMs <= seg.end
+    );
     let kwh = 0;
-    for (let i = 1; i < logs.length; i++) {
-      const dtMs = new Date(logs[i].recorded_at).getTime() - new Date(logs[i - 1].recorded_at).getTime();
-      if (dtMs > 15 * 60000) continue; // ข้ามช่วงที่ไม่มีข้อมูล
-      kwh += (((Number(logs[i - 1].wattage) || 0) + (Number(logs[i].wattage) || 0)) / 2) * (dtMs / 3600000) / 1000;
+    for (let i = 1; i < roomLogs.length; i++) {
+      const dtMs = roomLogs[i].tMs - roomLogs[i - 1].tMs;
+      if (dtMs > 25 * 60000) continue; // ข้ามช่วงที่ขาดสัญญาณ
+      kwh += (((roomLogs[i - 1].wattage + roomLogs[i].wattage) / 2) * (dtMs / 3600000)) / 1000;
     }
 
     const schedMs = w.scheduledOut.getTime() - w.checkIn.getTime();
+    const isOvernight = b.stay_type ? b.stay_type === 'overnight' : schedMs >= 12 * 3600000;
 
     // คำนวณราคาตั้งต้นและส่วนต่าง เหมือนหน้า Check-in
-    const defPrice = b.stay_type === 'short_stay'
+    const defPrice = !isOvernight
       ? (room?.price_temp ?? null)
       : (smartPricesMap[room?.room_type] !== undefined ? smartPricesMap[room?.room_type] : (room?.price_night ?? null));
-    const actualPrice = rateMap[b.id] !== undefined ? rateMap[b.id] : (b.actual_price ?? null);
+
+    let actualPrice: number | null = null;
+    if (rateMapByDate[b.id] !== undefined) {
+      actualPrice = rateMapByDate[b.id];
+    } else if (ratesListByBooking[b.id] && ratesListByBooking[b.id][nightNo - 1] !== undefined) {
+      actualPrice = ratesListByBooking[b.id][nightNo - 1];
+    } else if (b.actual_price !== null && b.actual_price !== undefined) {
+      actualPrice = totalNights > 1 ? Math.round(Number(b.actual_price) / totalNights) : Number(b.actual_price);
+    }
 
     let basePriceText: number | null = null;
     let diffText: string | null = null;
@@ -183,7 +226,7 @@ export async function GET(request: Request) {
       checkOut: w.checkOut.toISOString(),
       scheduledOut: w.scheduledOut.toISOString(),
       ended: w.ended,
-      isOvernight: b.stay_type ? b.stay_type === 'overnight' : schedMs >= 12 * 3600000,
+      isOvernight,
       nights: Math.max(1, Math.round(schedMs / DAY)),
       hours: Math.max(1, Math.round(schedMs / 3600000)),
       nightNo,

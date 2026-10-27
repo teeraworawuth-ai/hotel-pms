@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
 export async function GET(request: Request) {
@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const targetDate = new Date();
   targetDate.setDate(targetDate.getDate() + dateOffset);
 
-  const startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() - 3, 0, 0, 0);
+  const startOfRange = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() - 1, 0, 0, 0);
   let endOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 2, 0, 0, 0);
 
   const now = new Date();
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     if (now < startOfRange) {
       return NextResponse.json({ formattedData: [] }, {
         headers: {
-          'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+          'Cache-Control': 'no-store, max-age=0',
         },
       });
     } else {
@@ -31,37 +31,21 @@ export async function GET(request: Request) {
     }
   }
 
-  let allLogs: any[] = [];
-  let from = 0;
-  const limit = 1000;
-  let fetchError = null;
-
-  while (true) {
-    const { data: logData, error } = await supabase
-      .from("energy_logs")
-      .select("wattage, recorded_at")
-      .eq("room_id", roomId)
-      .gte("recorded_at", startOfRange.toISOString())
-      .lte("recorded_at", endOfDay.toISOString())
-      .order("recorded_at", { ascending: true })
-      .range(from, from + limit - 1);
-
-    if (error) {
-      fetchError = error;
-      break;
-    }
-    if (logData) {
-      allLogs = allLogs.concat(logData);
-      if (logData.length < limit) break;
-    } else {
-      break;
-    }
-    from += limit;
-  }
+  const { data: logData, error: fetchError } = await supabase
+    .from("energy_logs")
+    .select("wattage, recorded_at")
+    .eq("room_id", roomId)
+    .gte("recorded_at", startOfRange.toISOString())
+    .lte("recorded_at", endOfDay.toISOString())
+    .limit(1000);
 
   if (fetchError) {
     return NextResponse.json({ error: 'Error fetching energy logs' }, { status: 500 });
   }
+
+  const allLogs = (logData || []).slice().sort(
+    (a: any, b: any) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+  );
 
   const rawData = allLogs.map((log: any) => {
     const d = new Date(log.recorded_at);
@@ -79,7 +63,7 @@ export async function GET(request: Request) {
     if (i < rawData.length - 1) {
       const curr = rawData[i];
       const next = rawData[i + 1];
-      if (next.fullTime - curr.fullTime > 10 * 60 * 1000) {
+      if (next.fullTime - curr.fullTime > 25 * 60 * 1000) {
         formattedData.push({
           time: "",
           fullTime: curr.fullTime + 1000,
@@ -96,7 +80,7 @@ export async function GET(request: Request) {
 
   return NextResponse.json({ formattedData }, {
     headers: {
-      'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+      'Cache-Control': 'no-store, max-age=0',
     },
   });
 }
