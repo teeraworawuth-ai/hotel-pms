@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useShift } from '@/contexts/ShiftContext';
 import { computeDeposit } from '@/lib/depositMath';
+import { getBusinessDateStr } from '@/lib/cashHandover';
 import FolioReceiptModal from './FolioReceiptModal';
 
-type Tx = { id: string; transaction_type: string; category: string; amount: number; created_at: string };
+type Tx = { id: string; transaction_type: string; category: string; amount: number; created_at: string; notes?: string };
 
 interface Props {
   roomId: string;
@@ -22,6 +23,7 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [txs, setTxs] = useState<Tx[]>([]);
+  const [futureScheduled, setFutureScheduled] = useState(0);
 
   const [mode, setMode] = useState<DepositMode>('full');
   const [deductAmount, setDeductAmount] = useState<number | ''>('');
@@ -37,20 +39,43 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from('ledger_transactions')
-        .select('id, transaction_type, category, amount, created_at')
-        .eq('booking_id', bookingId)
-        .order('created_at', { ascending: true });
+      const todayStr = getBusinessDateStr(new Date());
+      const [{ data }, { data: rates }, { data: extras }] = await Promise.all([
+        supabase
+          .from('ledger_transactions')
+          .select('id, transaction_type, category, amount, created_at, notes')
+          .eq('booking_id', bookingId)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('booking_daily_rates')
+          .select('target_date, amount')
+          .eq('booking_id', bookingId)
+          .gt('target_date', todayStr),
+        supabase
+          .from('booking_daily_extras')
+          .select('target_date, amount, category')
+          .eq('booking_id', bookingId)
+          .gt('target_date', todayStr),
+      ]);
+      const unpostedRates = (rates || []).reduce((s: number, r: any) => s + Number(r.amount || 0), 0);
+      const unpostedExtras = (extras || [])
+        .filter((e: any) => !String(e.category || '').includes('(Voided)'))
+        .reduce((s: number, e: any) => s + Number(e.amount || 0), 0);
       setTxs((data as Tx[]) || []);
+      setFutureScheduled(unpostedRates + unpostedExtras);
       setLoading(false);
     })();
   }, [bookingId]);
 
   const baht = (n: number) => '฿' + n.toLocaleString();
 
-  // ---- สูตรกลาง: ค่าใช้จ่ายต้องชำระครบก่อน ที่เหลือจึงนับเป็นมัดจำ ----
-  const d = computeDeposit(txs);
+  // ---- สูตรกลาง: ค่าใช้จ่ายต้องชำระครบก่อน (รวมรายการล่วงหน้าของบิลนี้) ที่เหลือจึงนับเป็นมัดจำ ----
+  const d = computeDeposit([
+    ...txs,
+    ...(futureScheduled > 0
+      ? [{ transaction_type: 'revenue', category: 'future_scheduled', amount: futureScheduled }]
+      : []),
+  ]);
   const { charges, cash, target, unpaid, held, shortfall, excess } = d;
 
   const deduct =

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
 import DailyReport from "./DailyReport";
 import GuestReport from "./GuestReport";
 import AnomalyReport from "./AnomalyReport";
@@ -9,6 +10,7 @@ import HousekeepingOvertime from "./HousekeepingOvertime";
 import ActivityLogView from "./ActivityLogView";
 
 export default function AuditPage() {
+  const { getNow } = useSimulatedTime();
   const [activeTab, setActiveTab] = useState<"daily" | "guest" | "anomaly" | "history" | "activity_log">("daily");
   const [dateOffset, setDateOffset] = useState<number>(0);
 
@@ -22,13 +24,17 @@ export default function AuditPage() {
     }
   }, []);
 
-  // สร้างตัวเลือก Dropdown 15 วัน
+  // สร้างตัวเลือก Dropdown 15 วัน (อิงรอบวันธุรกิจ 06:45 - 06:44 ของอีกวัน)
   const dateOptions = Array.from({ length: 16 }, (_, i) => {
-    const d = new Date();
+    const d = getNow();
+    if (d.getHours() < 6 || (d.getHours() === 6 && d.getMinutes() < 45)) {
+      d.setDate(d.getDate() - 1);
+    }
     d.setDate(d.getDate() - i);
+    const labelStr = d.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
     return {
       offset: -i,
-      label: i === 0 ? "วันนี้ (Today)" : d.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }),
+      label: i === 0 ? `วันนี้ (${labelStr})` : labelStr,
     };
   });
 

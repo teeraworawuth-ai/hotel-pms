@@ -99,10 +99,13 @@ export function computeDrawerFromRows(
 export async function fetchShiftHandedOut(shiftId: string): Promise<number> {
   const { data } = await supabase
     .from("system_settings")
-    .select("amt:value->>actual_amount")
+    .select("actual_amt:value->>actual_amount,req_amt:value->>required_amount,method:value->>method")
     .like("key", `${HANDOVER_KEY_PREFIX}%`)
     .eq("value->>shift_id", shiftId);
-  return (data || []).reduce((s: number, r: any) => s + Number(r.amt || 0), 0);
+  return (data || []).reduce(
+    (s: number, r: any) => s + Number(r.method === "fixed" ? r.actual_amt || 0 : r.req_amt ?? r.actual_amt ?? 0),
+    0
+  );
 }
 
 export async function computeShiftDrawer(shift: { id: string; initial_cash: number }): Promise<ShiftDrawer> {

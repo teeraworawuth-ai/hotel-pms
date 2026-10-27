@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -70,41 +70,36 @@ export default function TuyaQuotaWidget() {
   const now = new Date();
   
   const trialDays = 30;
-    const extensionDays = 180;
-    const totalDays = trialDays + extensionDays;
-    const packageDaysUsed = Math.floor((now.getTime() - keyStartDate.getTime()) / (1000 * 3600 * 24));
-    
-    let currentPhase = "";
-    let phaseDaysUsed = 0;
-    let phaseTotalDays = 0;
-    
-    if (packageDaysUsed <= trialDays) {
-       currentPhase = "ช่วงทดลองใช้ฟรี (1 เดือนแรก)";
-       phaseDaysUsed = packageDaysUsed;
-       phaseTotalDays = trialDays;
-    } else if (packageDaysUsed <= totalDays) {
-       currentPhase = "ช่วงขยายเวลา (6 เดือน)";
-       phaseDaysUsed = packageDaysUsed - trialDays;
-       phaseTotalDays = extensionDays;
-    } else {
-       currentPhase = "หมดอายุ (ครบ 7 เดือน)";
-       phaseDaysUsed = extensionDays;
-       phaseTotalDays = extensionDays;
-    }
-    
-    const phaseDaysLeft = Math.max(0, phaseTotalDays - phaseDaysUsed);
-    const phasePercent = Math.min(100, (phaseDaysUsed / phaseTotalDays) * 100);
-    const totalDaysLeft = Math.max(0, totalDays - packageDaysUsed);
+  const extensionDays = 180;
+  const totalDays = trialDays + extensionDays;
+  const packageDaysUsed = Math.floor((now.getTime() - keyStartDate.getTime()) / (1000 * 3600 * 24));
+  
+  let currentPhase = "";
+  let phaseDaysUsed = 0;
+  let phaseTotalDays = 0;
+  
+  if (packageDaysUsed <= trialDays) {
+     currentPhase = "ช่วงทดลองใช้ฟรี (1 เดือนแรก)";
+     phaseDaysUsed = packageDaysUsed;
+     phaseTotalDays = trialDays;
+  } else if (packageDaysUsed <= totalDays) {
+     currentPhase = "ช่วงขยายเวลา (6 เดือน)";
+     phaseDaysUsed = packageDaysUsed - trialDays;
+     phaseTotalDays = extensionDays;
+  } else {
+     currentPhase = "หมดอายุ (ครบ 7 เดือน)";
+     phaseDaysUsed = extensionDays;
+     phaseTotalDays = extensionDays;
+  }
+  
+  const phaseDaysLeft = Math.max(0, phaseTotalDays - phaseDaysUsed);
+  const phasePercent = Math.min(100, (phaseDaysUsed / phaseTotalDays) * 100);
+  const totalDaysLeft = Math.max(0, totalDays - packageDaysUsed);
 
   // Monthly math
   const lastResetDate = new Date(quota.last_reset_date || new Date().toISOString());
   const monthDaysUsed = Math.floor((now.getTime() - lastResetDate.getTime()) / (1000 * 3600 * 24));
   
-  // Expectation math: 120 devices polled every 5 mins. But currently maybe 19 devices.
-  // Actually, because of Batching, it's 1 call per batch of 20.
-  // 120 devices = 6 batches.
-  // Polling every 5 mins = 12 times an hour = 288 times a day.
-  // 288 * 6 = 1,728 calls / day.
   const dailyExpectedCalls120 = 1728; 
   const monthlyRemainingDaysExpected = Math.floor(remaining / dailyExpectedCalls120);
 
@@ -194,6 +189,25 @@ export default function TuyaQuotaWidget() {
             </div>
          </div>
       </div>
+
+      {(totalDaysLeft <= 14 || phaseDaysLeft <= 7 || quotaPercent >= 85) && (
+        <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-xs text-amber-900">
+          <div className="font-bold flex items-center gap-1.5 text-amber-800 mb-1">
+            <span>⚠️ แจ้งเตือนแผน Tuya IoT Core (1+6 เดือน):</span>
+            {totalDaysLeft <= 14 ? (
+              <span className="bg-rose-100 text-rose-700 px-2 py-0.5 rounded font-black">ใกล้ครบกำหนด 7 เดือน (เหลือ {totalDaysLeft} วัน)</span>
+            ) : phaseDaysLeft <= 7 ? (
+              <span className="bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-black">ใกล้ครบรอบเฟสปัจจุบัน (เหลือ {phaseDaysLeft} วัน)</span>
+            ) : (
+              <span className="bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-black">โควตาเดือนนี้ใช้ไป {quotaPercent.toFixed(0)}%</span>
+            )}
+          </div>
+          <p className="text-amber-700 leading-relaxed">
+            • หากอยู่ช่วงเดือนที่ 1: กดขอต่ออายุ 6 เดือน (Extend Trial Period) ในหน้า Tuya IoT Platform → Cloud → Cloud Services<br />
+            • หากครบ 7 เดือนแล้ว: สมัครบัญชี Tuya Developer ใหม่ → สร้าง Cloud Project (Singapore) → ใช้แอป Smart Life เดิมบนมือถือสแกน QR Code ผูกเข้ากับโปรเจกต์ใหม่ (ไม่ต้องถอดหรือรีเซ็ตตัววัดไฟ Device ID เดิมใช้ต่อได้ทันที) แล้วนำ Access ID / Secret ใหม่มาใส่ในหน้าตั้งค่า
+          </p>
+        </div>
+      )}
     </div>
   );
 }

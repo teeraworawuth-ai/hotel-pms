@@ -253,10 +253,10 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
 
   const now = getNow();
   const businessCutoff = new Date(now);
-  if (now.getHours() < 9 || (now.getHours() === 9 && now.getMinutes() < 45)) {
+  if (now.getHours() < 6 || (now.getHours() === 6 && now.getMinutes() < 45)) {
     businessCutoff.setDate(businessCutoff.getDate() - 1);
   }
-  businessCutoff.setHours(9, 45, 0, 0);
+  businessCutoff.setHours(6, 45, 0, 0);
 
   const pastTransactions = transactions.filter(tx => new Date(tx.created_at).getTime() < businessCutoff.getTime());
   const todayTransactions = transactions.filter(tx => new Date(tx.created_at).getTime() >= businessCutoff.getTime());
@@ -292,11 +292,14 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   const totalKeyDeposit = validTxs.filter(t => t.category.includes('มัดจำกุญแจ')).reduce((sum, t) => sum + Number(t.amount), 0);
   const depositReceivedTotal = validTxs.filter(t => t.category.includes('มัดจำกุญแจ') && Number(t.amount) > 0).reduce((sum, t) => sum + Number(t.amount), 0);
 
-  // Date in YYYY-MM-DD for Asia/Bangkok (based on 09:45 business cutoff)
-  const todayStr = businessCutoff.toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+  // Date in YYYY-MM-DD for Asia/Bangkok (based on 06:45 - 06:44 business day cutoff)
+  const todayStr = `${businessCutoff.getFullYear()}-${String(businessCutoff.getMonth() + 1).padStart(2, '0')}-${String(businessCutoff.getDate()).padStart(2, '0')}`;
 
-  // Calculate future unposted charges
-  const futureRates = dailyRates.filter(r => r.target_date > todayStr).reduce((sum, r) => sum + Number(r.amount), 0);
+  // Calculate future unposted charges (ข้ามคืนที่ถูกตัดเข้า ledger_transactions ไปแล้ว)
+  const sortedAllRates = [...dailyRates].sort((a, b) => String(a.target_date).localeCompare(String(b.target_date)));
+  const postedRoomTxCount = validTxs.filter(t => t.category === 'room_charge' || t.category === 'ค่าห้องพัก').length;
+  const unpostedRateRows = sortedAllRates.filter((r, idx) => r.target_date > todayStr && idx >= postedRoomTxCount);
+  const futureRates = unpostedRateRows.reduce((sum, r) => sum + Number(r.amount), 0);
   const allDailyExtraRows = [...dailyExtras].sort((a, b) => String(a.target_date).localeCompare(String(b.target_date)));
   const futureExtraRows = allDailyExtraRows.filter(e => e.target_date > todayStr);
   const activeFutureExtraRows = futureExtraRows.filter(e => !String(e.category || '').includes('(Voided)'));
@@ -903,12 +906,16 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
 
     if (dailyRates.length > 0) {
       const sortedRates = [...dailyRates].sort((a, b) => a.target_date.localeCompare(b.target_date));
-      const firstRate = sortedRates[0];
-      if (firstRate) {
+      const roomChargeTxs = transactions
+        .filter(t => !t.category.includes('Voided') && (t.category === 'room_charge' || t.category === 'ค่าห้องพัก'))
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      const txIdx = Math.max(0, roomChargeTxs.findIndex(t => t.id === tx.id));
+      const targetRate = sortedRates[txIdx] || sortedRates[0];
+      if (targetRate) {
         await supabase.from('booking_daily_rates').update({
           amount: newAmt,
           is_manual_override: true
-        }).eq('id', firstRate.id);
+        }).eq('id', targetRate.id);
       }
     }
 
@@ -1095,6 +1102,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   };
 
   const handlePayment = async () => {
+    if (loading) return;
     if (!activeShift) { alert('กรุณาเปิดกะก่อนทำรายการ'); return; }
     
     let cash = Number(payCash) || 0;
@@ -1113,45 +1121,48 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     if (cash + transfer + credit <= 0) { alert('ไม่มียอดค้างชำระ'); return; }
     
     setLoading(true);
-    const inserts = [];
-    if (cash > 0) inserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: roomId, booking_id: bookingId, transaction_type: 'payment', category: 'cash', amount: -cash });
-    if (transfer > 0) {
-      const transferNote = `[BANK:${selectedBank || 'SCB'}]${paymentTime ? ` โอนเวลา: ${paymentTime.replace('T', ' ')}` : ''}`;
-      inserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: roomId, booking_id: bookingId, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: transferNote });
-    }
-    if (credit > 0) inserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: roomId, booking_id: bookingId, transaction_type: 'payment', category: 'credit_card', amount: -credit });
-    
-    const { error } = await supabase.from('ledger_transactions').insert(inserts);
-    
-    if (!error) {
-      await logActivity({
-        category: 'billing',
-        action: 'payment',
-        staffName: effectiveStaffName,
-        shiftName: activeShift?.staff_name || null,
-        roomNo,
-        target: `ห้อง ${roomNo}`,
-        details: `รับชำระเงินห้อง ${roomNo} รวม ฿${(cash + transfer + credit).toLocaleString()} (${[
-          cash > 0 ? `เงินสด ฿${cash.toLocaleString()}` : '',
-          transfer > 0 ? `โอน ฿${transfer.toLocaleString()}` : '',
-          credit > 0 ? `บัตร ฿${credit.toLocaleString()}` : ''
-        ].filter(Boolean).join(', ')})`
-      });
-      setPayCash('');
-      setPayTransfer('');
-      setPayCredit('');
-      
-      const currentBalance = netRemaining - (cash + transfer + credit);
-      refreshShift();
-      
-      if (currentBalance <= 0) {
-        onSuccess();
-        return;
-      } else {
-        await fetchData();
+    try {
+      const inserts = [];
+      if (cash > 0) inserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: roomId, booking_id: bookingId, transaction_type: 'payment', category: 'cash', amount: -cash });
+      if (transfer > 0) {
+        const transferNote = `[BANK:${selectedBank || 'SCB'}]${paymentTime ? ` โอนเวลา: ${paymentTime.replace('T', ' ')}` : ''}`;
+        inserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: roomId, booking_id: bookingId, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: transferNote });
       }
+      if (credit > 0) inserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: roomId, booking_id: bookingId, transaction_type: 'payment', category: 'credit_card', amount: -credit });
+      
+      const { error } = await supabase.from('ledger_transactions').insert(inserts);
+      
+      if (!error) {
+        await logActivity({
+          category: 'billing',
+          action: 'payment',
+          staffName: effectiveStaffName,
+          shiftName: activeShift?.staff_name || null,
+          roomNo,
+          target: `ห้อง ${roomNo}`,
+          details: `รับชำระเงินห้อง ${roomNo} รวม ฿${(cash + transfer + credit).toLocaleString()} (${[
+            cash > 0 ? `เงินสด ฿${cash.toLocaleString()}` : '',
+            transfer > 0 ? `โอน ฿${transfer.toLocaleString()}` : '',
+            credit > 0 ? `บัตร ฿${credit.toLocaleString()}` : ''
+          ].filter(Boolean).join(', ')})`
+        });
+        setPayCash('');
+        setPayTransfer('');
+        setPayCredit('');
+        
+        const currentBalance = netRemaining - (cash + transfer + credit);
+        refreshShift();
+        
+        if (currentBalance <= 0) {
+          onSuccess();
+          return;
+        } else {
+          await fetchData();
+        }
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
@@ -1226,9 +1237,9 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                       txsToUse.forEach(tx => {
                         if (!showPayments && tx.amount < 0) return;
                         
-                        // Use business date (if before 09:45, it belongs to yesterday's business date)
+                        // Use business date (if before 06:45, it belongs to yesterday's business date)
                         const d = new Date(tx.created_at);
-                        if (d.getHours() < 9 || (d.getHours() === 9 && d.getMinutes() < 45)) {
+                        if (d.getHours() < 6 || (d.getHours() === 6 && d.getMinutes() < 45)) {
                           d.setDate(d.getDate() - 1);
                         }
                         const dateStr = d.toLocaleDateString('th-TH');

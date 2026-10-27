@@ -58,6 +58,7 @@ type RoomRow = {
 };
 
 type BookingMeta = {
+  cancelledAt?: string;
   targetPrices?: {
     totalTargetPrice: number;
     dailyTargets?: Record<string, number>;
@@ -188,15 +189,10 @@ export default function DailyReport({
       }
       baseDay.setDate(baseDay.getDate() + dateOffset);
 
-      // ตัดรอบทั่วไป 06:45 น. ของวันรายงาน ถึง 06:44:59 น. ของวันถัดไป
+      // ตัดรอบวันธุรกิจ 06:45 น. ของวันรายงาน ถึง 06:44:59 น. ของวันถัดไป (นับเป็น 1 วันเดียวกันทุกหมวด)
       const start0645 = new Date(baseDay.getFullYear(), baseDay.getMonth(), baseDay.getDate(), 6, 45, 0, 0);
       const end0645 = new Date(start0645);
       end0645.setDate(end0645.getDate() + 1);
-
-      // ตัดรอบค่าห้องพักปกติ 09:45 น. ของวันรายงาน ถึง 09:44:59 น. ของวันถัดไป
-      const start0945 = new Date(baseDay.getFullYear(), baseDay.getMonth(), baseDay.getDate(), 9, 45, 0, 0);
-      const end0945 = new Date(start0945);
-      end0945.setDate(end0945.getDate() + 1);
 
       const reportDateStr = `${start0645.getFullYear()}-${String(start0645.getMonth() + 1).padStart(2, "0")}-${String(start0645.getDate()).padStart(2, "0")}`;
       setReportDateLabel(
@@ -235,7 +231,7 @@ export default function DailyReport({
           .from("ledger_transactions")
           .select("*")
           .gte("created_at", windowStart.toISOString())
-          .lt("created_at", end0945.toISOString())
+          .lt("created_at", end0645.toISOString())
           .order("created_at", { ascending: true })
           .limit(10000),
         supabase
@@ -329,43 +325,16 @@ export default function DailyReport({
       setBankAccounts(configuredBanks);
       setIsDayClosed(dayClosed);
 
-      // รายการที่เกิดในรอบ 06:45 - 06:45 สำหรับแสดง Petty Cash ฯลฯ
+      // รายการที่เกิดในรอบวันธุรกิจ 06:45 น. ถึง 06:44:59 น. ของวันถัดไป (นับเป็น 1 วันเดียวกันทุกหมวด)
       const txsIn0645Window = allLedger.filter((tx) => {
         const t = new Date(tx.created_at).getTime();
         return t >= start0645.getTime() && t < end0645.getTime();
       });
       setTransactions(txsIn0645Window);
 
-      // Helper: ตรวจสอบว่ารายการค่าห้องพักอยู่ในรอบเวลา 09:45 ของวันรายงานหรือไม่
-      // กฎข้อ 8: รอบค่าห้องคือ 09:45 - 09:44:59 วันถัดไป แต่ถ้ามีรายได้เข้าก่อนเวลา (Early Check-in 06:45 - 09:44)
-      // ของวันนั้น ให้นับเป็นรายได้ของรอบ 09:45 วันนั้นทันที (ไม่ไปนับเป็นของเมื่อวาน)
-      const isEarlyCheckInForDay = (tx: LedgerTransaction, dayStart0645: Date, dayStart0945: Date) => {
-        const t = new Date(tx.created_at).getTime();
-        if (t < dayStart0645.getTime() || t >= dayStart0945.getTime()) return false;
-        const meta = tx.booking_id ? bookingMetaMap[tx.booking_id] : undefined;
-        if (meta?.targetPrices?.timeBand === "early_in") return true;
-        if (tx.category === "early_in_fee" || tx.category.includes("เข้าก่อน")) return true;
-        const b = tx.booking_id ? bookingMap[tx.booking_id] : undefined;
-        if (b) {
-          const cin = new Date(b.actual_check_in_time || b.check_in_time).getTime();
-          if (cin >= dayStart0645.getTime() && cin < dayStart0945.getTime()) return true;
-        }
-        return false;
-      };
-
       const isInTodayRoomWindow = (tx: LedgerTransaction) => {
         const t = new Date(tx.created_at).getTime();
-        // กรณี Early check-in ช่วง 06:45 - 09:44 ของวันนี้ -> นับเป็นรอบ 09:45 ของวันนี้
-        if (isEarlyCheckInForDay(tx, start0645, start0945)) return true;
-        // กรณีอยู่ในช่วง 09:45 วันนี้ ถึง 09:44 วันพรุ่งนี้
-        if (t >= start0945.getTime() && t < end0945.getTime()) {
-          // ยกเว้นกรณีที่เป็น Early check-in ของเช้าวันพรุ่งนี้ (06:45 - 09:44 วันถัดไป) -> ต้องไปนับเป็นของวันพรุ่งนี้
-          const nextDayStart0945 = new Date(end0645);
-          nextDayStart0945.setHours(9, 45, 0, 0);
-          if (isEarlyCheckInForDay(tx, end0645, nextDayStart0945)) return false;
-          return true;
-        }
-        return false;
+        return t >= start0645.getTime() && t < end0645.getTime();
       };
 
       // =========================================================================
@@ -649,15 +618,15 @@ export default function DailyReport({
       setOtherRevenue(revOther);
       setVoidedRevenue(revVoid);
 
-      // แปลงเวลา ISO/UTC เป็นวันที่ตามเขตเวลาไทย (Asia/Bangkok, +07:00)
+      // แปลงเวลา ISO/UTC เป็นวันธุรกิจตามเขตเวลาไทย (Asia/Bangkok, +07:00, ตัดรอบ 06:45 - 06:44 ของอีกวัน)
       const toThaiDateStr = (isoStr?: string | null): string => {
         if (!isoStr) return "";
         const trimmed = String(isoStr).trim();
         if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
         const d = new Date(trimmed);
         if (isNaN(d.getTime())) return trimmed.slice(0, 10);
-        const thaiTime = new Date(d.getTime() + 7 * 3600 * 1000);
-        return thaiTime.toISOString().slice(0, 10);
+        const thaiBizTime = new Date(d.getTime() + 7 * 3600 * 1000 - (6 * 60 + 45) * 60 * 1000);
+        return thaiBizTime.toISOString().slice(0, 10);
       };
 
       // =========================================================================
@@ -683,8 +652,6 @@ export default function DailyReport({
         cat.includes("ออกช้า") ||
         cat.includes("เข้าก่อน");
       const isDepositRelated = (cat: string) => cat.includes("มัดจำกุญแจ") || cat === "key_deposit";
-      const nextDayStart0945 = new Date(end0645);
-      nextDayStart0945.setHours(9, 45, 0, 0);
 
       // ตรวจสอบว่าบริการเสริมรายวัน (booking_daily_extras) ถูกสร้างเป็นแถวใน ledger_transactions ของบิลนั้นแล้วหรือยัง
       const isDailyExtraPostedInLedger = (
@@ -706,6 +673,8 @@ export default function DailyReport({
         paid: number; // เงินที่ลูกค้าจ่ายสุทธิ (หักคืนเงินทอนแล้ว)
         placed: number; // ยอดที่ถูกกันเป็นมัดจำกุญแจสะสม (ถือ + คืน + ริบ)
         active: number; // มัดจำกุญแจที่ยังถืออยู่
+        refunded: number;
+        forfeited: number;
         charges: number; // ค่าใช้จ่ายที่รับรู้เป็นรายได้แล้ว (ไม่รวมมัดจำ/ริบมัดจำ)
         inHouse: boolean; // เช็คอินแล้ว ณ จุดตัดรอบ
         checkInDateStr: string;
@@ -723,6 +692,7 @@ export default function DailyReport({
         const checkInDateStr = bRates[0]?.target_date || toThaiDateStr(b.actual_check_in_time || b.check_in_time);
         const inHouse =
           b.status !== "reserved" &&
+          Boolean(b.actual_check_in_time || b.status === "checked_in" || b.status === "checked_out") &&
           (boundary === "start" ? checkInDateStr < reportDateStr : checkInDateStr <= reportDateStr);
 
         const txBefore = bTxs.filter((t) => new Date(t.created_at).getTime() < cutTime);
@@ -733,11 +703,17 @@ export default function DailyReport({
           .filter((t) => t.category.includes("คืนเงินทอน") && Number(t.amount) < 0)
           .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
 
-        const parts = inHouse ? computeKeyDepositParts(txBefore) : null;
+        const futureUnpostedRates = bRates
+          .filter((dr) => !dayIncluded(dr.target_date))
+          .reduce((s, dr) => s + Number(dr.amount || 0), 0);
+        const futureUnpostedExtras = bExtras
+          .filter((de) => !dayIncluded(String(de.target_date)))
+          .reduce((s, de) => s + Number(de.amount || 0), 0);
+        const parts = inHouse ? computeKeyDepositParts(txBefore, futureUnpostedRates + futureUnpostedExtras) : null;
 
         let charges = 0;
         // ค่าห้องพักรายคืน (ตาม target_date) — รับรู้เฉพาะเมื่อเข้าพักแล้ว
-        if (bRates.length > 0 && b.status !== "reserved") {
+        if (bRates.length > 0 && inHouse) {
           const singleNightRoomTx =
             bRates.length === 1
               ? bTxs.find((t) => t.category === "room_charge" || t.category === "ค่าห้องพัก")
@@ -751,15 +727,10 @@ export default function DailyReport({
           if (t.transaction_type !== "revenue") return;
           const cat = t.category;
           if (isRoomTypeCategory(cat)) {
-            // ค่าห้องจาก ledger (ชั่วคราว/พักต่อ/เข้าก่อน/ออกช้า) — ใช้รอบตัด 09:45
             if (b.status === "reserved") return;
             if ((cat === "room_charge" || cat === "ค่าห้องพัก") && bRates.length > 0) return;
             const tt = new Date(t.created_at).getTime();
-            const belongs =
-              boundary === "start"
-                ? tt < start0945.getTime() && !isEarlyCheckInForDay(t, start0645, start0945)
-                : tt < end0945.getTime() && !isEarlyCheckInForDay(t, end0645, nextDayStart0945);
-            if (belongs) charges += Number(t.amount || 0);
+            if (tt < cutTime) charges += Number(t.amount || 0);
             return;
           }
           if (isDepositRelated(cat)) return; // มัดจำ/ริบมัดจำ แยกคำนวณผ่านกองมัดจำกุญแจ
@@ -767,7 +738,7 @@ export default function DailyReport({
           const included = noteDate ? dayIncluded(noteDate[1]) : new Date(t.created_at).getTime() < cutTime;
           if (included) charges += Number(t.amount || 0);
         });
-        if (b.status !== "reserved") {
+        if (inHouse) {
           bExtras.forEach((de) => {
             if (!dayIncluded(String(de.target_date))) return;
             if (isDailyExtraPostedInLedger(de, bTxs, firstStayDate)) return;
@@ -779,6 +750,8 @@ export default function DailyReport({
           paid: paidGross - changeRefunded,
           placed: parts?.placed || 0,
           active: parts?.active || 0,
+          refunded: parts?.refunded || 0,
+          forfeited: parts?.forfeited || 0,
           charges,
           inHouse,
           checkInDateStr,
@@ -801,10 +774,14 @@ export default function DailyReport({
       const heldRooms: HeldDepositRoomItem[] = [];
 
       allBookings.forEach((b) => {
-        if (b.status === "cancelled") return;
+        if (b.status === "cancelled" && !bookingMetaMap[b.id]?.cancelledAt) return;
         if (!(txsByBooking[b.id]?.length || dailyRatesByBooking[b.id]?.length)) return;
         const s = snapshotBooking(b, "start");
-        const e = snapshotBooking(b, "end");
+        const eRaw = snapshotBooking(b, "end");
+        // เมื่อกันมัดจำกุญแจไว้ตั้งแต่วันเช็คอินแล้ว จะไม่ลดยอด placed ลงหากวันถัดมามีค่าห้องใหม่ที่ยังไม่ได้ชำระ (ให้ขึ้นเป็นค้างชำระแทน)
+        const ePlaced = s.inHouse && eRaw.inHouse ? Math.max(s.placed, eRaw.placed) : eRaw.placed;
+        const eActive = Math.max(0, ePlaced - eRaw.refunded - eRaw.forfeited);
+        const e: BookingSnapshot = { ...eRaw, placed: ePlaced, active: eActive };
         const balS = s.paid - s.placed - s.charges;
         const balE = e.paid - e.placed - e.charges;
         const roomNo = roomMap[b.room_id]?.room_no || "-";
@@ -1003,7 +980,10 @@ export default function DailyReport({
       dayShiftList.forEach((s) => {
         const handedOut = handoverList
           .filter((h) => h.shift_id === s.id)
-          .reduce((sum, h) => sum + Number(h.actual_amount || 0), 0);
+          .reduce(
+            (sum, h) => sum + Number(h.method === "fixed" ? h.actual_amount || 0 : h.required_amount || 0),
+            0
+          );
         drawers[s.id] = computeDrawerFromRows(
           Number(s.initial_cash || 0),
           shiftLedgerRows.filter((r) => r.shift_id === s.id),
@@ -1015,7 +995,7 @@ export default function DailyReport({
       );
       let reserveNow = { total: 0, rooms: [] as HeldKeyDepositRoom[] };
       if (dayShiftList.some((s) => s.status === "open")) {
-        reserveNow = await fetchActiveKeyDeposits();
+        reserveNow = await fetchActiveKeyDeposits(now);
       }
       setDayShifts(dayShiftList);
       setHandovers(handoverList);
@@ -1085,13 +1065,19 @@ export default function DailyReport({
     (s) => s.status === "closed" && !handovers.some((h) => h.shift_id === s.id && h.kind === "shift_close")
   );
   const isCashComplete =
-    dayShifts.length > 0 && openShifts.length === 0 && isDayClosed && pendingManagerSign.length === 0;
+    dayShifts.length > 0 &&
+    openShifts.length === 0 &&
+    isDayClosed &&
+    handovers.length > 0 &&
+    pendingManagerSign.length === 0;
   const incompleteReasons: string[] = [];
   if (dayShifts.length === 0) incompleteReasons.push("ยังไม่มีการเปิดกะของวันนี้");
-  if (openShifts.length > 0) incompleteReasons.push(`ยังมีกะที่ยังไม่ปิด ${openShifts.length} กะ (${openShifts.map((s) => s.staff_name).join(", ")})`);
+  if (openShifts.length > 0)
+    incompleteReasons.push(`ยังมีกะที่ยังไม่ปิด ${openShifts.length} กะ (${openShifts.map((s) => s.staff_name).join(", ")})`);
   if (!isDayClosed) incompleteReasons.push("ยังไม่ได้ปิดกะสุดท้ายของวัน (ติ๊ก “กะสุดท้ายของวัน” ตอนปิดกะ)");
-  if (pendingManagerSign.length > 0) incompleteReasons.push(`รอผู้จัดการเซ็นรับเงิน ${pendingManagerSign.length} รายการ`);
-  const showReport = isCashComplete || showPreliminary;
+  if (handovers.length === 0 && dayShifts.length > 0) incompleteReasons.push("ยังไม่มีรายการส่งเงินของวันนี้");
+  if (pendingManagerSign.length > 0)
+    incompleteReasons.push(`รอผู้จัดการเซ็นรับเงิน ${pendingManagerSign.length} รายการ`);
 
   const shiftNameOf = (shiftId: string) => dayShifts.find((s) => s.id === shiftId)?.staff_name || "-";
   const fmtTime = (iso?: string | null) =>
@@ -1180,7 +1166,7 @@ export default function DailyReport({
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            ⏱️ ตัดรอบค่าห้องพัก: <b>09:45 น.</b> (นับรวม Early Check-in 06:45–09:44 น. เป็นของวันนี้) • ตัดรอบรายการอื่น/กะดึก: <b>06:45 น.</b>
+            ⏱️ รอบวันรายงาน: <b>06:45 น. ถึง 06:44 น. ของวันถัดไป</b> (ตัดค่าห้องพักค้างคืนอัตโนมัติเวลา 09:45 น.)
           </p>
         </div>
         {onChangeDateOffset && (
@@ -1213,31 +1199,24 @@ export default function DailyReport({
         )}
       </div>
 
-      {!showReport ? (
-        <div className="bg-amber-50 border-2 border-dashed border-amber-300 rounded-2xl p-6 text-center space-y-3">
-          <div className="text-3xl">🔒</div>
-          <div className="font-black text-amber-900 text-lg">รายงานประจำวันยังไม่สรุปยอด (รอส่งเงินให้ครบทุกกะ)</div>
-          <ul className="text-sm text-amber-800 space-y-0.5">
-            {incompleteReasons.map((r) => (
-              <li key={r}>• {r}</li>
-            ))}
-          </ul>
-          <button
-            type="button"
-            onClick={() => setShowPreliminary(true)}
-            className="px-4 py-2 rounded-xl bg-white border border-amber-300 text-amber-900 font-bold text-sm hover:bg-amber-100"
-          >
-            👁️ ดูรายงานเบื้องต้น (ยังไม่ยืนยันยอด)
-          </button>
-        </div>
-      ) : (
-      <>
       {!isCashComplete && (
-        <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 text-sm text-amber-900 font-bold">
-          <span>⚠️ รายงานเบื้องต้น — ยังไม่ยืนยันยอด (รอส่งเงินให้ครบทุกกะ)</span>
-          <button type="button" onClick={() => setShowPreliminary(false)} className="text-xs underline">
-            ซ่อนรายงาน
-          </button>
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-xs text-amber-900 space-y-1">
+          <div className="font-black text-sm">
+            ⚠️ ยังไม่เสร็จสิ้น — แสดงข้อมูลตามที่มี ณ ปัจจุบัน (จะเปลี่ยนเป็นเสร็จสิ้นเมื่อครบ 3 ข้อด้านล่าง)
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 font-semibold text-amber-800">
+            <span>
+              {dayShifts.length > 0 && openShifts.length === 0 ? "✅" : "⏳"} 1. ปิดกะครบทุกกะ
+              {openShifts.length > 0 ? ` (ยังเปิดอยู่: ${openShifts.map((s) => s.staff_name).join(", ")})` : dayShifts.length === 0 ? " (ยังไม่เปิดกะ)" : ""}
+            </span>
+            <span>
+              {isDayClosed ? "✅" : "⏳"} 2. ติ๊ก “กะสุดท้ายของวัน” ตอนปิดกะสุดท้าย
+            </span>
+            <span>
+              {handovers.length > 0 && pendingManagerSign.length === 0 ? "✅" : "⏳"} 3. ผู้จัดการเซ็นรับครบทุกรายการ
+              {pendingManagerSign.length > 0 ? ` (รอเซ็น ${pendingManagerSign.length} รายการ)` : handovers.length === 0 ? " (ยังไม่มีรายการส่งเงิน)" : ""}
+            </span>
+          </div>
         </div>
       )}
 
@@ -1692,8 +1671,6 @@ export default function DailyReport({
           </div>
         )}
       </div>
-      </>
-      )}
 
       {/* ==================== กล่องเงินสดสำหรับเซ็นรับ-เก็บเงินประจำวัน ==================== */}
       <div className="bg-white border-2 border-emerald-300 rounded-2xl shadow-sm overflow-hidden">

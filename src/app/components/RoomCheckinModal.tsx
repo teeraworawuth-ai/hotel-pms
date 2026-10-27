@@ -52,8 +52,11 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const { getNow } = useSimulatedTime();
   const { activeShift, operatorName } = useShift();
   const displayDate = getNow();
+  if (displayDate.getHours() < 6 || (displayDate.getHours() === 6 && displayDate.getMinutes() < 45)) {
+    displayDate.setDate(displayDate.getDate() - 1);
+  }
   displayDate.setDate(displayDate.getDate() + dateOffset);
-  const displayDateStr = displayDate.toLocaleDateString('en-CA');
+  const displayDateStr = `${displayDate.getFullYear()}-${String(displayDate.getMonth() + 1).padStart(2, '0')}-${String(displayDate.getDate()).padStart(2, '0')}`;
   const [showBilling, setShowBilling] = useState(false);
   const [showCheckoutSummary, setShowCheckoutSummary] = useState(false);
   const [newBookingId, setNewBookingId] = useState<string | null>(null);
@@ -160,8 +163,11 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     useEffect(() => {
       const generateBreakdown = async () => {
         const startDate = (isExistingBooking && room.check_in_time) ? new Date(room.check_in_time) : new Date(displayDateStr);
+        if (isExistingBooking && room.check_in_time && (startDate.getHours() < 6 || (startDate.getHours() === 6 && startDate.getMinutes() < 45))) {
+          startDate.setDate(startDate.getDate() - 1);
+        }
         if (!isExistingBooking && dateOffset > 0) startDate.setHours(14, 0, 0, 0);
-        const todayDateStr = startDate.toLocaleDateString('en-CA');
+        const todayDateStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
         const fallbackPlanId = ratePlans.length > 0 ? ratePlans[0].id : null;
 
         if (activeTab === 'short_stay') {
@@ -929,10 +935,12 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
   const [currentLateFee, setCurrentLateFee] = useState<number>(0);
   const [lateCheckoutApplied, setLateCheckoutApplied] = useState(false);
+  const lateFeeLockRef = useRef(false);
 
   useEffect(() => {
     async function checkAndApplyLateFee() {
       if (room.status !== 'occupied' || !room.check_out_time || !room.booking_id || !activeShift) return;
+      if (lateFeeLockRef.current) return;
       
       const coTime = new Date(room.check_out_time).getTime();
       // ใช้เวลาจริงเสมอ ไม่ใช้ Simulated Time
@@ -944,30 +952,56 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
       // ถ้าเกิน 225 นาที (15:45) บังคับพักต่ออัตโนมัติ
       if (overdueMinutes >= 225) {
-         const newCheckout = new Date(coTime);
-         newCheckout.setDate(newCheckout.getDate() + 1);
+         lateFeeLockRef.current = true;
+         try {
+           const coDate = new Date(coTime);
+           const coDateStr = `${coDate.getFullYear()}-${String(coDate.getMonth() + 1).padStart(2, '0')}-${String(coDate.getDate()).padStart(2, '0')}`;
+           const newCheckout = new Date(coTime);
+           newCheckout.setDate(newCheckout.getDate() + 1);
+           const addRate = Number(room.price_night || 0);
 
-         // 1. Void ค่าปรับออกช้า (คง amount เดิมไว้ แต่เปลี่ยน category)
-         await supabase.from('ledger_transactions').update({ category: 'ค่าปรับออกช้า (Voided)' }).eq('booking_id', room.booking_id).eq('category', 'ค่าปรับออกช้า');
-         
-         // 2. ยิงค่าห้องพักบังคับพักต่อ
-         await supabase.from('ledger_transactions').insert({
-            shift_id: activeShift.id,
-            staff_name: activeShift.staff_name,
-            room_id: room.id,
-            booking_id: room.booking_id,
-            transaction_type: 'revenue',
-            category: 'ค่าห้องพัก (บังคับพักต่อ)',
-            amount: room.price_night || 0
-         });
+           // 1. Void ค่าปรับออกช้า (คง amount เดิมไว้ แต่เปลี่ยน category)
+           await supabase.from('ledger_transactions').update({ category: 'ค่าปรับออกช้า (Voided)' }).eq('booking_id', room.booking_id).eq('category', 'ค่าปรับออกช้า');
 
-         // 3. อัปเดตเวลาออก
-         if (dateOffset === 0) {
-           await supabase.from('rooms').update({ check_out_time: newCheckout.toISOString(), stay_type: 'overnight' }).eq('id', room.id);
+           // 2. หากมีตาราง booking_daily_rates ให้เพิ่มแถวของคืนที่บังคับพักต่อด้วย (กันซ้ำด้วย target_date)
+           const { data: existRates } = await supabase
+             .from('booking_daily_rates')
+             .select('id, target_date')
+             .eq('booking_id', room.booking_id);
+           const alreadyHasDate = (existRates || []).some(r => r.target_date === coDateStr);
+
+           if (!alreadyHasDate) {
+             if (existRates && existRates.length > 0) {
+               await supabase.from('booking_daily_rates').insert({
+                 booking_id: room.booking_id,
+                 target_date: coDateStr,
+                 amount: addRate,
+                 is_manual_override: false
+               });
+             }
+             await supabase.from('ledger_transactions').insert({
+               shift_id: activeShift.id,
+               staff_name: activeShift.staff_name,
+               room_id: room.id,
+               booking_id: room.booking_id,
+               transaction_type: 'revenue',
+               category: existRates && existRates.length > 0 ? 'room_charge' : 'ค่าห้องพัก (บังคับพักต่อ)',
+               notes: `บังคับพักต่อ (เกิน 15:45 น. • ประจำวันที่ ${coDateStr})`,
+               amount: addRate
+             });
+           }
+
+           // 3. อัปเดตเวลาออกและราคารวม
+           const nextActual = Number(room.actual_price || 0) + (alreadyHasDate ? 0 : addRate);
+           if (dateOffset === 0) {
+             await supabase.from('rooms').update({ check_out_time: newCheckout.toISOString(), stay_type: 'overnight', actual_price: nextActual }).eq('id', room.id);
+           }
+           await supabase.from('bookings').update({ check_out_time: newCheckout.toISOString(), actual_price: nextActual }).eq('room_id', room.id).eq('id', room.booking_id);
+           
+           onUpdate();
+         } finally {
+           lateFeeLockRef.current = false;
          }
-         await supabase.from('bookings').update({ check_out_time: newCheckout.toISOString() }).eq('room_id', room.id).eq('id', room.booking_id);
-         
-         onUpdate();
          return; 
       }
 
@@ -1977,49 +2011,79 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     }
     setLoading(true);
     const refundAmt = Number(voidRefundAmount) || 0;
-    
-    // 1. Mark existing ledger transactions as voided
+    const nowIso = getNow().toISOString();
+
+    // 1. ยกเลิกรายการรายได้และมัดจำเดิม (คงรายการรับเงินเดิมไว้เพื่อไม่ให้ยอดลิ้นชักกะก่อนหน้าหรือวันก่อนหน้าเพี้ยน)
     const { data: txs } = await supabase.from('ledger_transactions').select('*').eq('booking_id', room.booking_id);
-    
+
     if (txs) {
       let totalPayments = 0;
       for (const tx of txs) {
-        if (!tx.category.includes('(Voided)')) {
+        if (tx.category.includes('(Voided)')) continue;
+        if (tx.transaction_type === 'payment' && Number(tx.amount) < 0) {
+          totalPayments += Math.abs(Number(tx.amount));
+        } else if (tx.category.includes('คืนเงินทอน') && Number(tx.amount) < 0) {
+          totalPayments -= Math.abs(Number(tx.amount));
+        } else {
           await supabase.from('ledger_transactions').update({ category: tx.category + ' (Voided)' }).eq('id', tx.id);
-          if (tx.amount < 0) totalPayments += Math.abs(tx.amount);
         }
       }
-      
-      const penalty = totalPayments - refundAmt;
-      if (penalty > 0 && activeShift) {
-        // 2. Insert penalty charge & payment to balance the drawer
-        await supabase.from('ledger_transactions').insert([
-          {
-            shift_id: activeShift.id,
-            staff_name: activeShift.staff_name,
-            room_id: room.id,
-            booking_id: room.booking_id,
-            transaction_type: 'revenue',
-            category: 'รายได้ค่าปรับยกเลิกห้อง',
-            amount: penalty
-          },
-          {
-            shift_id: activeShift.id,
-            staff_name: activeShift.staff_name,
-            room_id: room.id,
-            booking_id: room.booking_id,
-            transaction_type: 'payment',
-            category: 'รับชำระค่าปรับ (Penalty)',
-            amount: -penalty
-          }
-        ]);
+      totalPayments = Math.max(0, totalPayments);
+
+      // ลบตารางราคารายคืนและบริการเสริมรายคืนของบิลที่ยกเลิก เพื่อไม่ให้ถูกรับรู้เป็นรายได้ในรายงานประจำวัน
+      if (room.booking_id) {
+        await supabase.from('booking_daily_rates').delete().eq('booking_id', room.booking_id);
+        await supabase.from('booking_daily_extras').delete().eq('booking_id', room.booking_id);
       }
+
+      const penalty = Math.max(0, totalPayments - refundAmt);
+      const effectiveRefund = Math.min(totalPayments, Math.max(0, refundAmt));
+      const newRows: any[] = [];
+
+      if (effectiveRefund > 0 && activeShift) {
+        newRows.push({
+          shift_id: activeShift.id === 'dummy-shift-id' ? null : activeShift.id,
+          staff_name: actorName,
+          room_id: room.id,
+          booking_id: room.booking_id,
+          transaction_type: 'deposit',
+          category: 'คืนเงินทอน (ยกเลิกห้องพัก)',
+          amount: -effectiveRefund,
+          notes: `คืนเงินสดจากการยกเลิกห้องพัก (${voidReason.trim()})`
+        });
+      }
+
+      if (penalty > 0 && activeShift) {
+        newRows.push({
+          shift_id: activeShift.id === 'dummy-shift-id' ? null : activeShift.id,
+          staff_name: actorName,
+          room_id: room.id,
+          booking_id: room.booking_id,
+          transaction_type: 'revenue',
+          category: 'รายได้ค่าปรับยกเลิกห้อง',
+          amount: penalty,
+          notes: `ค่าปรับยกเลิกห้องพัก (${voidReason.trim()})`
+        });
+      }
+
+      if (newRows.length > 0) {
+        await supabase.from('ledger_transactions').insert(newRows);
+      }
+    }
+
+    // 2. บันทึกเวลาที่ยกเลิกลงใน booking_meta เพื่อให้รายงานประจำวันคำนวณย้อนหลังได้ถูกต้อง
+    if (room.booking_id) {
+      const updatedMeta: BookingMeta = { ...bookingMeta, cancelledAt: nowIso } as any;
+      await supabase.from('system_settings').upsert({
+        key: `booking_meta_${room.booking_id}`,
+        value: updatedMeta
+      }, { onConflict: 'key' });
     }
 
     // 3. Update Booking status
     await supabase.from('bookings').update({ 
       status: 'cancelled', 
-      check_out_time: getNow().toISOString(), 
+      check_out_time: nowIso, 
       remarks: 'Void Reason: ' + voidReason 
     }).eq('id', room.booking_id);
     
@@ -2043,7 +2107,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       shiftName: activeShift?.staff_name || null,
       roomNo: room.room_no,
       target: `ห้อง ${room.room_no}`,
-      details: `ยกเลิกการเข้าพัก (Void) ห้อง ${room.room_no} คืนเงิน ฿${refundAmt.toLocaleString()} (สาเหตุ: ${voidReason.trim()})`
+      details: `ยกเลิกการเข้าพัก/การจอง (Void) ห้อง ${room.room_no} คืนเงิน ฿${refundAmt.toLocaleString()} (สาเหตุ: ${voidReason.trim()})`
     });
     setLoading(false);
     onUpdate();
@@ -2052,7 +2116,19 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
 
   const handleCheckOut = async (skipBalanceCheck: boolean = false) => {
-    if (!skipBalanceCheck && room.unpaid_balance && room.unpaid_balance > 0) {
+    const isCancelling = room.status === 'reserved';
+
+    // กรณีกดยกเลิกห้องที่จองไว้ (reserved) แต่มีการรับเงินมัดจำการจองไว้แล้ว -> ให้ผ่านหน้าต่างยืนยันคืนเงิน/หักค่าปรับเพื่อความถูกต้องของบัญชี
+    if (isCancelling && totalPaid > 0) {
+      setVoidRefundAmount(totalPaid);
+      setVoidRoomStatus('available');
+      setVoidReason('ลูกค้ายกเลิกการจอง');
+      setVoidError('');
+      setShowVoidPanel(true);
+      return;
+    }
+
+    if (!isCancelling && !skipBalanceCheck && room.unpaid_balance && room.unpaid_balance > 0) {
       if (activeShift?.staff_role === 'staff') {
         const confirmBypass = window.confirm(`ลูกค้ามียอดค้างชำระ ${room.unpaid_balance.toLocaleString()} บาท\n\n(โหมดทดลองใช้งาน) ระบบอนุญาตให้ข้ามการชำระเงินชั่วคราว คุณต้องการเช็คเอาต์เลยหรือไม่?`);
         if (!confirmBypass) return;
@@ -2063,8 +2139,6 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     }
     
     setLoading(true);
-    
-    const isCancelling = room.status === 'reserved';
 
     // 1. อัปเดตตาราง Rooms (เคลียร์ห้อง)
     if (dateOffset === 0) {
@@ -2097,6 +2171,18 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     }
 
     if (room.booking_id) {
+      if (isCancelling) {
+        await supabase.from('booking_daily_rates').delete().eq('booking_id', room.booking_id);
+        await supabase.from('booking_daily_extras').delete().eq('booking_id', room.booking_id);
+        const { data: revTxs } = await supabase.from('ledger_transactions').select('id, category').eq('booking_id', room.booking_id);
+        for (const t of revTxs || []) {
+          if (!String(t.category || '').includes('(Voided)')) {
+            await supabase.from('ledger_transactions').update({ category: `${t.category} (Voided)` }).eq('id', t.id);
+          }
+        }
+        const updatedMeta: BookingMeta = { ...bookingMeta, cancelledAt: nowIso } as any;
+        await supabase.from('system_settings').upsert({ key: `booking_meta_${room.booking_id}`, value: updatedMeta }, { onConflict: 'key' });
+      }
       await supabase.from('bookings').update(bookingUpdate).eq('id', room.booking_id);
     }
     await supabase
@@ -2240,15 +2326,16 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       return;
     }
 
-    let newActualPrice = room.actual_price;
-    if (priceDecision === 'update') {
-      newActualPrice = room.stay_type === 'overnight' ? targetRoom.price_night : targetRoom.price_temp;
-    }
-
     const newCheckInDate = new Date(rescheduleCheckIn);
     newCheckInDate.setHours(14, 0, 0, 0);
     const newCheckOutDate = new Date(rescheduleCheckOut);
     newCheckOutDate.setHours(12, 0, 0, 0);
+    const newNightsCount = Math.max(1, Math.round((newCheckOutDate.getTime() - newCheckInDate.getTime()) / (1000 * 60 * 60 * 24)));
+
+    let newActualPrice = room.actual_price;
+    if (priceDecision === 'update') {
+      newActualPrice = room.stay_type === 'overnight' ? Number(targetRoom.price_night || 0) * newNightsCount : targetRoom.price_temp;
+    }
 
     const { error: updateError } = await supabase
       .from('bookings')
@@ -2260,8 +2347,62 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       })
       .eq('id', room.booking_id);
 
-    setLoading(false);
     if (!updateError) {
+      // อัปเดต room_id ใน ledger_transactions
+      await supabase
+        .from('ledger_transactions')
+        .update({ room_id: targetRoom.id })
+        .eq('booking_id', room.booking_id);
+
+      // อัปเดตตาราง booking_daily_rates และ booking_daily_extras ให้ตรงกับวันที่เข้าพักใหม่
+      const { data: oldRates } = await supabase
+        .from('booking_daily_rates')
+        .select('*')
+        .eq('booking_id', room.booking_id)
+        .order('target_date', { ascending: true });
+
+      if (oldRates && oldRates.length > 0) {
+        const oldFirstDate = new Date(oldRates[0].target_date);
+        const diffDays = Math.round((new Date(rescheduleCheckIn).getTime() - oldFirstDate.getTime()) / (1000 * 60 * 60 * 24));
+        await supabase.from('booking_daily_rates').delete().eq('booking_id', room.booking_id);
+        const newRateInserts = Array.from({ length: newNightsCount }, (_, idx) => {
+          const d = new Date(rescheduleCheckIn);
+          d.setDate(d.getDate() + idx);
+          const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          const prevRate = oldRates[idx] || oldRates[oldRates.length - 1];
+          const nightAmt = priceDecision === 'update' ? Number(targetRoom.price_night || 0) : Number(prevRate?.amount || targetRoom.price_night || 0);
+          return {
+            booking_id: room.booking_id,
+            target_date: dateStr,
+            amount: nightAmt,
+            original_rate_plan_id: prevRate?.original_rate_plan_id || null,
+            is_manual_override: Boolean(prevRate?.is_manual_override)
+          };
+        });
+        await supabase.from('booking_daily_rates').insert(newRateInserts);
+
+        if (priceDecision === 'update') {
+          await supabase
+            .from('ledger_transactions')
+            .update({ amount: Number(targetRoom.price_night || 0) })
+            .eq('booking_id', room.booking_id)
+            .in('category', ['room_charge', 'ค่าห้องพัก']);
+        }
+
+        if (diffDays !== 0) {
+          const { data: oldExtras } = await supabase
+            .from('booking_daily_extras')
+            .select('*')
+            .eq('booking_id', room.booking_id);
+          for (const ex of oldExtras || []) {
+            const ed = new Date(ex.target_date);
+            ed.setDate(ed.getDate() + diffDays);
+            const nextDateStr = `${ed.getFullYear()}-${String(ed.getMonth() + 1).padStart(2, '0')}-${String(ed.getDate()).padStart(2, '0')}`;
+            await supabase.from('booking_daily_extras').update({ target_date: nextDateStr }).eq('id', ex.id);
+          }
+        }
+      }
+
       await logActivity({
         category: 'checkin',
         action: 'move',
@@ -2271,9 +2412,11 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         target: `ห้อง ${room.room_no} -> ${targetRoom.room_no}`,
         details: `เลื่อนวัน/ย้ายห้องจองจาก ${room.room_no} ไป ${targetRoom.room_no} (${rescheduleCheckIn} ถึง ${rescheduleCheckOut})`
       });
+      setLoading(false);
       alert("ย้ายการจองสำเร็จ");
       onUpdate();
     } else {
+      setLoading(false);
       alert("เกิดข้อผิดพลาดในการย้ายการจอง");
     }
   };
@@ -2283,28 +2426,23 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     setLoading(true);
 
     const targetRoom = availableRooms.find(r => r.id === targetRoomId);
-    if (!targetRoom) return;
+    if (!targetRoom) {
+      setLoading(false);
+      return;
+    }
 
-    // หา booking ปัจจุบันของห้องเก่า (ห้องเดิม)
-    const startOfDay = new Date(displayDate.getFullYear(), displayDate.getMonth(), displayDate.getDate(), 0, 0, 0);
-    const endOfDay = new Date(displayDate.getFullYear(), displayDate.getMonth(), displayDate.getDate(), 23, 59, 59);
-
-    const { data: bookings } = await supabase
-      .from('bookings')
-      .select('id, guest_name, check_in_time, check_out_time, guest_count')
-      .eq('room_id', room.id)
-      .eq('status', 'checked_in')
-      .lte('check_in_time', endOfDay.toISOString())
-      .gt('check_out_time', startOfDay.toISOString())
-      .order('created_at', { ascending: false })
-      .limit(1);
-
-    const booking = bookings?.[0];
-
-    // คำนวณราคาใหม่ (ถ้าเลือกอัปเดต) หรือ คงราคาเดิม
+    const activeBookingId = room.booking_id;
     let newActualPrice = room.actual_price;
     if (priceDecision === 'update') {
-      newActualPrice = room.stay_type === 'overnight' ? targetRoom.price_night : targetRoom.price_temp;
+      if (room.stay_type === 'overnight' && savedDailyRates.length > 0) {
+        const pastSum = savedDailyRates
+          .filter(r => r.target_date < displayDateStr)
+          .reduce((s, r) => s + Number(r.amount || 0), 0);
+        const remainingCount = Math.max(1, savedDailyRates.filter(r => r.target_date >= displayDateStr).length);
+        newActualPrice = pastSum + remainingCount * Number(targetRoom.price_night || 0);
+      } else {
+        newActualPrice = room.stay_type === 'overnight' ? targetRoom.price_night : targetRoom.price_temp;
+      }
     }
 
     // 1. อัปเดตตาราง Rooms (ห้องใหม่)
@@ -2349,12 +2487,41 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       return;
     }
 
-    // 3. อัปเดตตาราง Bookings (ย้ายบิลไปห้องใหม่)
-    if (booking) {
+    // 3. อัปเดตตาราง Bookings, Ledger และ Daily Rates (ย้ายบิลไปห้องใหม่)
+    if (activeBookingId) {
       await supabase
         .from('bookings')
+        .update({ room_id: targetRoomId, actual_price: newActualPrice })
+        .eq('id', activeBookingId);
+
+      await supabase
+        .from('ledger_transactions')
         .update({ room_id: targetRoomId })
-        .eq('id', booking.id);
+        .eq('booking_id', activeBookingId);
+
+      if (priceDecision === 'update') {
+        const nextUnitRate = room.stay_type === 'overnight' ? Number(targetRoom.price_night || 0) : Number(targetRoom.price_temp || 0);
+        if (room.stay_type === 'overnight') {
+          await supabase
+            .from('booking_daily_rates')
+            .update({ amount: nextUnitRate, is_manual_override: true })
+            .eq('booking_id', activeBookingId)
+            .gte('target_date', displayDateStr);
+        }
+        const { data: roomTxs } = await supabase
+          .from('ledger_transactions')
+          .select('id, created_at, category')
+          .eq('booking_id', activeBookingId)
+          .in('category', ['room_charge', 'ค่าห้องพัก'])
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if (roomTxs && roomTxs.length > 0) {
+          await supabase
+            .from('ledger_transactions')
+            .update({ amount: nextUnitRate })
+            .eq('id', roomTxs[0].id);
+        }
+      }
     }
 
     await logActivity({
@@ -2388,11 +2555,15 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     if (!room.check_out_time || !activeShift || !room.booking_id) return;
     setLoading(true);
     
+    const prevCheckout = new Date(room.check_out_time);
     const currentCheckout = new Date(room.check_out_time);
     const nNights = Number(extendNights) || 1;
+    const nightRate = Number(room.price_night || 0);
+    let nextActualPrice = Number(room.actual_price || 0);
     
     if (type === 'nights') {
       currentCheckout.setDate(currentCheckout.getDate() + nNights);
+      nextActualPrice += nightRate * nNights;
       
       // 1. Void รายการ "ค่าปรับออกช้า" ทั้งหมดของ booking นี้ (คง amount เดิมไว้)
       await supabase
@@ -2400,20 +2571,49 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         .update({ category: 'ค่าปรับออกช้า (Voided)' })
         .eq('booking_id', room.booking_id)
         .eq('category', 'ค่าปรับออกช้า');
-        
-      // 2. ยิงบิล "ค่าห้องพัก" เพิ่มเข้าไปในระบบตามจำนวนคืนที่พักต่อ
-      await supabase
-        .from('ledger_transactions')
-        .insert({
-          shift_id: activeShift.id,
-          staff_name: activeShift.staff_name,
-          room_id: room.id,
-          booking_id: room.booking_id,
-          transaction_type: 'revenue',
-          category: `ค่าห้องพัก (พักต่อ ${nNights} คืน)`,
-          amount: (room.price_night || 0) * nNights
-        });
-        
+
+      // 2. เพิ่มแถวใน booking_daily_rates สำหรับแต่ละคืนที่พักต่อ เพื่อให้รับรู้รายได้รายคืนและกันตัดซ้ำตอน 09:45 น.
+      const { data: existingRates } = await supabase
+        .from('booking_daily_rates')
+        .select('target_date')
+        .eq('booking_id', room.booking_id);
+      const existingDateSet = new Set((existingRates || []).map(r => r.target_date));
+      const newRateRows: any[] = [];
+      const ledgerToInsert: any[] = [];
+
+      for (let i = 0; i < nNights; i++) {
+        const d = new Date(prevCheckout);
+        d.setDate(d.getDate() + i);
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        if (!existingDateSet.has(dateStr)) {
+          newRateRows.push({
+            booking_id: room.booking_id,
+            target_date: dateStr,
+            amount: nightRate,
+            is_manual_override: false
+          });
+        }
+        // หากวันที่พักต่อเป็นของวันนี้หรือก่อนหน้า ให้ตัดเข้า ledger_transactions ทันที (คืนในอนาคตจะถูกตัดตอน 09:45 อัตโนมัติ)
+        if (dateStr <= displayDateStr) {
+          ledgerToInsert.push({
+            shift_id: activeShift.id,
+            staff_name: activeShift.staff_name,
+            room_id: room.id,
+            booking_id: room.booking_id,
+            transaction_type: 'revenue',
+            category: 'room_charge',
+            notes: `พักต่อประจำวันที่ ${dateStr}`,
+            amount: nightRate
+          });
+        }
+      }
+
+      if (newRateRows.length > 0) {
+        await supabase.from('booking_daily_rates').insert(newRateRows);
+      }
+      if (ledgerToInsert.length > 0) {
+        await supabase.from('ledger_transactions').insert(ledgerToInsert);
+      }
     } else {
       currentCheckout.setHours(currentCheckout.getHours() + (Number(extendHours) || 1));
     }
@@ -2424,21 +2624,20 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         .from('rooms')
         .update({
           check_out_time: currentCheckout.toISOString(),
-          stay_type: type === 'nights' ? 'overnight' : room.stay_type
+          stay_type: type === 'nights' ? 'overnight' : room.stay_type,
+          actual_price: nextActualPrice
         })
         .eq('id', room.id);
     }
 
-    // อัปเดตเวลาออกในตาราง bookings
-    const startOfDay = new Date(displayDate.getFullYear(), displayDate.getMonth(), displayDate.getDate(), 0, 0, 0);
-    const endOfDay = new Date(displayDate.getFullYear(), displayDate.getMonth(), displayDate.getDate(), 23, 59, 59);
-    
+    // อัปเดตเวลาออกและราคาในตาราง bookings
     await supabase
       .from('bookings')
-      .update({ check_out_time: currentCheckout.toISOString() })
-      .eq('room_id', room.id)
-      .lte('check_in_time', endOfDay.toISOString())
-      .gt('check_out_time', startOfDay.toISOString());
+      .update({
+        check_out_time: currentCheckout.toISOString(),
+        actual_price: nextActualPrice
+      })
+      .eq('id', room.booking_id);
 
     setLoading(false);
     onUpdate();

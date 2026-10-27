@@ -24,7 +24,7 @@ export default function OfflineSensors({ dateOffset = 0 }: { dateOffset?: number
       nextDate.setDate(nextDate.getDate() + 1);
       const endOfDay = new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate(), 6, 44, 59);
 
-      // ดึง log ทั้งหมดของวันนี้เพื่อหาช่องโหว่ > 10 นาที
+      // ดึง log ทั้งหมดของวันนี้เพื่อหาช่องโหว่ > 25 นาที (เผื่อเวลา GitHub Actions Cron ดีเลย์)
       let logs: any[] = [];
       let from = 0;
       const limit = 1000;
@@ -49,6 +49,7 @@ export default function OfflineSensors({ dateOffset = 0 }: { dateOffset?: number
       const offlineRooms = [];
       const now = new Date();
       const checkEndTime = dateOffset === 0 ? Math.min(now.getTime(), endOfDay.getTime()) : endOfDay.getTime();
+      const GAP_THRESHOLD_MS = 25 * 60 * 1000;
 
       for (const room of rooms) {
         const roomLogs = logs?.filter(l => l.room_id === room.id) || [];
@@ -62,7 +63,7 @@ export default function OfflineSensors({ dateOffset = 0 }: { dateOffset?: number
           for (let i = 1; i < roomLogs.length; i++) {
             const prev = new Date(roomLogs[i-1].recorded_at).getTime();
             const curr = new Date(roomLogs[i].recorded_at).getTime();
-            if (curr - prev > 10 * 60 * 1000) {
+            if (curr - prev > GAP_THRESHOLD_MS) {
               hasGap = true;
               break;
             }
@@ -70,7 +71,7 @@ export default function OfflineSensors({ dateOffset = 0 }: { dateOffset?: number
           // เช็ค gap ระหว่าง log สุดท้ายกับเวลาปัจจุบัน (หรือสิ้นวัน)
           if (!hasGap) {
             const lastLogTime = new Date(roomLogs[roomLogs.length - 1].recorded_at).getTime();
-            if (checkEndTime - lastLogTime > 10 * 60 * 1000) {
+            if (checkEndTime - lastLogTime > GAP_THRESHOLD_MS) {
               hasGap = true;
             }
           }
@@ -104,7 +105,7 @@ export default function OfflineSensors({ dateOffset = 0 }: { dateOffset?: number
     <div className="py-20 text-center bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col items-center justify-center">
       <div className="text-4xl mb-3">🟢</div>
       <h3 className="text-lg font-bold text-slate-700">ไม่มีอุปกรณ์ออฟไลน์</h3>
-      <p className="text-slate-500 text-sm mt-1">ทุกห้องเชื่อมต่อปกติและไม่มีประวัติการออฟไลน์เกิน 10 นาที</p>
+      <p className="text-slate-500 text-sm mt-1">ทุกห้องเชื่อมต่อปกติและไม่มีประวัติการขาดสัญญาณเกิน 25 นาที</p>
     </div>
   );
 

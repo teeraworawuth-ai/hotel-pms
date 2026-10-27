@@ -60,7 +60,7 @@ export async function GET(request: Request) {
     if (dbError) throw dbError;
     if (!rooms || rooms.length === 0) return NextResponse.json({ message: 'No devices to sync.' });
 
-    const deviceIds = rooms.map(r => r.tuya_device_id).filter(Boolean);
+    const deviceIds: string[] = rooms.map(r => r.tuya_device_id).filter(Boolean);
 
     const CHUNK_SIZE = 20; 
     const tuyaData: any[] = [];
@@ -68,32 +68,31 @@ export async function GET(request: Request) {
     let apiCallsMade = 0;
     
     for (let i = 0; i < deviceIds.length; i += CHUNK_SIZE) {
-      const chunk = deviceIds.slice(i, i + CHUNK_SIZE);
-      const deviceIdsString = chunk.join(',');
-      let chunkSuccess = false;
+      let remainingChunkIds: string[] = deviceIds.slice(i, i + CHUNK_SIZE);
       let lastError: any = null;
 
-      for (let idx = 0; idx < contexts.length; idx++) {
+      for (let idx = 0; idx < contexts.length && remainingChunkIds.length > 0; idx++) {
         try {
           apiCallsMade++;
+          const deviceIdsString = remainingChunkIds.join(',');
           const response = await contexts[idx].request({
             method: 'GET',
             path: '/v1.0/iot-03/devices/status?device_ids=' + deviceIdsString,
           });
           
-          if (response.success && response.result) {
+          if (response.success && Array.isArray(response.result)) {
             tuyaData.push(...response.result);
-            chunkSuccess = true;
-            break;
+            const returnedIds = new Set(response.result.map((d: any) => d.id));
+            remainingChunkIds = remainingChunkIds.filter(id => !returnedIds.has(id));
           }
         } catch (err) {
           lastError = err;
         }
       }
 
-      if (!chunkSuccess) {
-        console.error('Chunk failed:', lastError);
-        chunk.forEach(id => failedDevices.push({ id, error: lastError?.message || 'Bulk request failed in all accounts' }));
+      if (remainingChunkIds.length > 0) {
+        console.error('Unresolved devices in chunk:', remainingChunkIds, lastError);
+        remainingChunkIds.forEach(id => failedDevices.push({ id, error: lastError?.message || 'Device not returned in any configured Tuya account' }));
       }
     }
 
@@ -104,7 +103,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const logs = [];
+    const logs: { room_id: any; wattage: number }[] = [];
     for (const device of tuyaData) {
       const room = rooms.find(r => r.tuya_device_id === device.id);
       if (!room) continue;
@@ -124,13 +123,29 @@ export async function GET(request: Request) {
     }
 
     if (logs.length > 0) {
+      const nowIso = new Date().toISOString();
       await supabase.from('energy_logs').insert(logs);
-      for (const log of logs) {
-        await supabase.from('rooms').update({
-          last_active_at: new Date().toISOString(),
-          latest_wattage: log.wattage
-        }).eq('id', log.room_id);
+      await Promise.all(
+        logs.map(log =>
+          supabase.from('rooms').update({
+            last_active_at: nowIso,
+            latest_wattage: log.wattage
+          }).eq('id', log.room_id)
+        )
+      );
+    }
+
+    // Auto-retention cleanup: remove energy_logs older than 45 days (at most once every 24h)
+    try {
+      const { data: lastCleanData } = await supabase.from('system_settings').select('value').eq('key', 'last_energy_logs_cleanup').maybeSingle();
+      const lastCleanTime = lastCleanData?.value ? new Date(String(lastCleanData.value)).getTime() : 0;
+      if (Date.now() - lastCleanTime > 24 * 3600 * 1000) {
+        const cutoff45d = new Date(Date.now() - 45 * 24 * 3600 * 1000).toISOString();
+        await supabase.from('energy_logs').delete().lt('recorded_at', cutoff45d);
+        await supabase.from('system_settings').upsert({ key: 'last_energy_logs_cleanup', value: new Date().toISOString() }, { onConflict: 'key' });
       }
+    } catch (cleanErr) {
+      console.error('Energy log retention cleanup error:', cleanErr);
     }
 
     if (apiCallsMade > 0) {

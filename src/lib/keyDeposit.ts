@@ -9,6 +9,7 @@
  */
 import { supabase } from "@/lib/supabase";
 import { computeDeposit, LedgerLike } from "@/lib/depositMath";
+import { getBusinessDateStr } from "@/lib/cashHandover";
 
 export type HeldKeyDepositRoom = {
   bookingId: string;
@@ -26,8 +27,12 @@ export type KeyDepositParts = {
   placed: number; // ยอดที่เคยกันเป็นมัดจำทั้งหมด (= active + refunded + forfeited)
 };
 
-export function computeKeyDepositParts(txs: LedgerLike[]): KeyDepositParts {
-  const summary = computeDeposit(txs);
+export function computeKeyDepositParts(txs: LedgerLike[], futureUnpostedAmount = 0): KeyDepositParts {
+  const effectiveTxs: LedgerLike[] =
+    futureUnpostedAmount > 0
+      ? [...txs, { transaction_type: "revenue", category: "future_scheduled", amount: futureUnpostedAmount }]
+      : txs;
+  const summary = computeDeposit(effectiveTxs);
   const valid = txs.filter((t) => !String(t.category || "").includes("Voided"));
   const forfeited = valid
     .filter((t) => String(t.category || "").includes("ริบมัดจำ"))
@@ -43,25 +48,36 @@ export function computeKeyDepositParts(txs: LedgerLike[]): KeyDepositParts {
   };
 }
 
-export function computeActiveHeldDeposit(txs: LedgerLike[]): number {
-  return computeKeyDepositParts(txs).active;
+export function computeActiveHeldDeposit(txs: LedgerLike[], futureUnpostedAmount = 0): number {
+  return computeKeyDepositParts(txs, futureUnpostedAmount).active;
 }
 
 /** ดึงยอดมัดจำกุญแจคงเหลือปัจจุบันของทุกห้องที่เช็คอินอยู่ (ยังไม่เช็คเอาท์) */
-export async function fetchActiveKeyDeposits(): Promise<{ total: number; rooms: HeldKeyDepositRoom[] }> {
+export async function fetchActiveKeyDeposits(nowDate?: Date): Promise<{ total: number; rooms: HeldKeyDepositRoom[] }> {
   const { data: bookings } = await supabase
     .from("bookings")
     .select("id, room_id, guest_name")
     .eq("status", "checked_in");
   if (!bookings || bookings.length === 0) return { total: 0, rooms: [] };
 
+  const todayStr = getBusinessDateStr(nowDate || new Date());
   const ids = bookings.map((b) => b.id);
-  const [{ data: ledgers }, { data: rooms }] = await Promise.all([
+  const [{ data: ledgers }, { data: rooms }, { data: dailyRates }, { data: dailyExtras }] = await Promise.all([
     supabase
       .from("ledger_transactions")
       .select("booking_id, amount, category, transaction_type")
       .in("booking_id", ids),
     supabase.from("rooms").select("id, room_no"),
+    supabase
+      .from("booking_daily_rates")
+      .select("booking_id, target_date, amount")
+      .in("booking_id", ids)
+      .gt("target_date", todayStr),
+    supabase
+      .from("booking_daily_extras")
+      .select("booking_id, target_date, amount, category")
+      .in("booking_id", ids)
+      .gt("target_date", todayStr),
   ]);
 
   const txsByBooking: Record<string, LedgerLike[]> = {};
@@ -70,6 +86,17 @@ export async function fetchActiveKeyDeposits(): Promise<{ total: number; rooms: 
     if (!txsByBooking[tx.booking_id]) txsByBooking[tx.booking_id] = [];
     txsByBooking[tx.booking_id].push(tx);
   });
+
+  const futureByBooking: Record<string, number> = {};
+  (dailyRates || []).forEach((r: any) => {
+    if (!r.booking_id) return;
+    futureByBooking[r.booking_id] = (futureByBooking[r.booking_id] || 0) + Number(r.amount || 0);
+  });
+  (dailyExtras || []).forEach((e: any) => {
+    if (!e.booking_id || String(e.category || "").includes("(Voided)")) return;
+    futureByBooking[e.booking_id] = (futureByBooking[e.booking_id] || 0) + Number(e.amount || 0);
+  });
+
   const roomNoMap: Record<string, string> = {};
   (rooms || []).forEach((r: any) => {
     roomNoMap[r.id] = r.room_no;
@@ -77,7 +104,7 @@ export async function fetchActiveKeyDeposits(): Promise<{ total: number; rooms: 
 
   const list: HeldKeyDepositRoom[] = [];
   bookings.forEach((b: any) => {
-    const amount = computeActiveHeldDeposit(txsByBooking[b.id] || []);
+    const amount = computeActiveHeldDeposit(txsByBooking[b.id] || [], futureByBooking[b.id] || 0);
     if (amount > 0) {
       list.push({
         bookingId: b.id,

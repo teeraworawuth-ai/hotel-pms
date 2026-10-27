@@ -91,6 +91,19 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       return;
     }
 
+    // ตรวจสอบว่ามีกะที่เปิดค้างอยู่แล้วหรือไม่ (ป้องกันการเปิดกะซ้อนจากหลายแท็บ/อุปกรณ์)
+    const { data: existingOpenShifts } = await supabase
+      .from("shifts")
+      .select("id, staff_name")
+      .eq("status", "open")
+      .limit(1);
+
+    if (existingOpenShifts && existingOpenShifts.length > 0) {
+      setErrorMsg(`มีกะของ ${existingOpenShifts[0].staff_name} เปิดใช้งานอยู่แล้ว กรุณารีเฟรชหรือปิดกะเดิมก่อน`);
+      refreshShift();
+      return;
+    }
+
     const { error: shiftError } = await supabase.from("shifts").insert({
       staff_id: staffData.id,
       staff_name: staffData.name,

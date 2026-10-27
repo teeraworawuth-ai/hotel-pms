@@ -164,7 +164,7 @@ export default function CheckinPage() {
     }
   }, []);
 
-  const isManagerOrAdmin = !authUser || authUser.role === 'admin' || authUser.role === 'manager';
+  const isManagerOrAdmin = Boolean(authUser && (authUser.role === 'admin' || authUser.role === 'manager'));
   const isHousekeeper = authUser?.role === 'housekeeper' || activeShift?.housekeeper_only === true;
   const isStaff = !isManagerOrAdmin && !isHousekeeper;
 
@@ -293,12 +293,17 @@ export default function CheckinPage() {
             .in('booking_id', activeBookingIds)
         ]);
 
+        const futureUnpostedByBooking: Record<string, number> = {};
+
         if (allDailyRates) {
           allDailyRates.forEach(dr => {
             if (!financialSummary[dr.booking_id]) {
               financialSummary[dr.booking_id] = { charges: 0, payments: 0, balance: 0, c_all: 0, c_today: 0 };
             }
             financialSummary[dr.booking_id].c_all += Number(dr.amount);
+            if (String(dr.target_date || '') > targetDateStr) {
+              futureUnpostedByBooking[dr.booking_id] = (futureUnpostedByBooking[dr.booking_id] || 0) + Number(dr.amount || 0);
+            }
             
             // Map today's rate for the dashboard
             if (dr.target_date === targetDateStr) {
@@ -315,6 +320,7 @@ export default function CheckinPage() {
             }
             if (String(de.target_date || '') > targetDateStr) {
               financialSummary[de.booking_id].c_all += Number(de.amount);
+              futureUnpostedByBooking[de.booking_id] = (futureUnpostedByBooking[de.booking_id] || 0) + Number(de.amount || 0);
             }
           });
         }
@@ -333,7 +339,7 @@ export default function CheckinPage() {
             }
           });
           Object.entries(ledgersByBooking).forEach(([bid, txs]) => {
-            heldDepositByBooking[bid] = computeActiveHeldDeposit(txs);
+            heldDepositByBooking[bid] = computeActiveHeldDeposit(txs, futureUnpostedByBooking[bid] || 0);
           });
           ledgers.forEach(tx => {
             if (tx.booking_id) {
@@ -966,7 +972,7 @@ export default function CheckinPage() {
                 </button>
               )}
 
-              {dateOffset === 0 && rooms.some(r => r.status === 'occupied') && (
+              {authUser?.role === 'admin' && dateOffset === 0 && rooms.some(r => r.status === 'occupied') && (
                 <button 
                   onClick={handleClearAllOccupiedRooms}
                   disabled={loading}
@@ -1170,7 +1176,7 @@ export default function CheckinPage() {
                               const nowTime = getNow().getTime();
                               if (nowTime >= coTime) {
                                 overdueMinutes = (nowTime - coTime) / (1000 * 60);
-                                if (overdueMinutes >= 45 && overdueMinutes < 225) {
+                                if (overdueMinutes >= 45) {
                                   isOverdue = true;
                                 }
                               }
