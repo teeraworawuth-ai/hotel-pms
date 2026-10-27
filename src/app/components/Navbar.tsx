@@ -21,24 +21,17 @@ export default function Navbar() {
   const pathname = usePathname();
 
   const [mounted, setMounted] = useState(false);
-  const [userRole, setUserRole] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('auth_user');
-        return saved ? JSON.parse(saved).role : null;
-      } catch (e) {
-        return null;
-      }
-    }
-    return null;
-  });
+  const [userRole, setUserRole] = useState<string | null>(null);
   
   useEffect(() => {
     setMounted(true);
     const saved = localStorage.getItem('auth_user');
     if (saved) {
       try {
-        setUserRole(JSON.parse(saved).role);
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.role) {
+          setUserRole(String(parsed.role).toLowerCase());
+        }
       } catch (e) {}
     }
   }, []);
@@ -93,10 +86,8 @@ export default function Navbar() {
           </nav>
           
           <div className="hidden md:flex items-center ml-auto">
-            
             {userRole !== "staff" && <ShiftManager />}
             <button onClick={handleLogout} className="text-red-500 font-bold text-sm ml-4 px-3 py-1.5 rounded-lg border border-red-200 hover:bg-red-50">Logout</button>
-
           </div>
 
           {/* Mobile Menu Button */}
@@ -158,4 +149,3 @@ export default function Navbar() {
     </header>
   );
 }
-

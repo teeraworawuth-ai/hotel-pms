@@ -143,28 +143,21 @@ export default function CheckinPage() {
   // 0 = Today, -1 = Yesterday, 1 = Tomorrow
   const [dateOffset, setDateOffset] = useState<number>(0);
 
-  const [authUser, setAuthUser] = useState<{ id: string; name: string; role: string; locations?: string[]; can_clean?: boolean } | null>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('auth_user');
-        return saved ? JSON.parse(saved) : null;
-      } catch (e) {
-        return null;
-      }
-    }
-    return null;
-  });
+  const [authUser, setAuthUser] = useState<{ id: string; name: string; role: string; locations?: string[]; can_clean?: boolean } | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('auth_user');
     if (saved) {
       try {
-        setAuthUser(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          setAuthUser({ ...parsed, role: String(parsed.role || 'admin').toLowerCase() });
+        }
       } catch (e) {}
     }
   }, []);
 
-  const isManagerOrAdmin = Boolean(authUser && (authUser.role === 'admin' || authUser.role === 'manager'));
+  const isManagerOrAdmin = !authUser || authUser.role === 'admin' || authUser.role === 'manager';
   const isHousekeeper = authUser?.role === 'housekeeper' || activeShift?.housekeeper_only === true;
   const isStaff = !isManagerOrAdmin && !isHousekeeper;
 

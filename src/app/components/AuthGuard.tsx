@@ -19,17 +19,58 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
-    const saved = localStorage.getItem('auth_user');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      // ผู้ทดสอบเข้าได้เฉพาะหน้า Check-in
-      if ((parsed.role === 'staff' || parsed.role === 'housekeeper') && window.location.pathname !== '/checkin') {
-        window.location.replace('/checkin');
-        return;
+    // ป้องกันปัญหา ChunkLoadError เมื่อเปิดหน้าเว็บค้างไว้ระหว่างที่มีการอัปเดตเวอร์ชันใหม่บน Vercel
+    const handleChunkError = (event: ErrorEvent | PromiseRejectionEvent) => {
+      const msg =
+        (event as ErrorEvent)?.message ||
+        String((event as PromiseRejectionEvent)?.reason?.message || (event as PromiseRejectionEvent)?.reason || '');
+      if (
+        msg.includes('ChunkLoadError') ||
+        msg.includes('Loading chunk') ||
+        msg.includes('Failed to fetch dynamically imported module')
+      ) {
+        const lastReload = sessionStorage.getItem('chunk_reload_ts');
+        const now = Date.now();
+        if (!lastReload || now - Number(lastReload) > 15000) {
+          sessionStorage.setItem('chunk_reload_ts', String(now));
+          window.location.reload();
+        }
       }
-      setUser(parsed);
+    };
+    window.addEventListener('error', handleChunkError);
+    window.addEventListener('unhandledrejection', handleChunkError);
+
+    try {
+      const saved = localStorage.getItem('auth_user');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object' && parsed.role) {
+          const normalizedRole = String(parsed.role).toLowerCase();
+          const normalizedUser: AuthUser = { ...parsed, role: normalizedRole };
+          setUser(normalizedUser);
+          // ผู้ใช้งานระดับ staff / housekeeper เข้าได้เฉพาะหน้า Check-in
+          if (
+            (normalizedRole === 'staff' || normalizedRole === 'housekeeper') &&
+            !window.location.pathname.startsWith('/checkin')
+          ) {
+            setLoading(false);
+            window.location.replace('/checkin');
+            return;
+          }
+        } else {
+          localStorage.removeItem('auth_user');
+        }
+      }
+    } catch (e) {
+      localStorage.removeItem('auth_user');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
+
+    return () => {
+      window.removeEventListener('error', handleChunkError);
+      window.removeEventListener('unhandledrejection', handleChunkError);
+    };
   }, []);
 
   const handleLogin = async (e?: React.FormEvent) => {
@@ -37,48 +78,62 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     if (pinInput.length !== 4) return;
     setLoading(true);
     setErrorMsg('');
-    
-    // Master Key fallback
-    if (pinInput === '9999') {
-      const masterUser: AuthUser = { id: 'master', name: 'Master Admin', role: 'admin', pin: '9999' };
-      localStorage.setItem('auth_user', JSON.stringify(masterUser));
-      setUser(masterUser);
-      setLoading(false);
-      return;
-    }
 
-    const { data, error } = await supabase
-      .from('staff')
-      .select('id, name, role, pin')
-      .eq('pin', pinInput)
-      .single();
-
-    if (error || !data) {
-      setErrorMsg('รหัส PIN ไม่ถูกต้อง');
-      setPinInput('');
-      setLoading(false);
-    } else {
-      let locations: string[] = [];
-      if (data.role === 'staff' || data.role === 'housekeeper') {
-        const { data: settings } = await supabase.from('system_settings').select('value').eq('key', 'staff_locations').maybeSingle();
-        if (settings && settings.value && settings.value[data.id]) {
-          locations = settings.value[data.id];
-        }
-      }
-
-      let can_clean = false;
-      if (data.role === 'staff') {
-        const { data: hk } = await supabase.from('system_settings').select('value').eq('key', 'staff_housekeeping').maybeSingle();
-        can_clean = !!(hk && hk.value && hk.value[data.id]);
-      }
-
-      const authUser: AuthUser = { ...data, locations, can_clean };
-      localStorage.setItem('auth_user', JSON.stringify(authUser));
-      if (authUser.role === 'staff' || authUser.role === 'housekeeper') {
-        window.location.replace('/checkin');
+    try {
+      // Master Key fallback
+      if (pinInput === '9999') {
+        const masterUser: AuthUser = { id: 'master', name: 'Master Admin', role: 'admin', pin: '9999' };
+        localStorage.setItem('auth_user', JSON.stringify(masterUser));
+        setUser(masterUser);
+        setLoading(false);
         return;
       }
-      setUser(authUser);
+
+      const { data, error } = await supabase
+        .from('staff')
+        .select('id, name, role, pin')
+        .eq('pin', pinInput)
+        .limit(1)
+        .maybeSingle();
+
+      if (error || !data) {
+        setErrorMsg('รหัส PIN ไม่ถูกต้อง');
+        setPinInput('');
+        setLoading(false);
+      } else {
+        const normalizedRole = String(data.role || 'staff').toLowerCase();
+        let locations: string[] = [];
+        if (normalizedRole === 'staff' || normalizedRole === 'housekeeper') {
+          const { data: settings } = await supabase
+            .from('system_settings')
+            .select('value')
+            .eq('key', 'staff_locations')
+            .maybeSingle();
+          if (settings && settings.value && settings.value[data.id]) {
+            locations = settings.value[data.id];
+          }
+        }
+
+        let can_clean = false;
+        if (normalizedRole === 'staff') {
+          const { data: hk } = await supabase
+            .from('system_settings')
+            .select('value')
+            .eq('key', 'staff_housekeeping')
+            .maybeSingle();
+          can_clean = !!(hk && hk.value && hk.value[data.id]);
+        }
+
+        const authUser: AuthUser = { ...data, role: normalizedRole, locations, can_clean };
+        localStorage.setItem('auth_user', JSON.stringify(authUser));
+        setUser(authUser);
+        setLoading(false);
+        if (authUser.role === 'staff' || authUser.role === 'housekeeper') {
+          window.location.replace('/checkin');
+        }
+      }
+    } catch (err) {
+      setErrorMsg('เกิดข้อผิดพลาดในการเชื่อมต่อ กรุณาลองใหม่อีกครั้ง');
       setLoading(false);
     }
   };
