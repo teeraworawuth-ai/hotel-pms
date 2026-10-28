@@ -66,6 +66,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [guestName, setGuestName] = useState<string>(room.guest_name === 'ไม่ระบุชื่อ' ? "" : (room.guest_name || ""));
   const [guestPhone, setGuestPhone] = useState<string>(room.guest_phone || "");
   const [skipPhone, setSkipPhone] = useState<boolean>(false);
+  const [pendingCheckInAfterPhone, setPendingCheckInAfterPhone] = useState<{ isReservationForToday: boolean } | null>(null);
   const phoneInputRef = useRef<HTMLInputElement>(null);
   const submitLockRef = useRef(false);
   const [extrasManagerUnlocked, setExtrasManagerUnlocked] = useState(false);
@@ -1124,6 +1125,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       return;
     }
     if (!skipPhone && (!guestPhone.trim() || guestPhone.length !== 10 || !/^\d+$/.test(guestPhone))) {
+      setPendingCheckInAfterPhone({ isReservationForToday });
       alert('กรุณากรอกเบอร์โทรศัพท์ลูกค้า (ตัวเลข 10 หลัก) ให้ถูกต้อง\nหรือกด "ไม่ระบุเบอร์" หากลูกค้าไม่สะดวกให้เบอร์');
       setTimeout(() => {
         phoneInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1131,6 +1133,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       }, 50);
       return;
     }
+    setPendingCheckInAfterPhone(null);
     if (submitLockRef.current) return; // กันกดซ้ำรัวๆ ก่อน state loading อัปเดต
     submitLockRef.current = true;
     setLoading(true);
@@ -2786,6 +2789,35 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     className="w-full border border-slate-300/80 rounded-2xl pl-11 pr-4 py-3 text-base font-bold text-slate-800 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 bg-white disabled:opacity-50 transition-all shadow-xs"
                   />
                 </div>
+                {pendingCheckInAfterPhone && (skipPhone || (guestPhone.trim().length === 10 && /^\d{10}$/.test(guestPhone.trim()))) && (
+                  <div className="mt-2.5 p-3 rounded-2xl bg-indigo-50/80 border border-indigo-200 shadow-sm space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const isRes = pendingCheckInAfterPhone.isReservationForToday;
+                        setPendingCheckInAfterPhone(null);
+                        handleCheckIn(activeTab, isRes);
+                      }}
+                      disabled={loading}
+                      className="w-full py-4 text-white font-bold rounded-2xl text-lg transition-all active:scale-98 bg-indigo-700 hover:bg-indigo-800 shadow-lg shadow-indigo-700/25 flex items-center justify-center gap-2"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span>
+                        {loading ? 'กำลังบันทึก...' : pendingCheckInAfterPhone.isReservationForToday ? 'ยืนยันจองไว้ก่อน (ยังไม่เข้าพัก)' : dateOffset > 0 ? 'ยืนยันจองล่วงหน้า' : 'ยืนยันเช็คอิน'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPendingCheckInAfterPhone(null)}
+                      disabled={loading}
+                      className="w-full py-2.5 text-slate-600 hover:text-slate-800 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold transition-all"
+                    >
+                      ยกเลิก
+                    </button>
+                  </div>
+                )}
                 {renderFieldHistory('guest_phone')}
               </div>
 
