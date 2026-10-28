@@ -182,13 +182,15 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       }
     }
 
-    const newShiftBD = await resolveBusinessDateForNewShift(getNow());
+    const nowOpenIso = getNow().toISOString();
+    const newShiftBD = await resolveBusinessDateForNewShift(getNow(), chosenLocation);
 
     const { data: insertedShift, error: shiftError } = await supabase
       .from("shifts")
       .insert({
         staff_id: staffData.id,
         staff_name: staffData.name,
+        start_time: nowOpenIso,
         initial_cash: initialCash,
         expected_cash: initialCash,
         status: "open",
@@ -271,7 +273,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       return;
     }
 
-    const nowIso = new Date().toISOString();
+    const nowIso = getNow().toISOString();
     const countedDrawer = actualSendNum + closeReserve;
 
     const { error: shiftError } = await supabase
@@ -322,7 +324,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
           .from("system_settings")
           .upsert(
             {
-              key: `${EOD_LOC_KEY_PREFIX}${businessDate}_${shiftLoc}`,
+              key: `${EOD_LOC_KEY_PREFIX}${shiftLoc}_${businessDate}`,
               value: { shift_id: activeShift.id, location: shiftLoc, closed_at: nowIso },
             },
             { onConflict: "key" }

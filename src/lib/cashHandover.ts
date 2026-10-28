@@ -99,18 +99,28 @@ export function getShiftCutoffs(bd: string) {
   };
 }
 
-/** วันธุรกิจที่ควรผูกให้กะใหม่ที่เปิด ณ เวลา now */
-export async function resolveBusinessDateForNewShift(now: Date): Promise<string> {
+/** วันธุรกิจที่ควรผูกให้กะใหม่ที่เปิด ณ เวลา now (แยกอิสระตามสถานที่หากระบุ shiftLocation) */
+export async function resolveBusinessDateForNewShift(now: Date, shiftLocation?: string | null): Promise<string> {
   const clockBD = getBusinessDateStr(now);
-  // ช่วง 05:30–06:44 ของเช้าวันใหม่: ถ้าวันก่อนหน้า (clockBD) ปิดรอบวันแล้ว → กะนี้เป็นกะแรกของวันใหม่
+  // ช่วง 05:30–06:44 ของเช้าวันใหม่: ถ้าวันก่อนหน้า (clockBD) ของสถานที่นี้ปิดรอบวันแล้ว → กะนี้เป็นกะแรกของวันใหม่ทันที
   const { eodAllowedFrom } = getShiftCutoffs(clockBD);
   if (now.getTime() >= eodAllowedFrom.getTime()) {
+    const locTrimmed = shiftLocation ? String(shiftLocation).trim() : "";
+    const keysToCheck = locTrimmed
+      ? [`${EOD_LOC_KEY_PREFIX}${locTrimmed}_${clockBD}`, `${EOD_KEY_PREFIX}${clockBD}`]
+      : [`${EOD_KEY_PREFIX}${clockBD}`];
     const { data } = await supabase
       .from("system_settings")
       .select("key")
-      .eq("key", `${EOD_KEY_PREFIX}${clockBD}`)
-      .maybeSingle();
-    if (data) return addDaysStr(clockBD, 1);
+      .in("key", keysToCheck);
+    if (data && data.length > 0) {
+      if (locTrimmed) {
+        const hasLocKey = data.some((r) => r.key === `${EOD_LOC_KEY_PREFIX}${locTrimmed}_${clockBD}`);
+        if (hasLocKey) return addDaysStr(clockBD, 1);
+      } else {
+        return addDaysStr(clockBD, 1);
+      }
+    }
   }
   return clockBD;
 }
