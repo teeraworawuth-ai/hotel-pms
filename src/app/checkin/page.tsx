@@ -1326,14 +1326,19 @@ export default function CheckinPage() {
                                                 
 
                         
+                        {/* Key Deposit Indicator (Bottom-Right above White Financial Bar) */}
+                        {room.status === 'occupied' && (room.held_key_deposit || 0) > 0 && (
+                          <div
+                            className="absolute bottom-[15px] sm:bottom-[19px] right-1 z-30 flex items-center leading-none text-[7.5px] sm:text-[9px] font-black text-amber-700 pointer-events-none"
+                            title="มัดจำกุญแจที่ต้องคืนลูกค้าเป็นเงินสดตอนเช็คเอาท์"
+                          >
+                            🔑{room.held_key_deposit}
+                          </div>
+                        )}
+
                         {/* Financial Summary for Occupied Rooms */}
                         {room.status === 'occupied' && (
                           <div className="absolute bottom-0 left-0 right-0 w-full h-[14px] sm:h-[18px] flex items-center justify-center gap-0.5 sm:gap-1 text-[7px] sm:text-[9.5px] font-bold z-30 whitespace-nowrap bg-white/60 backdrop-blur-[1px] border-t border-slate-300/40 text-slate-500 tracking-tight overflow-hidden px-0.5">
-                            {(room.held_key_deposit || 0) > 0 && (
-                              <span className="text-amber-700 font-black pr-0.5 mr-0.5 border-r border-slate-300/60" title="มัดจำกุญแจที่ต้องคืนลูกค้าเป็นเงินสดตอนเช็คเอาท์">
-                                🔑{room.held_key_deposit}
-                              </span>
-                            )}
                             <span>{room.total_charges || 0}</span>
                             <span className="text-slate-300 font-bold">-</span>
                             <span>{room.total_payments || 0}</span>
