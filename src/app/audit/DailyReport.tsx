@@ -2,10 +2,12 @@
 
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { Shift } from "@/contexts/ShiftContext";
+import { Shift, useShift } from "@/contexts/ShiftContext";
 import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
 import { computeKeyDepositParts, fetchActiveKeyDeposits, HeldKeyDepositRoom } from "@/lib/keyDeposit";
 import {
+  addDaysStr,
+  atLocalTime,
   CashHandover,
   computeDrawerFromRows,
   fetchHandoversByDate,
@@ -102,6 +104,7 @@ export default function DailyReport({
   onChangeDateOffset?: (offset: number) => void;
 }) {
   const { getNow } = useSimulatedTime();
+  const { getActiveBusinessDate, currentBusinessDate } = useShift();
   const [loading, setLoading] = useState(true);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [transactions, setTransactions] = useState<LedgerTransaction[]>([]);
@@ -183,17 +186,15 @@ export default function DailyReport({
       setLoading(true);
 
       const now = getNow();
-      // วันของรายงาน (อิงวันธุรกิจปัจจุบัน — ก่อน 06:45 ถือเป็นของเมื่อวาน + dateOffset)
-      const baseDay = new Date(now);
-      if (baseDay.getHours() < 6 || (baseDay.getHours() === 6 && baseDay.getMinutes() < 45)) {
-        baseDay.setDate(baseDay.getDate() - 1);
-      }
+      // วันของรายงาน (อิงวันธุรกิจปัจจุบัน — หากปิดกะสุดท้ายตั้งแต่ 05:30 น. แล้ว จะเริ่มวันใหม่ทันที + dateOffset)
+      const baseDay = getActiveBusinessDate();
       baseDay.setDate(baseDay.getDate() + dateOffset);
 
-      // ตัดรอบวันธุรกิจ 06:45 น. ของวันรายงาน ถึง 06:44:59 น. ของวันถัดไป (นับเป็น 1 วันเดียวกันทุกหมวด)
-      const start0645 = new Date(baseDay.getFullYear(), baseDay.getMonth(), baseDay.getDate(), 6, 45, 0, 0);
-      const end0645 = new Date(start0645);
+      // ตัดรอบวันธุรกิจค่าเริ่มต้น 06:45 น. ถึง 06:44:59 น. ของวันถัดไป (หากมีการปิดกะสุดท้าย EOD ตั้งแต่ 05:30 น. จะใช้เวลาปิดกะจริงเป็นจุดตัดวัน)
+      let start0645 = new Date(baseDay.getFullYear(), baseDay.getMonth(), baseDay.getDate(), 6, 45, 0, 0);
+      let end0645 = new Date(start0645);
       end0645.setDate(end0645.getDate() + 1);
+      const queryEndBound = new Date(end0645.getTime() + 6 * 3600 * 1000);
 
       const reportDateStr = `${start0645.getFullYear()}-${String(start0645.getMonth() + 1).padStart(2, "0")}-${String(start0645.getDate()).padStart(2, "0")}`;
       setReportDateLabel(
@@ -232,7 +233,7 @@ export default function DailyReport({
           .from("ledger_transactions")
           .select("*")
           .gte("created_at", windowStart.toISOString())
-          .lt("created_at", end0645.toISOString())
+          .lt("created_at", queryEndBound.toISOString())
           .order("created_at", { ascending: true })
           .limit(10000),
         supabase
@@ -309,20 +310,47 @@ export default function DailyReport({
       let posCategoryMap: Record<string, "minibar" | "addon" | "fine" | "other"> = {};
       const bookingMetaMap: Record<string, BookingMeta> = {};
       let dayClosed = false;
+      const prevDateStr = addDaysStr(reportDateStr, -1);
+      const nextDateStr = addDaysStr(reportDateStr, 1);
+      const prevEodKey = `eod_shift_${prevDateStr}`;
       const eodKey = `eod_shift_${reportDateStr}`;
+      let prevEodClosedAt: string | null = null;
+      let currEodClosedAt: string | null = null;
 
       (settingsRes.data || []).forEach((row: any) => {
         if (row.key === "bank_accounts" && Array.isArray(row.value) && row.value.length > 0) {
           configuredBanks = row.value;
         } else if (row.key === "pos_category_map" && row.value && typeof row.value === "object") {
           posCategoryMap = row.value;
+        } else if (row.key === prevEodKey) {
+          if (row.value?.closed_at) prevEodClosedAt = String(row.value.closed_at);
         } else if (row.key === eodKey) {
           dayClosed = true;
+          if (row.value?.closed_at) currEodClosedAt = String(row.value.closed_at);
         } else if (typeof row.key === "string" && row.key.startsWith("booking_meta_")) {
           const bId = row.key.replace("booking_meta_", "");
           bookingMetaMap[bId] = row.value as BookingMeta;
         }
       });
+
+      // หากเมื่อวานปิดกะสุดท้ายตั้งแต่ 05:30 น. เป็นต้นไป ให้เริ่มนับวันใหม่ทันทีตั้งแต่เวลาที่ปิดกะสุดท้ายนั้น
+      if (prevEodClosedAt) {
+        const dt = new Date(prevEodClosedAt);
+        const minStart = atLocalTime(reportDateStr, 5, 30);
+        const maxStart = atLocalTime(reportDateStr, 12, 0);
+        if (dt.getTime() >= minStart.getTime() && dt.getTime() <= maxStart.getTime()) {
+          start0645 = dt;
+        }
+      }
+      // หากวันนี้ปิดกะสุดท้ายตั้งแต่ 05:30 น. ของเช้าวันถัดไป ให้ตัดจบวัน ณ เวลาที่ปิดกะสุดท้ายนั้นพอดี
+      if (currEodClosedAt) {
+        const dt = new Date(currEodClosedAt);
+        const minEnd = atLocalTime(nextDateStr, 5, 30);
+        const maxEnd = atLocalTime(nextDateStr, 12, 0);
+        if (dt.getTime() >= minEnd.getTime() && dt.getTime() <= maxEnd.getTime()) {
+          end0645 = dt;
+        }
+      }
 
       setBankAccounts(configuredBanks);
       setIsDayClosed(dayClosed);
@@ -1013,7 +1041,7 @@ export default function DailyReport({
     }
 
     fetchDailyData();
-  }, [dateOffset, getNow, refreshKey]);
+  }, [dateOffset, getNow, getActiveBusinessDate, currentBusinessDate, refreshKey]);
 
 
   if (loading) {

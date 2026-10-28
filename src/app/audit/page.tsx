@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
+import { useShift } from "@/contexts/ShiftContext";
 import DailyReport from "./DailyReport";
 import GuestReport from "./GuestReport";
 import AnomalyReport from "./AnomalyReport";
@@ -11,6 +12,7 @@ import ActivityLogView from "./ActivityLogView";
 
 export default function AuditPage() {
   const { getNow } = useSimulatedTime();
+  const { getActiveBusinessDate } = useShift();
   const [activeTab, setActiveTab] = useState<"daily" | "guest" | "anomaly" | "history" | "activity_log">("daily");
   const [dateOffset, setDateOffset] = useState<number>(0);
 
@@ -24,12 +26,9 @@ export default function AuditPage() {
     }
   }, []);
 
-  // สร้างตัวเลือก Dropdown 15 วัน (อิงรอบวันธุรกิจ 06:45 - 06:44 ของอีกวัน)
+  // สร้างตัวเลือก Dropdown 15 วัน (อิงวันธุรกิจปัจจุบัน — หากปิดกะสุดท้ายตั้งแต่ 05:30 น. แล้ว จะเริ่มวันใหม่ทันที)
   const dateOptions = Array.from({ length: 16 }, (_, i) => {
-    const d = getNow();
-    if (d.getHours() < 6 || (d.getHours() === 6 && d.getMinutes() < 45)) {
-      d.setDate(d.getDate() - 1);
-    }
+    const d = getActiveBusinessDate();
     d.setDate(d.getDate() - i);
     const labelStr = d.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
     return {

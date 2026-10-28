@@ -51,7 +51,7 @@ interface ModalProps {
 
 export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }: ModalProps) {
   const { getNow } = useSimulatedTime();
-  const { activeShift, operatorName, ensureShiftWritable } = useShift();
+  const { activeShift, operatorName, ensureShiftWritable, currentBusinessDate } = useShift();
   const displayDate = getNow();
   if (displayDate.getHours() < 6 || (displayDate.getHours() === 6 && displayDate.getMinutes() < 45)) {
     displayDate.setDate(displayDate.getDate() - 1);
@@ -1063,12 +1063,15 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const now = getNow();
   const currentHour = now.getHours();
   const currentMinute = now.getMinutes();
+  const nowCalendarDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  // หากปิดกะสุดท้ายตั้งแต่ 05:30 น. และเริ่มวันใหม่แล้ว ให้ช่วง 05:30-06:44 นับเป็นเข้าพักก่อนเวลาของวันใหม่ (early_in) แทนรอบดึกของเมื่อวาน
+  const isNewDayStartedEarly = currentBusinessDate === nowCalendarDateStr;
   let timeBand = 'normal';
   if (dateOffset === 0) {
     const totalMinutes = currentHour * 60 + currentMinute;
-    if (totalMinutes < 6 * 60 + 45) { // 00:00 ถึง 06:44
+    if (totalMinutes < 6 * 60 + 45 && !isNewDayStartedEarly) { // 00:00 ถึง 06:44 (กรณีที่ยังไม่ปิดกะสุดท้ายเริ่มวันใหม่)
       timeBand = 'late_night';
-    } else if (totalMinutes < 9 * 60 + 45) { // 06:45 ถึง 09:44
+    } else if (totalMinutes < 9 * 60 + 45) { // 06:45 ถึง 09:44 (หรือ 05:30-06:44 หลังเปิดกะวันใหม่แล้ว)
       timeBand = 'early_in';
     }
   }

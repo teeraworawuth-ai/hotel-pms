@@ -50,7 +50,7 @@ export type RoomStatus = {
 
 export default function CheckinPage() {
   const { getNow, simulatedTime } = useSimulatedTime();
-  const { activeShift } = useShift();
+  const { activeShift, getActiveBusinessDate } = useShift();
   const [rooms, setRooms] = useState<RoomStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [locationsOrder, setLocationsOrder] = useState<string[]>([]);
@@ -709,12 +709,9 @@ export default function CheckinPage() {
     }
   };
 
-  const getBusinessDate = (date: Date) => {
-    const d = new Date(date);
-    if (d.getHours() < 6 || (d.getHours() === 6 && d.getMinutes() < 45)) {
-      d.setDate(d.getDate() - 1);
-    }
-    return d;
+  const getBusinessDate = (_date?: Date) => {
+    // อิงวันธุรกิจปัจจุบัน (ปกติเปลี่ยนวันที่ 06:45 น. แต่ถ้าปิดกะสุดท้ายตั้งแต่ 05:30 น. แล้ว จะเริ่มวันใหม่ทันที)
+    return getActiveBusinessDate();
   };
 
   const displayDate = getBusinessDate(getNow());

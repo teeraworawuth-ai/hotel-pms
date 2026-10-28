@@ -2,7 +2,14 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { computeShiftDrawer, fetchShiftBusinessDates, getShiftCutoffs } from "@/lib/cashHandover";
+import {
+  addDaysStr,
+  computeShiftDrawer,
+  EOD_KEY_PREFIX,
+  fetchShiftBusinessDates,
+  getBusinessDateStr,
+  getShiftCutoffs,
+} from "@/lib/cashHandover";
 import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
 
 export interface Shift {
@@ -51,6 +58,8 @@ type ShiftContextType = {
   refreshShift: () => Promise<void>;
   shiftLock: ShiftLockState;
   ensureShiftWritable: () => boolean;
+  currentBusinessDate: string;
+  getActiveBusinessDate: () => Date;
 };
 
 const DEFAULT_LOCK: ShiftLockState = { locked: false, nearLock: false, canCloseEod: false, businessDate: null, lockFrom: null, eodAllowedFrom: null, message: '' };
@@ -63,6 +72,8 @@ const ShiftContext = createContext<ShiftContextType>({
   refreshShift: async () => {},
   shiftLock: DEFAULT_LOCK,
   ensureShiftWritable: () => true,
+  currentBusinessDate: getBusinessDateStr(new Date()),
+  getActiveBusinessDate: () => new Date(),
 });
 
 export const useShift = () => useContext(ShiftContext);
@@ -72,6 +83,7 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
   const [activeShift, setActiveShift] = useState<Shift | null>(null);
   const [currentUser, setCurrentUser] = useState<LoggedInUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [closedEodDates, setClosedEodDates] = useState<Set<string>>(new Set());
 
   const refreshShift = async () => {
     setLoading(true);
@@ -112,14 +124,23 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
       setCurrentUser(null);
     }
 
-    // หา shift ที่กำลังเปิดอยู่ (ล่าสุด)
-    const { data, error } = await supabase
-      .from('shifts')
-      .select('*')
-      .eq('status', 'open')
-      .order('start_time', { ascending: false })
-      .limit(1)
-      .single();
+    // หา shift ที่กำลังเปิดอยู่ (ล่าสุด) + ดึงรายการวันธุรกิจที่ปิดรอบวัน (EOD) ล่าสุด
+    const [{ data, error }, { data: eodRows }] = await Promise.all([
+      supabase
+        .from('shifts')
+        .select('*')
+        .eq('status', 'open')
+        .order('start_time', { ascending: false })
+        .limit(1)
+        .single(),
+      supabase
+        .from('system_settings')
+        .select('key')
+        .like('key', `${EOD_KEY_PREFIX}%`),
+    ]);
+    if (eodRows) {
+      setClosedEodDates(new Set(eodRows.map((r: any) => String(r.key).slice(EOD_KEY_PREFIX.length))));
+    }
 
     if (error || !data) {
       setActiveShift(null);
@@ -213,8 +234,30 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
     return true;
   };
 
+  // คำนวณวันธุรกิจปัจจุบันของโรงแรม:
+  // - ปกติเปลี่ยนวันที่ 06:45 น.
+  // - แต่ถ้าตั้งแต่ 05:30 น. เป็นต้นไป มีการปิดกะสุดท้ายของเมื่อวานแล้ว (หรือเปิดกะใหม่ของวันใหม่แล้ว) ให้ถือเป็นวันใหม่ทันทีโดยไม่ต้องรอถึง 06:45 น.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const currentBusinessDate = React.useMemo(() => {
+    const now = getNow();
+    const clockBD = getBusinessDateStr(now);
+    const nextBD = addDaysStr(clockBD, 1);
+    if (activeShift?.business_date === nextBD) return nextBD;
+    const { eodAllowedFrom } = getShiftCutoffs(clockBD);
+    if (now.getTime() >= eodAllowedFrom.getTime() && closedEodDates.has(clockBD)) {
+      return nextBD;
+    }
+    return clockBD;
+  }, [activeShift, closedEodDates, clockTick, getNow]);
+
+  const getActiveBusinessDate = React.useCallback(() => {
+    const [y, m, d] = currentBusinessDate.split("-").map(Number);
+    const now = getNow();
+    return new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds());
+  }, [currentBusinessDate, getNow]);
+
   return (
-    <ShiftContext.Provider value={{ activeShift, currentUser, operatorName, loading, refreshShift, shiftLock, ensureShiftWritable }}>
+    <ShiftContext.Provider value={{ activeShift, currentUser, operatorName, loading, refreshShift, shiftLock, ensureShiftWritable, currentBusinessDate, getActiveBusinessDate }}>
       {children}
     </ShiftContext.Provider>
   );
