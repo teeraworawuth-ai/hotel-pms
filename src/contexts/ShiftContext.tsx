@@ -6,9 +6,10 @@ import {
   addDaysStr,
   computeShiftDrawer,
   EOD_KEY_PREFIX,
-  fetchShiftBusinessDates,
+  fetchShiftMetadata,
   getBusinessDateStr,
   getShiftCutoffs,
+  inferShiftLocation,
 } from "@/lib/cashHandover";
 import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
 
@@ -21,6 +22,7 @@ export interface Shift {
   housekeeper_only?: boolean;
   can_clean?: boolean;
   locations?: string[];
+  shift_location?: string | null; // สถานที่ประจำกะ เช่น ซอย1, ซอย2, ซามีญ่า
   start_time: string;
   end_time: string | null;
   initial_cash: number;
@@ -52,6 +54,8 @@ export interface LoggedInUser {
 
 type ShiftContextType = {
   activeShift: Shift | null;
+  openShifts: Shift[];
+  switchActiveShift: (shiftId: string) => void;
   currentUser: LoggedInUser | null;
   operatorName: string;
   loading: boolean;
@@ -66,6 +70,8 @@ const DEFAULT_LOCK: ShiftLockState = { locked: false, nearLock: false, canCloseE
 
 const ShiftContext = createContext<ShiftContextType>({
   activeShift: null,
+  openShifts: [],
+  switchActiveShift: () => {},
   currentUser: null,
   operatorName: "",
   loading: true,
@@ -81,6 +87,7 @@ export const useShift = () => useContext(ShiftContext);
 export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
   const { getNow } = useSimulatedTime();
   const [activeShift, setActiveShift] = useState<Shift | null>(null);
+  const [openShifts, setOpenShifts] = useState<Shift[]>([]);
   const [currentUser, setCurrentUser] = useState<LoggedInUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [closedEodDates, setClosedEodDates] = useState<Set<string>>(new Set());
@@ -90,6 +97,7 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
 
     // Check AuthUser for logged-in user and Housekeeper Dummy Shift
     const saved = localStorage.getItem('auth_user');
+    const preferredShiftId = localStorage.getItem('active_shift_id');
     let parsedUser: LoggedInUser | null = null;
     if (saved) {
       try {
@@ -107,6 +115,7 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
             housekeeper_only: true,
             can_clean: true,
             locations: user.locations || [],
+            shift_location: user.locations?.[0] || null,
             start_time: new Date().toISOString(),
             end_time: null,
             initial_cash: 0,
@@ -116,6 +125,7 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
             status: 'open',
             signature_data: null
           });
+          setOpenShifts([]);
           setLoading(false);
           return;
         }
@@ -124,15 +134,13 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
       setCurrentUser(null);
     }
 
-    // หา shift ที่กำลังเปิดอยู่ (ล่าสุด) + ดึงรายการวันธุรกิจที่ปิดรอบวัน (EOD) ล่าสุด
-    const [{ data, error }, { data: eodRows }] = await Promise.all([
+    // ดึงกะที่กำลังเปิดอยู่ทั้งหมด (รองรับเปิดหลายสถานที่พร้อมกัน) + ดึงรายการวันธุรกิจที่ปิดรอบวัน (EOD)
+    const [{ data: openRows, error }, { data: eodRows }] = await Promise.all([
       supabase
         .from('shifts')
         .select('*')
         .eq('status', 'open')
-        .order('start_time', { ascending: false })
-        .limit(1)
-        .single(),
+        .order('start_time', { ascending: false }),
       supabase
         .from('system_settings')
         .select('key')
@@ -142,47 +150,87 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
       setClosedEodDates(new Set(eodRows.map((r: any) => String(r.key).slice(EOD_KEY_PREFIX.length))));
     }
 
-    if (error || !data) {
+    const list = ((openRows as Shift[]) || []);
+    if (error || list.length === 0) {
+      setOpenShifts([]);
       setActiveShift(null);
     } else {
-      
-      const shiftData = data as Shift;
+      const metaMap = await fetchShiftMetadata(list);
+      const enrichedList: Shift[] = list.map((s) => ({
+        ...s,
+        business_date: metaMap[s.id]?.business_date,
+        shift_location: metaMap[s.id]?.shift_location || inferShiftLocation(s.staff_name, null),
+      }));
 
-      // ดึง Role ของพนักงานที่เปิดกะ
-      const { data: staffData } = await supabase
-        .from('staff')
-        .select('role')
-        .eq('id', shiftData.staff_id)
-        .single();
-      
-      if (staffData) {
-        shiftData.staff_role = staffData.role;
-      }
+      // กรองกะที่ผู้ใช้งานคนนี้มีสิทธิ์เข้าถึง
+      const isMgr = parsedUser?.role === 'admin' || parsedUser?.role === 'manager';
+      const userLocs = parsedUser?.locations || [];
+      const accessibleShifts = isMgr
+        ? enrichedList
+        : enrichedList.filter((s) => {
+            if (parsedUser && (s.staff_id === parsedUser.id || s.staff_name === parsedUser.name)) return true;
+            if (!s.shift_location) return true;
+            return userLocs.length === 0 || userLocs.includes(s.shift_location);
+          });
 
-      // แนบสิทธิ์และชื่อของ staff ที่ล็อกอินอยู่ปัจจุบัน (ซับของกะ)
-      if (parsedUser) {
-        shiftData.operator_name = parsedUser.name;
-        if (parsedUser.role) shiftData.staff_role = parsedUser.role;
-        if (parsedUser.locations) shiftData.locations = parsedUser.locations;
-        if (parsedUser.can_clean !== undefined) shiftData.can_clean = parsedUser.can_clean;
+      setOpenShifts(accessibleShifts);
+
+      // เลือกกะหลักสำหรับหน้าจอปัจจุบัน:
+      // 1) กะที่เลือกค้างไว้ในเครื่องนี้ (preferredShiftId)
+      // 2) กะที่พนักงานคนนี้เป็นคนเปิดเอง
+      // 3) กะที่ตรงกับสถานที่เริ่มต้นของพนักงานคนนี้
+      // 4) กะล่าสุดที่เข้าถึงได้
+      const userDefaultLoc = inferShiftLocation(parsedUser?.name, null, userLocs);
+      let chosen: Shift | undefined =
+        accessibleShifts.find((s) => preferredShiftId && s.id === preferredShiftId) ||
+        (parsedUser
+          ? accessibleShifts.find((s) => s.staff_id === parsedUser.id || s.staff_name === parsedUser.name)
+          : undefined) ||
+        (userDefaultLoc ? accessibleShifts.find((s) => s.shift_location === userDefaultLoc) : undefined) ||
+        accessibleShifts[0];
+
+      if (!chosen) {
+        setActiveShift(null);
       } else {
-        shiftData.operator_name = shiftData.staff_name;
-      }
+        const shiftData: Shift = { ...chosen };
 
-      // คำนวณยอดเงินสดในลิ้นชักจาก Ledger (รับเงินสด - ค่าใช้จ่าย/คืนเงินสด - ยอดที่ส่งเงินระหว่างกะไปแล้ว)
-      const [drawer, bdMap] = await Promise.all([
-        computeShiftDrawer(shiftData),
-        fetchShiftBusinessDates([shiftData]),
-      ]);
-      shiftData.expected_cash = drawer.drawer;
-      shiftData.business_date = bdMap[shiftData.id];
-    
-      // อัปเดตตาราง shifts ด้วยเพื่อความแน่ใจ
-      supabase.from('shifts').update({ expected_cash: shiftData.expected_cash }).eq('id', shiftData.id).then();
+        // ดึง Role ของพนักงานที่เปิดกะ
+        const { data: staffData } = await supabase
+          .from('staff')
+          .select('role')
+          .eq('id', shiftData.staff_id)
+          .single();
+        
+        if (staffData) {
+          shiftData.staff_role = staffData.role;
+        }
+
+        // แนบสิทธิ์และชื่อของ staff ที่ล็อกอินอยู่ปัจจุบัน (ซับของกะ)
+        if (parsedUser) {
+          shiftData.operator_name = parsedUser.name;
+          if (parsedUser.role) shiftData.staff_role = parsedUser.role;
+          if (parsedUser.locations) shiftData.locations = parsedUser.locations;
+          if (parsedUser.can_clean !== undefined) shiftData.can_clean = parsedUser.can_clean;
+        } else {
+          shiftData.operator_name = shiftData.staff_name;
+        }
+
+        // คำนวณยอดเงินสดในลิ้นชักจาก Ledger
+        const drawer = await computeShiftDrawer(shiftData);
+        shiftData.expected_cash = drawer.drawer;
       
-      setActiveShift(shiftData);
+        // อัปเดตตาราง shifts ด้วยเพื่อความแน่ใจ
+        supabase.from('shifts').update({ expected_cash: shiftData.expected_cash }).eq('id', shiftData.id).then();
+        
+        setActiveShift(shiftData);
+      }
     }
     setLoading(false);
+  };
+
+  const switchActiveShift = (shiftId: string) => {
+    localStorage.setItem('active_shift_id', shiftId);
+    refreshShift();
   };
 
   useEffect(() => {
@@ -257,7 +305,7 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
   }, [currentBusinessDate, getNow]);
 
   return (
-    <ShiftContext.Provider value={{ activeShift, currentUser, operatorName, loading, refreshShift, shiftLock, ensureShiftWritable, currentBusinessDate, getActiveBusinessDate }}>
+    <ShiftContext.Provider value={{ activeShift, openShifts, switchActiveShift, currentUser, operatorName, loading, refreshShift, shiftLock, ensureShiftWritable, currentBusinessDate, getActiveBusinessDate }}>
       {children}
     </ShiftContext.Provider>
   );

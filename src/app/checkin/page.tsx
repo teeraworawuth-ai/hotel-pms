@@ -880,38 +880,71 @@ export default function CheckinPage() {
 
       {/* แถบสรุปมัดจำกุญแจคงเหลือปัจจุบัน + รายจ่ายกะนี้ (ไม่แสดงสำหรับแม่บ้าน) */}
       {!isHousekeeper && dateOffset === 0 && !loading && (() => {
-        const keyRooms = rooms
+        const visibleRooms = isManagerOrAdmin
+          ? rooms
+          : rooms.filter(r => !r.location || userVisibleLocations.includes(r.location));
+        const focusLoc = selectedLocationFilter || activeShift?.shift_location || null;
+        const allKeyRooms = visibleRooms
           .filter(r => r.status === 'occupied' && (r.held_key_deposit || 0) > 0)
           .sort((a, b) => a.room_no.localeCompare(b.room_no, undefined, { numeric: true }));
+        const keyRooms = focusLoc
+          ? allKeyRooms.filter(r => (r.location || 'ทั่วไป') === focusLoc)
+          : allKeyRooms;
         const keyTotal = keyRooms.reduce((s, r) => s + (r.held_key_deposit || 0), 0);
+        const byLocMap: Record<string, number> = {};
+        allKeyRooms.forEach(r => {
+          const l = r.location || 'ทั่วไป';
+          byLocMap[l] = (byLocMap[l] || 0) + (r.held_key_deposit || 0);
+        });
+        const locEntries = Object.entries(byLocMap);
         return (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl px-3 py-2 shadow-xs space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={() => setShowKeyRooms(p => !p)}
-                className="flex items-center gap-2 text-left"
-                title="ยอดรวมมัดจำกุญแจของทุกห้องที่ยังไม่เช็คเอาท์ (ต้องกันเงินสดไว้ในลิ้นชักเพื่อคืนลูกค้า)"
-              >
-                <span className="text-lg">🔑</span>
-                <span className="text-xs sm:text-sm font-bold text-amber-900">มัดจำกุญแจคงเหลือปัจจุบัน:</span>
-                <span className="text-base sm:text-lg font-black text-amber-800">฿{keyTotal.toLocaleString()}</span>
-                <span className="text-[11px] font-bold text-amber-700 bg-white border border-amber-200 rounded-full px-2 py-0.5">
-                  {keyRooms.length} ห้อง {showKeyRooms ? '▲' : '▼'}
-                </span>
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowKeyRooms(p => !p)}
+                  className="flex items-center gap-2 text-left"
+                  title="ยอดรวมมัดจำกุญแจของห้องที่ยังไม่เช็คเอาท์ (ต้องกันเงินสดไว้ในลิ้นชักเพื่อคืนลูกค้า)"
+                >
+                  <span className="text-lg">🔑</span>
+                  <span className="text-xs sm:text-sm font-bold text-amber-900">
+                    มัดจำกุญแจคงเหลือ{focusLoc ? ` (${focusLoc})` : 'ปัจจุบัน'}:
+                  </span>
+                  <span className="text-base sm:text-lg font-black text-amber-800">฿{keyTotal.toLocaleString()}</span>
+                  <span className="text-[11px] font-bold text-amber-700 bg-white border border-amber-200 rounded-full px-2 py-0.5">
+                    {keyRooms.length} ห้อง {showKeyRooms ? '▲' : '▼'}
+                  </span>
+                </button>
+                {locEntries.length > 1 && (
+                  <div className="flex flex-wrap items-center gap-1">
+                    {locEntries.map(([locName, amt]) => (
+                      <span
+                        key={locName}
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                          focusLoc === locName
+                            ? 'bg-amber-600 text-white border-amber-600'
+                            : 'bg-white/80 text-amber-800 border-amber-200'
+                        }`}
+                      >
+                        📍{locName}: ฿{amt.toLocaleString()}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="flex items-center gap-2">
-                <span className="text-[11px] text-amber-800 hidden md:inline">ต้องกันเงินสดจำนวนนี้ไว้ในลิ้นชักเพื่อคืนลูกค้าตอนเช็คเอาท์</span>
+                <span className="text-[11px] text-amber-800 hidden md:inline">ต้องกันเงินสดจำนวนนี้ไว้ในลิ้นชักของแต่ละสถานที่เพื่อคืนลูกค้าตอนเช็คเอาท์</span>
                 {activeShift && !activeShift.housekeeper_only && <ShiftExpenseButton compact />}
               </div>
             </div>
             {showKeyRooms && (
               <div className="flex flex-wrap gap-1.5 pt-1 border-t border-amber-200">
                 {keyRooms.length === 0 ? (
-                  <span className="text-xs text-amber-700">ไม่มีห้องที่ถือเงินมัดจำกุญแจอยู่</span>
+                  <span className="text-xs text-amber-700">ไม่มีห้องที่ถือเงินมัดจำกุญแจอยู่{focusLoc ? `ใน ${focusLoc}` : ''}</span>
                 ) : keyRooms.map(r => (
                   <span key={r.id} className="text-[11px] bg-white border border-amber-200 rounded-lg px-2 py-0.5 font-bold text-slate-700">
-                    ห้อง {r.room_no} <span className="text-amber-700">฿{(r.held_key_deposit || 0).toLocaleString()}</span>
+                    {r.location ? `[${r.location}] ` : ''}ห้อง {r.room_no} <span className="text-amber-700">฿{(r.held_key_deposit || 0).toLocaleString()}</span>
                   </span>
                 ))}
               </div>

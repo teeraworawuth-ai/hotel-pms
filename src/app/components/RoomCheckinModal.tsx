@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { RoomStatus } from "../checkin/page";
 
-type LedgerTransaction = { id: string, category: string, amount: number, created_at: string, notes?: string };
+type LedgerTransaction = { id: string, category: string, amount: number, created_at: string, staff_name?: string, notes?: string };
 import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
 import BillingModal from "./BillingModal";
 import CheckoutSummaryModal from "./CheckoutSummaryModal";
@@ -351,11 +351,15 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   };
 
 
+  const shiftLocation = activeShift?.shift_location || null;
+  const roomLocation = room.location || null;
+  const isCrossLocation = Boolean(shiftLocation && roomLocation && shiftLocation !== roomLocation);
+
   const [actualPrice, setActualPrice] = useState<number | ''>(room.actual_price || room.price_night || '');
   const [payCash, setPayCash] = useState<number | ''>('');
   const [payTransfer, setPayTransfer] = useState<number | ''>('');
   const [payCredit, setPayCredit] = useState<number | ''>('');
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'credit'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'credit' | 'none'>(isCrossLocation ? 'transfer' : 'cash');
   const [bankAccounts, setBankAccounts] = useState<string[]>(['SCB', 'KBANK']);
   const [selectedBank, setSelectedBank] = useState<string>('SCB');
   const [receivedCash, setReceivedCash] = useState<number | ''>('');
@@ -365,6 +369,16 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [isScanningSlip, setIsScanningSlip] = useState(false);
   const [pastPayments, setPastPayments] = useState<LedgerTransaction[]>([]);
   const [staffName, setStaffName] = useState<string>(room.staff_name || operatorName || activeShift?.staff_name || '');
+
+  useEffect(() => {
+    if (isCrossLocation) {
+      setPaymentMethod(prev => (prev === 'cash' ? 'transfer' : prev));
+      setPayCash('');
+      if (!room.booking_id) {
+        setKeyDepositEnabled(false);
+      }
+    }
+  }, [isCrossLocation, room.booking_id]);
 
   useEffect(() => {
     if (!isExistingBooking && !staffName && (operatorName || activeShift?.staff_name)) {
@@ -1124,8 +1138,17 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       alert('กรุณาเปิดกะก่อนทำการจองหรือ Check-in');
       return;
     }
+    // กฎข้ามสถานที่: จองไว้ก่อนเท่านั้น ห้ามเช็คอินทันที และห้ามรับเงินสดข้ามสถานที่
+    const effectiveIsReservationForToday = isCrossLocation ? true : isReservationForToday;
+    if (isCrossLocation) {
+      const cashCheck = isSplitPayment ? (Number(payCash) || 0) : (paymentMethod === 'cash' ? totalToPay : 0);
+      if (cashCheck > 0) {
+        alert(`ไม่สามารถรับ "เงินสด" ข้ามสถานที่ได้ (คุณเปิดกะอยู่ที่ "${shiftLocation}" แต่ห้องพักอยู่ที่ "${roomLocation}")\n\nกรุณาเลือกวิธีชำระเป็น "โอนเงิน", "บัตรเครดิต" หรือ "จ่ายหน้างาน" เท่านั้น`);
+        return;
+      }
+    }
     if (!skipPhone && (!guestPhone.trim() || guestPhone.length !== 10 || !/^\d+$/.test(guestPhone))) {
-      setPendingCheckInAfterPhone({ isReservationForToday });
+      setPendingCheckInAfterPhone({ isReservationForToday: effectiveIsReservationForToday });
       alert('กรุณากรอกเบอร์โทรศัพท์ลูกค้า (ตัวเลข 10 หลัก) ให้ถูกต้อง\nหรือกด "ไม่ระบุเบอร์" หากลูกค้าไม่สะดวกให้เบอร์');
       setTimeout(() => {
         phoneInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1137,8 +1160,8 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     if (submitLockRef.current) return; // กันกดซ้ำรัวๆ ก่อน state loading อัปเดต
     submitLockRef.current = true;
     setLoading(true);
-    const startDate = (dateOffset === 0 && !isReservationForToday) ? getNow() : new Date(displayDateStr);
-    if (dateOffset > 0 || isReservationForToday) {
+    const startDate = (dateOffset === 0 && !effectiveIsReservationForToday) ? getNow() : new Date(displayDateStr);
+    if (dateOffset > 0 || effectiveIsReservationForToday) {
       // ถ้าจองล่วงหน้า หรือจองของวันนี้ที่ยังไม่มาถึง ให้เวลาเริ่มคือ 14:00 น. ของวันนั้น
       startDate.setHours(14, 0, 0, 0);
     }
@@ -1177,8 +1200,8 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         guest_phone: guestPhone.trim(),
         check_in_time: startDate.toISOString(),
         check_out_time: checkoutDate.toISOString(),
-        status: (dateOffset === 0 && !isReservationForToday) ? 'checked_in' : 'reserved',
-        actual_check_in_time: (dateOffset === 0 && !isReservationForToday) ? startDate.toISOString() : null,
+        status: (dateOffset === 0 && !effectiveIsReservationForToday) ? 'checked_in' : 'reserved',
+        actual_check_in_time: (dateOffset === 0 && !effectiveIsReservationForToday) ? startDate.toISOString() : null,
         guest_count: Number(guestCount) || 1,
         actual_price: actualPrice === '' ? null : Number(actualPrice),
         staff_name: effectiveStaffName
@@ -1313,17 +1336,31 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           if (paymentMethod === 'cash') cash = totalToPay;
           else if (paymentMethod === 'transfer') transfer = totalToPay;
           else if (paymentMethod === 'credit') credit = totalToPay;
+          else if (paymentMethod === 'none') {
+            cash = 0;
+            transfer = 0;
+            credit = 0;
+          }
         }
-        
-        
-    
+        if (isCrossLocation) cash = 0;
+
+        const shiftLocTag = shiftLocation ? ` [SHIFT_LOC:${shiftLocation}]` : '';
+        const roomLocTag = roomLocation ? ` [ROOM_LOC:${roomLocation}]` : '';
+        const txTimeTag = paymentTime ? ` [TXTIME:${paymentTime}]` : '';
+
         const paymentInserts = [];
-        if (cash > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'cash', amount: -cash });
+        if (cash > 0) {
+          const cashNote = `${shiftLocTag}${roomLocTag}`.trim() || undefined;
+          paymentInserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'cash', amount: -cash, notes: cashNote });
+        }
         if (transfer > 0) {
-          const transferNote = `[BANK:${selectedBank || 'SCB'}]${paymentTime ? ` โอนเวลา: ${paymentTime.replace('T', ' ')}` : ''}`;
+          const transferNote = `[BANK:${selectedBank || 'SCB'}]${paymentTime ? ` โอนเวลา: ${paymentTime.replace('T', ' ')}` : ''}${txTimeTag}${shiftLocTag}${roomLocTag}`;
           paymentInserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: transferNote });
         }
-        if (credit > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'credit_card', amount: -credit });
+        if (credit > 0) {
+          const creditNote = `${paymentTime ? `รูดบัตรเวลา: ${paymentTime.replace('T', ' ')}` : ''}${txTimeTag}${shiftLocTag}${roomLocTag}`.trim() || undefined;
+          paymentInserts.push({ shift_id: activeShift.id, staff_name: effectiveStaffName, room_id: room.id, booking_id: insertedBooking.id, transaction_type: 'payment', category: 'credit_card', amount: -credit, notes: creditNote });
+        }
         
         if (paymentInserts.length > 0) {
           await supabase.from('ledger_transactions').insert(paymentInserts);
@@ -1350,7 +1387,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
     }
     // 2. ถ้าเป็นการ Check-in จริงๆ ใน "วันนี้" (ไม่ใช่แค่จอง) ให้บันทึกลงตาราง Rooms ด้วย
-    if (dateOffset === 0 && !isReservationForToday && !bookingError) {
+    if (dateOffset === 0 && !effectiveIsReservationForToday && !bookingError) {
       await supabase
         .from('rooms')
         .update({
@@ -1372,7 +1409,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       alert('บันทึกการจอง/เช็คอินไม่สำเร็จ: ' + bookingError.message);
     }
     if (!bookingError && insertedBooking) {
-      const actionType = (dateOffset === 0 && !isReservationForToday) ? 'checkin' : 'reserve';
+      const actionType = (dateOffset === 0 && !effectiveIsReservationForToday) ? 'checkin' : 'reserve';
       const extrasDesc = dailyExtras.length > 0
         ? ` | บริการเสริม: ${dailyExtras.map(e => `${e.name}(฿${extraLineTotal(e)})`).join(', ')}`
         : '';
@@ -1627,6 +1664,17 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       if (paymentMethod === 'cash') cash = remainingBalance;
       else if (paymentMethod === 'transfer') transfer = remainingBalance;
       else if (paymentMethod === 'credit') credit = remainingBalance;
+      else if (paymentMethod === 'none') {
+        cash = 0;
+        transfer = 0;
+        credit = 0;
+      }
+    }
+    if (isCrossLocation && cash > 0) {
+      alert(`ไม่สามารถรับ "เงินสด" ข้ามสถานที่ได้ (คุณเปิดกะอยู่ที่ "${shiftLocation}" แต่ห้องพักอยู่ที่ "${roomLocation}")\n\nกรุณาเลือกวิธีชำระเป็น "โอนเงิน" หรือ "บัตรเครดิต" เท่านั้น`);
+      setLoading(false);
+      submitLockRef.current = false;
+      return;
     }
     
 
@@ -1748,12 +1796,22 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         }
       }
     }
-    if (cash > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: actorName, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'cash', amount: -cash });
+    const shiftLocTag = shiftLocation ? ` [SHIFT_LOC:${shiftLocation}]` : '';
+    const roomLocTag = roomLocation ? ` [ROOM_LOC:${roomLocation}]` : '';
+    const txTimeTag = paymentTime ? ` [TXTIME:${paymentTime}]` : '';
+
+    if (cash > 0) {
+      const cashNote = `${shiftLocTag}${roomLocTag}`.trim() || undefined;
+      paymentInserts.push({ shift_id: activeShift.id, staff_name: actorName, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'cash', amount: -cash, notes: cashNote });
+    }
     if (transfer > 0) {
-      const transferNote = `[BANK:${selectedBank || 'SCB'}]${paymentTime ? ` โอนเวลา: ${paymentTime.replace('T', ' ')}` : ''}`;
+      const transferNote = `[BANK:${selectedBank || 'SCB'}]${paymentTime ? ` โอนเวลา: ${paymentTime.replace('T', ' ')}` : ''}${txTimeTag}${shiftLocTag}${roomLocTag}`;
       paymentInserts.push({ shift_id: activeShift.id, staff_name: actorName, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'transfer', amount: -transfer, notes: transferNote });
     }
-    if (credit > 0) paymentInserts.push({ shift_id: activeShift.id, staff_name: actorName, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'credit_card', amount: -credit });
+    if (credit > 0) {
+      const creditNote = `${paymentTime ? `รูดบัตรเวลา: ${paymentTime.replace('T', ' ')}` : ''}${txTimeTag}${shiftLocTag}${roomLocTag}`.trim() || undefined;
+      paymentInserts.push({ shift_id: activeShift.id, staff_name: actorName, room_id: room.id, booking_id: room.booking_id, transaction_type: 'payment', category: 'credit_card', amount: -credit, notes: creditNote });
+    }
     
     if (paymentInserts.length > 0) {
       await supabase.from('ledger_transactions').insert(paymentInserts);
@@ -1782,7 +1840,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   useEffect(() => {
     if (room.booking_id) {
       Promise.all([
-        supabase.from('ledger_transactions').select('id, category, amount, created_at, notes, transaction_type').eq('booking_id', room.booking_id).order('created_at', { ascending: true }),
+        supabase.from('ledger_transactions').select('id, category, amount, created_at, staff_name, notes, transaction_type').eq('booking_id', room.booking_id).order('created_at', { ascending: true }),
         supabase.from('booking_daily_rates').select('target_date, amount, is_manual_override').eq('booking_id', room.booking_id).order('target_date', { ascending: true }),
         supabase.from('booking_daily_extras').select('*').eq('booking_id', room.booking_id).order('target_date', { ascending: true }),
         supabase.from('bookings').select('guest_name, guest_phone, check_in_time, check_out_time, actual_price, guest_count, staff_name').eq('id', room.booking_id).maybeSingle(),
@@ -1947,6 +2005,10 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
   const handleCheckInReserved = async () => {
     if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
+    if (isCrossLocation) {
+      alert(`ขณะนี้คุณเปิดกะอยู่ที่ "${shiftLocation}" ไม่สามารถกด Check-in เข้าพักห้องของ "${roomLocation}" ข้ามสถานที่ได้\n\nกรุณาให้หน้างาน "${roomLocation}" เป็นผู้กด Check-in เมื่อลูกค้าไปถึง (หรือสลับกะไปยัง "${roomLocation}" หากเปิดกะไว้แล้ว)`);
+      return;
+    }
     if (!room.booking_id) {
       alert('ไม่พบข้อมูลการจอง');
       return;
@@ -2702,10 +2764,13 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
               </svg>
             </button>
-            <h2 className="text-xl font-black text-slate-800 tracking-tight">เช็คอิน</h2>
+            <h2 className="text-xl font-black text-slate-800 tracking-tight">
+              {isCrossLocation ? `จองข้ามสถานที่ (${roomLocation})` : 'เช็คอิน'}
+            </h2>
             {dateOffset > 0 && <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-bold ml-1">จองล่วงหน้า</span>}
           </div>
           <div className="px-3.5 py-1 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-700 shadow-xs flex items-center gap-1.5">
+            {roomLocation && <span className="text-indigo-600 font-bold">📍{roomLocation}</span>}
             <span className="text-slate-400 font-normal">ห้อง</span>
             <span className="text-slate-900 font-black text-sm">{room.room_no}</span>
           </div>
@@ -2716,6 +2781,18 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           {/* 1. ห้องว่าง / จองแล้ว / กำลังพัก (Form View) */}
           {(!room.status || room.status === 'available' || room.status === 'reserved' || room.status === 'occupied') && (
             <div className="space-y-4">
+              {isCrossLocation && (
+                <div className="bg-amber-50 border-2 border-amber-300 text-amber-900 p-3 rounded-xl text-xs space-y-1 shadow-xs">
+                  <div className="font-black flex items-center gap-1.5 text-amber-950">
+                    <span>⚡</span>
+                    <span>คุณเปิดกะอยู่ที่ &ldquo;{shiftLocation}&rdquo; กำลังทำรายการห้องของ &ldquo;{roomLocation}&rdquo;</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    • <b>จองไว้ก่อนเท่านั้น:</b> เมื่อลูกค้าเดินทางไปถึง <b>{roomLocation}</b> ให้พนักงานหน้างานกด Check-in เข้าพักจริง<br/>
+                    • <b>ห้ามรับเงินสดข้ามสถานที่:</b> รับได้เฉพาะ <b>📱 โอนเงิน</b>, <b>💳 บัตรเครดิต</b> หรือเลือก <b>⏳ จ่ายหน้างาน</b> (เพื่อไม่ให้เงินสดในลิ้นชักปนกัน)
+                  </p>
+                </div>
+              )}
               {timeBand === 'early_in' && activeTab === 'overnight' && (
                 <div className="bg-amber-50 border border-amber-200 text-amber-800 p-2.5 rounded-xl text-xs font-medium">
                   ⚠️ <b>เตือน:</b> เข้าพักก่อนเวลา (06:45-09:44) ต้องเรียกเก็บเงินค่าเข้าพักก่อนเวลาเพิ่มเติม (ราคาชั่วคราว + ราคาปกติ)
@@ -3755,13 +3832,50 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     {pastPayments.map(p => {
                       const bankMatch = p.notes?.match(/\[BANK:([^\]]+)\]/);
                       const bankLabel = bankMatch ? ` (${bankMatch[1]})` : '';
+                      const shiftLocMatch = p.notes?.match(/\[SHIFT_LOC:([^\]]+)\]/);
+                      const pShiftLoc = shiftLocMatch ? shiftLocMatch[1] : null;
+                      const isCrossLocPay = Boolean(pShiftLoc && roomLocation && pShiftLoc !== roomLocation);
+                      const txTimeMatch = p.notes?.match(/\[TXTIME:([^\]]+)\]/);
+                      const cleanTransferTime = txTimeMatch
+                        ? txTimeMatch[1].replace('T', ' ')
+                        : p.notes && p.notes.includes('โอนเวลา:')
+                        ? p.notes.split('โอนเวลา:')[1].replace(/\[[^\]]+\]/g, '').trim()
+                        : p.notes && p.notes.includes('รูดบัตรเวลา:')
+                        ? p.notes.split('รูดบัตรเวลา:')[1].replace(/\[[^\]]+\]/g, '').trim()
+                        : null;
+                      const createdStr = new Date(p.created_at).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
                       return (
-                      <div key={p.id} className="flex justify-between items-center">
-                        <span className="text-slate-600">
-                          {p.category === 'transfer' ? `โอนเงิน${bankLabel}` : p.category === 'credit_card' ? 'บัตรเครดิต' : 'เงินสด'}
-                          {p.notes && p.notes.includes('โอนเวลา:') ? ` (${p.notes.split('โอนเวลา:')[1].trim()})` : ` (${new Date(p.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })})`}
+                      <div key={p.id} className="flex justify-between items-start gap-2 py-1 border-b border-slate-200/60 last:border-0">
+                        <div className="space-y-0.5">
+                          <div className="font-bold text-slate-700 flex items-center gap-1.5 flex-wrap">
+                            <span>
+                              {p.category.includes('คืนเงินทอน')
+                                ? `↩️ ${p.category}`
+                                : p.category === 'transfer'
+                                ? `📱 โอนเงิน${bankLabel}`
+                                : p.category === 'credit_card'
+                                ? '💳 บัตรเครดิต'
+                                : '💵 เงินสด'}
+                            </span>
+                            {cleanTransferTime && (
+                              <span className="text-[11px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                                เวลาสลิป: {cleanTransferTime}
+                              </span>
+                            )}
+                            {isCrossLocPay && (
+                              <span className="text-[10px] font-black text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300">
+                                ⚡ รับข้ามสาขา (กะ{pShiftLoc})
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-500">
+                            ผู้รับ: <b className="text-slate-700">{p.staff_name || '-'}</b>
+                            {pShiftLoc ? ` (กะ${pShiftLoc})` : ''} • บันทึกเมื่อ {createdStr}
+                          </div>
+                        </div>
+                        <span className={`font-black shrink-0 ${p.category.includes('คืนเงินทอน') ? 'text-rose-600' : 'text-emerald-600'}`}>
+                          {p.category.includes('คืนเงินทอน') ? '-' : ''}฿{Math.abs(p.amount).toLocaleString()}
                         </span>
-                        <span className="font-bold text-emerald-600">฿{Math.abs(p.amount).toLocaleString()}</span>
                       </div>
                       );
                     })}
@@ -3785,22 +3899,27 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
                   {!isSplitPayment ? (
                     <div className="space-y-2">
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-4 gap-1.5">
                         <button
                           type="button"
-                          onClick={() => setPaymentMethod('cash')}
-                          className={`py-2 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${
-                            paymentMethod === 'cash'
+                          disabled={isCrossLocation}
+                          onClick={() => !isCrossLocation && setPaymentMethod('cash')}
+                          title={isCrossLocation ? 'ห้ามรับเงินสดข้ามสถานที่' : 'ชำระด้วยเงินสด'}
+                          className={`py-2 px-1.5 rounded-xl text-xs font-bold flex flex-col items-center justify-center gap-0.5 border transition-all ${
+                            isCrossLocation
+                              ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                              : paymentMethod === 'cash'
                               ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-xs'
                               : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                           }`}
                         >
-                          <span>💵</span> เงินสด
+                          <span>💵 เงินสด</span>
+                          {isCrossLocation && <span className="text-[9px] text-rose-500 font-normal">ห้ามข้ามสาขา</span>}
                         </button>
                         <button
                           type="button"
                           onClick={() => setPaymentMethod('transfer')}
-                          className={`py-2 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${
+                          className={`py-2 px-1.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1 border transition-all ${
                             paymentMethod === 'transfer'
                               ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-xs'
                               : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -3811,7 +3930,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                         <button
                           type="button"
                           onClick={() => setPaymentMethod('credit')}
-                          className={`py-2 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${
+                          className={`py-2 px-1.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1 border transition-all ${
                             paymentMethod === 'credit'
                               ? 'bg-purple-50 border-purple-500 text-purple-700 shadow-xs'
                               : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -3819,9 +3938,20 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                         >
                           <span>💳</span> บัตร
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('none')}
+                          className={`py-2 px-1.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1 border transition-all ${
+                            paymentMethod === 'none'
+                              ? 'bg-amber-50 border-amber-500 text-amber-800 shadow-xs'
+                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span>⏳</span> จ่ายหน้างาน
+                        </button>
                       </div>
 
-                      {paymentMethod === 'cash' && (
+                      {paymentMethod === 'cash' && !isCrossLocation && (
                         <div className="bg-emerald-50/50 p-2.5 rounded-xl border border-emerald-100 flex items-center justify-between text-xs">
                           <span className="text-slate-600 font-medium">รับเงินสดมา:</span>
                           <div className="flex items-center gap-2">
@@ -3869,6 +3999,21 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                           </div>
                         </div>
                       )}
+
+                      {paymentMethod === 'credit' && (
+                        <div className="bg-purple-50/50 p-2.5 rounded-xl border border-purple-200 flex flex-col gap-1.5 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-purple-900">💳 วัน-เวลาที่รูดบัตรเครดิต (ตามสลิป EDC):</span>
+                          </div>
+                          <TransferTimePicker value={paymentTime} onChange={setPaymentTime} />
+                        </div>
+                      )}
+
+                      {paymentMethod === 'none' && (
+                        <div className="bg-amber-50/70 p-2.5 rounded-xl border border-amber-200 text-amber-900 text-xs font-medium">
+                          ⏳ <b>ยังไม่รับชำระเงินตอนนี้:</b> ระบบจะบันทึกการจองไว้ก่อน และให้ลูกค้าชำระเงินเมื่อมาเช็คอินที่หน้างาน{roomLocation ? ` (${roomLocation})` : ''}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-1.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs">
@@ -3876,12 +4021,15 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                         <span className="w-14 font-bold text-slate-600">💵 เงินสด:</span>
                         <input 
                           type="number" 
-                          value={payCash} 
-                          onChange={e => setPayCash(e.target.value === '' ? '' : Number(e.target.value))}
-                          className="flex-1 border-slate-200 rounded-lg p-1.5 text-xs font-bold bg-white" 
-                          placeholder="0"
+                          value={isCrossLocation ? '' : payCash} 
+                          disabled={isCrossLocation}
+                          onChange={e => !isCrossLocation && setPayCash(e.target.value === '' ? '' : Number(e.target.value))}
+                          className="flex-1 border-slate-200 rounded-lg p-1.5 text-xs font-bold bg-white disabled:bg-slate-100 disabled:text-slate-400" 
+                          placeholder={isCrossLocation ? 'ห้ามรับเงินสดข้ามสถานที่' : '0'}
                         />
-                        <button type="button" onClick={() => setPayCash(totalToPay)} className="text-[10px] bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded font-bold">เต็ม</button>
+                        {!isCrossLocation && (
+                          <button type="button" onClick={() => setPayCash(totalToPay)} className="text-[10px] bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded font-bold">เต็ม</button>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="w-14 font-bold text-slate-600">📱 โอน:</span>
@@ -3922,7 +4070,19 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                           className="flex-1 border-slate-200 rounded-lg p-1.5 text-xs font-bold bg-white" 
                           placeholder="0"
                         />
+                        <button type="button" onClick={() => setPayCredit(totalToPay)} className="text-[10px] bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded font-bold">เต็ม</button>
                       </div>
+                      {(Number(payTransfer) > 0 || Number(payCredit) > 0) && (
+                        <div className="pt-1.5 border-t border-slate-200 flex items-center gap-2">
+                          <TransferTimePicker value={paymentTime} onChange={setPaymentTime} />
+                          {Number(payTransfer) > 0 && (
+                            <label className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors shadow-xs shrink-0">
+                              {isScanningSlip ? '⏳...' : '📷 สแกนสลิป'}
+                              <input type="file" accept="image/*" className="hidden" onChange={handleScanSlip} disabled={isScanningSlip} />
+                            </label>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -4031,22 +4191,50 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
               {room.status !== 'occupied' && (
                 <div className="space-y-2 pt-2">
                   {room.status === 'reserved' ? (
-                    <div className="flex gap-2">
+                    <div className="space-y-1.5">
+                      <div className="flex gap-2">
+                        <button 
+                          type="button"
+                          onClick={handleAdditionalPayment} 
+                          disabled={loading}
+                          className="w-1/2 py-3.5 text-white font-bold rounded-2xl text-sm transition-all active:scale-95 bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-600/20"
+                        >
+                          💾 บันทึกชำระเพิ่ม
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={handleCheckInReserved} 
+                          disabled={loading || isCrossLocation}
+                          title={isCrossLocation ? `ต้องเช็คอินด้วยกะที่เปิดประจำอยู่ที่ ${roomLocation}` : 'กดเพื่อเช็คอินเข้าพักทันที'}
+                          className={`w-1/2 py-3.5 text-white font-bold rounded-2xl text-sm transition-all ${
+                            isCrossLocation
+                              ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                              : 'active:scale-95 bg-indigo-700 hover:bg-indigo-800 shadow-md shadow-indigo-700/20'
+                          }`}
+                        >
+                          {isCrossLocation ? `🚪 เช็คอินที่ ${roomLocation}` : '🚪 Check-in ทันที'}
+                        </button>
+                      </div>
+                      {isCrossLocation && (
+                        <p className="text-[11px] text-center text-amber-700 font-semibold">
+                          ⚠️ ห้องนี้อยู่ที่ <b>{roomLocation}</b> — กรุณาให้หน้างาน <b>{roomLocation}</b> กด Check-in เมื่อลูกค้าไปถึง
+                        </p>
+                      )}
+                    </div>
+                  ) : isCrossLocation ? (
+                    <div className="flex flex-col gap-2">
                       <button 
                         type="button"
-                        onClick={handleAdditionalPayment} 
+                        onClick={() => handleCheckIn(activeTab, true)} 
                         disabled={loading}
-                        className="w-1/2 py-3.5 text-white font-bold rounded-2xl text-sm transition-all active:scale-95 bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-600/20"
+                        className="w-full py-4 text-white font-bold rounded-2xl text-base transition-all active:scale-98 bg-indigo-700 hover:bg-indigo-800 shadow-lg shadow-indigo-700/25 flex items-center justify-center gap-2"
                       >
-                        💾 บันทึกชำระเพิ่ม
-                      </button>
-                      <button 
-                        type="button"
-                        onClick={handleCheckInReserved} 
-                        disabled={loading}
-                        className="w-1/2 py-3.5 text-white font-bold rounded-2xl text-sm transition-all active:scale-95 bg-indigo-700 hover:bg-indigo-800 shadow-md shadow-indigo-700/20"
-                      >
-                        🚪 Check-in ทันที
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span>
+                          {loading ? 'กำลังบันทึก...' : `📝 จองไว้ก่อน (ไปเช็คอินที่หน้างาน ${roomLocation})`}
+                        </span>
                       </button>
                     </div>
                   ) : (

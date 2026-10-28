@@ -9,7 +9,10 @@ import {
   CashHandover,
   computeShiftDrawer,
   EOD_KEY_PREFIX,
+  EOD_LOC_KEY_PREFIX,
+  fetchShiftMetadata,
   getShiftBusinessDateStr,
+  inferShiftLocation,
   newHandoverId,
   resolveBusinessDateForNewShift,
   saveHandover,
@@ -29,7 +32,7 @@ interface ShiftManagerProps {
 const fmt = (n: number) => `฿${Number(n || 0).toLocaleString()}`;
 
 export default function ShiftManager({ compact = false, hideExpense = false }: ShiftManagerProps = {}) {
-  const { activeShift, currentUser, operatorName, loading, refreshShift, shiftLock } = useShift();
+  const { activeShift, openShifts, switchActiveShift, currentUser, operatorName, loading, refreshShift, shiftLock } = useShift();
   const { getNow } = useSimulatedTime();
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
@@ -39,6 +42,8 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
   // Open Shift State
   const [name, setName] = useState("");
   const [pin, setPin] = useState("");
+  const [shiftLocation, setShiftLocation] = useState<string>("");
+  const [availableLocations, setAvailableLocations] = useState<string[]>(["ซอย1", "ซอย2", "ซามีญ่า"]);
   const [initialCash, setInitialCash] = useState<number | "">(0);
   const [suggestedReserve, setSuggestedReserve] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
@@ -54,27 +59,74 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
   const [isEndOfDay, setIsEndOfDay] = useState(false);
   const staffSigRef = useRef<SignaturePadHandle>(null);
 
-  // เปิดหน้าต่างเปิดกะ: แนะนำเงินสดตั้งต้น = มัดจำกุญแจคงเหลือที่ส่งต่อจากกะก่อน
+  // โหลดรายชื่อสถานที่จากตาราง rooms
+  useEffect(() => {
+    supabase
+      .from("rooms")
+      .select("location")
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          const locs = Array.from(new Set(data.map((r: any) => r.location).filter(Boolean))) as string[];
+          if (locs.length > 0) setAvailableLocations(locs.sort());
+        }
+      });
+  }, []);
+
+  // เปิดหน้าต่างเปิดกะ: ตั้งชื่อและสถานที่เริ่มต้นตามพนักงานที่ล็อกอินอยู่
   useEffect(() => {
     if (!showOpenModal) return;
-    fetchActiveKeyDeposits().then((r) => {
+    const defaultName = name || currentUser?.name || "";
+    if (!name && currentUser?.name) setName(currentUser.name);
+    const allowedLocs =
+      currentUser?.role === "staff" && currentUser?.locations && currentUser.locations.length > 0
+        ? availableLocations.filter((l) => currentUser.locations!.includes(l))
+        : availableLocations;
+    const openLocSet = new Set(openShifts.map((s) => s.shift_location).filter(Boolean));
+    const inferred = inferShiftLocation(defaultName, null, allowedLocs);
+    const firstUnopened = allowedLocs.find((l) => !openLocSet.has(l));
+    const chosenLoc =
+      (inferred && !openLocSet.has(inferred) ? inferred : null) ||
+      firstUnopened ||
+      inferred ||
+      allowedLocs[0] ||
+      availableLocations[0] ||
+      "ซอย1";
+    setShiftLocation(chosenLoc);
+  }, [showOpenModal]);
+
+  // เมื่อเปลี่ยนชื่อในหน้าเปิดกะ: หากชื่อตรงกับสถานที่ (เช่น ซอย1, ซอย 2, ซามิญา) ให้เลือกสถานที่นั้นให้อัตโนมัติ
+  useEffect(() => {
+    if (!showOpenModal || !name.trim()) return;
+    const inferred = inferShiftLocation(name, null);
+    if (inferred && availableLocations.includes(inferred)) {
+      setShiftLocation(inferred);
+    }
+  }, [name, showOpenModal, availableLocations]);
+
+  // เปิดหน้าต่างเปิดกะ หรือเปลี่ยนสถานที่: แนะนำเงินสดตั้งต้น = มัดจำกุญแจคงเหลือของสถานที่นั้น
+  useEffect(() => {
+    if (!showOpenModal) return;
+    fetchActiveKeyDeposits(undefined, shiftLocation || null).then((r) => {
       setSuggestedReserve(r.total);
       setInitialCash(r.total);
     });
-  }, [showOpenModal]);
+  }, [showOpenModal, shiftLocation]);
 
-  // เปิดหน้าต่างปิดกะ: คำนวณเงินในลิ้นชัก + มัดจำกุญแจคงเหลือปัจจุบัน
+  // เปิดหน้าต่างปิดกะ: คำนวณเงินในลิ้นชัก + มัดจำกุญแจคงเหลือปัจจุบัน (เฉพาะสถานที่ของกะนั้น)
   useEffect(() => {
     if (!showCloseModal || !activeShift) return;
     (async () => {
       setCloseLoading(true);
-      const [d, keyDep] = await Promise.all([computeShiftDrawer(activeShift), fetchActiveKeyDeposits()]);
+      const [d, keyDep] = await Promise.all([
+        computeShiftDrawer(activeShift),
+        fetchActiveKeyDeposits(undefined, activeShift.shift_location || null),
+      ]);
       setCloseDrawer(d);
       setCloseReserve(keyDep.total);
       setCloseReserveRooms(keyDep.rooms);
       setCloseLoading(false);
     })();
-  }, [showCloseModal, activeShift?.id]);
+  }, [showCloseModal, activeShift?.id, activeShift?.shift_location]);
 
   const handleOpenShift = async () => {
     setErrorMsg("");
@@ -95,17 +147,39 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       return;
     }
 
-    // ตรวจสอบว่ามีกะที่เปิดค้างอยู่แล้วหรือไม่ (ป้องกันการเปิดกะซ้อนจากหลายแท็บ/อุปกรณ์)
+    const chosenLocation = shiftLocation || inferShiftLocation(staffData.name, null) || availableLocations[0] || "ซอย1";
+
+    // ตรวจสอบสิทธิ์สถานที่ของพนักงาน (กรณีเป็น staff)
+    if (String(staffData.role).toLowerCase() === "staff") {
+      const { data: locSetting } = await supabase
+        .from("system_settings")
+        .select("value")
+        .eq("key", "staff_locations")
+        .maybeSingle();
+      const staffAllowed: string[] = locSetting?.value?.[staffData.id] || [];
+      if (staffAllowed.length > 0 && !staffAllowed.includes(chosenLocation)) {
+        setErrorMsg(`พนักงาน ${staffData.name} ไม่มีสิทธิ์เปิดกะที่ "${chosenLocation}" (สิทธิ์ที่มี: ${staffAllowed.join(", ")})`);
+        return;
+      }
+    }
+
+    // ตรวจสอบว่ามีกะที่เปิดค้างอยู่ใน "สถานที่เดียวกัน" หรือไม่ (แต่ละสถานที่เปิดกะแยกกันได้อิสระ)
     const { data: existingOpenShifts } = await supabase
       .from("shifts")
-      .select("id, staff_name")
-      .eq("status", "open")
-      .limit(1);
+      .select("id, staff_name, start_time")
+      .eq("status", "open");
 
     if (existingOpenShifts && existingOpenShifts.length > 0) {
-      setErrorMsg(`มีกะของ ${existingOpenShifts[0].staff_name} เปิดใช้งานอยู่แล้ว กรุณารีเฟรชหรือปิดกะเดิมก่อน`);
-      refreshShift();
-      return;
+      const meta = await fetchShiftMetadata(existingOpenShifts);
+      const conflict = existingOpenShifts.find((s) => {
+        const loc = meta[s.id]?.shift_location || inferShiftLocation(s.staff_name, null);
+        return loc === chosenLocation;
+      });
+      if (conflict) {
+        setErrorMsg(`มีกะของ ${conflict.staff_name} เปิดใช้งานอยู่ที่ "${chosenLocation}" แล้ว กรุณาปิดกะเดิมของ ${chosenLocation} ก่อน`);
+        refreshShift();
+        return;
+      }
     }
 
     const newShiftBD = await resolveBusinessDateForNewShift(getNow());
@@ -127,17 +201,18 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       return;
     }
 
-    // ผูกวันธุรกิจเข้ากับกะโดยตรง (กะที่เปิดหลังปิดรอบวันเมื่อวานแล้ว = กะแรกของวันใหม่)
-    await saveShiftBusinessDate(insertedShift.id, newShiftBD);
+    // ผูกวันธุรกิจและสถานที่เข้ากับกะโดยตรง
+    await saveShiftBusinessDate(insertedShift.id, newShiftBD, chosenLocation);
+    localStorage.setItem("active_shift_id", insertedShift.id);
 
     await logActivity({
       category: "shift",
       action: "create",
       staffName: staffData.name,
-      shiftName: staffData.name,
-      target: `เปิดกะ ${staffData.name}`,
-      details: `เปิดกะการทำงานโดย ${staffData.name} (เงินสดตั้งต้นในลิ้นชัก ${fmt(Number(initialCash || 0))}${
-        suggestedReserve !== null ? ` • มัดจำกุญแจคงเหลือ ${fmt(suggestedReserve)}` : ""
+      shiftName: `${staffData.name} (${chosenLocation})`,
+      target: `เปิดกะ ${staffData.name} • ${chosenLocation}`,
+      details: `เปิดกะการทำงานที่ "${chosenLocation}" โดย ${staffData.name} (เงินสดตั้งต้นในลิ้นชัก ${fmt(Number(initialCash || 0))}${
+        suggestedReserve !== null ? ` • มัดจำกุญแจคงเหลือของ ${chosenLocation} ${fmt(suggestedReserve)}` : ""
       })`,
     });
 
@@ -218,11 +293,13 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
     }
 
     const businessDate = activeShift.business_date || getShiftBusinessDateStr(activeShift.start_time);
+    const shiftLoc = activeShift.shift_location || inferShiftLocation(activeShift.staff_name, null);
     const record: CashHandover = {
       id: newHandoverId(),
       business_date: businessDate,
       shift_id: activeShift.id,
       shift_staff_name: activeShift.staff_name,
+      shift_location: shiftLoc,
       kind: "shift_close",
       drawer_cash: drawerCash,
       key_reserve: closeReserve,
@@ -240,11 +317,22 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
     await saveHandover(record);
 
     if (effectiveEndOfDay) {
+      if (shiftLoc) {
+        await supabase
+          .from("system_settings")
+          .upsert(
+            {
+              key: `${EOD_LOC_KEY_PREFIX}${businessDate}_${shiftLoc}`,
+              value: { shift_id: activeShift.id, location: shiftLoc, closed_at: nowIso },
+            },
+            { onConflict: "key" }
+          );
+      }
       // ปิดรอบวันให้ "วันธุรกิจของกะนี้" เท่านั้น (แม้จะกดปิดหลัง 06:45 น. ก็ไม่ไปปิดวันใหม่)
       await supabase
         .from("system_settings")
         .upsert(
-          { key: `${EOD_KEY_PREFIX}${businessDate}`, value: { shift_id: activeShift.id, closed_at: nowIso } },
+          { key: `${EOD_KEY_PREFIX}${businessDate}`, value: { shift_id: activeShift.id, location: shiftLoc, closed_at: nowIso } },
           { onConflict: "key" }
         );
     }
@@ -253,9 +341,9 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       category: "shift",
       action: "update",
       staffName: operatorName || activeShift.staff_name,
-      shiftName: activeShift.staff_name,
-      target: `ปิดกะ ${activeShift.staff_name}`,
-      details: `ปิดกะและส่งเงิน ${activeShift.staff_name} (เงินในลิ้นชักตามระบบ ${fmt(drawerCash)}, กันมัดจำกุญแจ ${fmt(
+      shiftName: shiftLoc ? `${activeShift.staff_name} (${shiftLoc})` : activeShift.staff_name,
+      target: `ปิดกะ ${activeShift.staff_name}${shiftLoc ? ` • ${shiftLoc}` : ""}`,
+      details: `ปิดกะและส่งเงิน ${activeShift.staff_name}${shiftLoc ? ` (${shiftLoc})` : ""} (เงินในลิ้นชักตามระบบ ${fmt(drawerCash)}, กันมัดจำกุญแจ ${fmt(
         closeReserve
       )}, ต้องส่ง ${fmt(requiredSend)}, ส่งจริง ${fmt(actualSendNum)}, ${sendDiff >= 0 ? "เกิน" : "ขาด"} ${fmt(
         Math.abs(sendDiff)
@@ -263,6 +351,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
     });
 
     // ปิดกะแล้วออกจากระบบทันที ป้องกันคนอื่นใช้งานต่อในชื่อกะเดิม
+    localStorage.removeItem("active_shift_id");
     localStorage.removeItem("auth_user");
     window.location.href = "/";
   };
@@ -287,6 +376,11 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
           <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 px-2 sm:px-2.5 py-1 rounded-xl">
             <span className="text-slate-500 font-medium">กะ:</span>
             <span className="font-bold text-slate-800">{activeShift.staff_name}</span>
+            {activeShift.shift_location && (
+              <span className="px-1.5 py-0.5 rounded-md bg-indigo-100 text-indigo-800 font-black text-[10px]">
+                📍{activeShift.shift_location}
+              </span>
+            )}
             {currentUser?.name && currentUser.name !== activeShift.staff_name && (
               <span className="text-indigo-700 font-bold">({currentUser.name})</span>
             )}
@@ -295,6 +389,31 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
               ฿{activeShift.expected_cash.toLocaleString()}
             </span>
           </div>
+          {openShifts.length > 1 && (
+            <select
+              value={activeShift.id}
+              onChange={(e) => switchActiveShift(e.target.value)}
+              className="border border-indigo-200 bg-indigo-50 text-indigo-800 rounded-xl px-2 py-1 text-[11px] font-bold outline-none"
+              title="สลับกะที่กำลังเปิดอยู่"
+            >
+              {openShifts.map((s) => (
+                <option key={s.id} value={s.id}>
+                  📍{s.shift_location || "-"} ({s.staff_name})
+                </option>
+              ))}
+            </select>
+          )}
+          {(currentUser?.role === "admin" || currentUser?.role === "manager" || (currentUser?.locations?.length || 0) > 1) &&
+            openShifts.length < availableLocations.length && (
+              <button
+                type="button"
+                onClick={() => setShowOpenModal(true)}
+                className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-2 py-1 rounded-xl text-[11px] font-bold"
+                title="เปิดกะเพิ่มสำหรับสถานที่อื่น"
+              >
+                + เปิดกะซอยอื่น
+              </button>
+            )}
           {!hideExpense && isRealShift && <ShiftExpenseButton compact />}
           {isRealShift && (
             <button
@@ -315,16 +434,36 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       ) : (
         <div className="flex items-center gap-2">
           <div className="text-right hidden sm:block">
-            <div className="text-xs text-slate-500 font-medium">
-              กะปัจจุบัน: <span className="text-slate-800 font-bold">{activeShift.staff_name}</span>
+            <div className="text-xs text-slate-500 font-medium flex items-center justify-end gap-1">
+              <span>กะปัจจุบัน:</span>
+              <span className="text-slate-800 font-bold">{activeShift.staff_name}</span>
+              {activeShift.shift_location && (
+                <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 font-black text-[10px]">
+                  📍{activeShift.shift_location}
+                </span>
+              )}
               {currentUser?.name && currentUser.name !== activeShift.staff_name && (
                 <span className="text-indigo-700 font-bold ml-1">(ผู้ใช้: {currentUser.name})</span>
               )}
             </div>
             <div className="text-[10px] text-emerald-600 font-bold">
-              เงินในลิ้นชัก: ฿{activeShift.expected_cash.toLocaleString()}
+              เงินในลิ้นชัก{activeShift.shift_location ? ` (${activeShift.shift_location})` : ""}: ฿{activeShift.expected_cash.toLocaleString()}
             </div>
           </div>
+          {openShifts.length > 1 && (
+            <select
+              value={activeShift.id}
+              onChange={(e) => switchActiveShift(e.target.value)}
+              className="border border-indigo-200 bg-indigo-50 text-indigo-800 rounded-full px-2.5 py-1 text-xs font-bold outline-none"
+              title="สลับกะที่กำลังเปิดอยู่"
+            >
+              {openShifts.map((s) => (
+                <option key={s.id} value={s.id}>
+                  📍{s.shift_location || "-"} ({s.staff_name})
+                </option>
+              ))}
+            </select>
+          )}
           {isRealShift && (
             <button
               onClick={() => setShowExpenseModal(true)}
@@ -387,7 +526,42 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">เงินสดตั้งต้นในลิ้นชัก (นับจริง)</label>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">สถานที่ประจำกะ (ลิ้นชักเงินสด)</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(currentUser?.role === "staff" && currentUser?.locations && currentUser.locations.length > 0
+                      ? availableLocations.filter((l) => currentUser.locations!.includes(l))
+                      : availableLocations
+                    ).map((loc) => {
+                      const alreadyOpen = openShifts.find((s) => s.shift_location === loc);
+                      const active = shiftLocation === loc;
+                      return (
+                        <button
+                          key={loc}
+                          type="button"
+                          onClick={() => setShiftLocation(loc)}
+                          className={`py-2.5 px-2 rounded-xl text-xs font-bold border transition-all flex flex-col items-center ${
+                            active
+                              ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                              : alreadyOpen
+                              ? "bg-amber-50 text-amber-800 border-amber-200"
+                              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                          }`}
+                        >
+                          <span>📍 {loc}</span>
+                          {alreadyOpen && (
+                            <span className={`text-[9px] ${active ? "text-emerald-100" : "text-amber-700"}`}>
+                              เปิดอยู่ ({alreadyOpen.staff_name})
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">
+                    เงินสดตั้งต้นในลิ้นชัก {shiftLocation ? `(${shiftLocation})` : ""}
+                  </label>
                   <input
                     type="number"
                     value={initialCash}
@@ -396,7 +570,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
                   />
                   {suggestedReserve !== null && (
                     <p className="text-[11px] text-amber-700 mt-1 font-bold">
-                      🔑 ควรมีเงินสดสำรองมัดจำกุญแจในลิ้นชักอย่างน้อย {fmt(suggestedReserve)} (ตามห้องที่ยังไม่เช็คเอาท์)
+                      🔑 ควรมีเงินสดสำรองมัดจำกุญแจในลิ้นชัก {shiftLocation ? `(${shiftLocation})` : ""} อย่างน้อย {fmt(suggestedReserve)} (ตามห้องที่ยังไม่เช็คเอาท์ของสถานที่นี้)
                     </p>
                   )}
                 </div>

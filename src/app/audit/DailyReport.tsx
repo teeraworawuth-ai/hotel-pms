@@ -10,8 +10,10 @@ import {
   atLocalTime,
   CashHandover,
   computeDrawerFromRows,
+  EOD_LOC_KEY_PREFIX,
   fetchHandoversByDate,
-  fetchShiftBusinessDates,
+  fetchShiftMetadata,
+  inferShiftLocation,
   saveHandover,
   ShiftDrawer,
   verifyManagerPin,
@@ -19,6 +21,7 @@ import {
 import { logActivity } from "@/lib/activityLog";
 import SignaturePad, { SignaturePadHandle } from "@/app/components/SignaturePad";
 import { parseBillUrls } from "@/app/components/ShiftExpenseModal";
+import TransferCardReportModal, { TransferCardReportItem } from "./TransferCardReportModal";
 
 type LedgerTransaction = {
   id: string;
@@ -56,6 +59,7 @@ type DailyRateRow = {
 type RoomRow = {
   id: string;
   room_no: string;
+  location?: string | null;
   price_night: number;
   price_temp: number;
 };
@@ -96,6 +100,48 @@ type HeldDepositRoomItem = {
   amount: number;
 };
 
+type LocationReportSnapshot = {
+  location: string;
+  isDayClosed: boolean;
+  roomTargetTotal: number;
+  roomTargetOvernight: number;
+  roomTargetShortStay: number;
+  earlyLateTotal: number;
+  upsellTotal: number;
+  roomDiscountTotal: number;
+  addonRevenue: number;
+  minibarRevenue: number;
+  fineRevenue: number;
+  otherRevenue: number;
+  voidedRevenue: number;
+  payCash: number;
+  payTransferTotal: number;
+  payTransferByBank: Record<string, number>;
+  payCredit: number;
+  payVoidRefund: number;
+  totalExpense: number;
+  advanceBox: BalanceBox;
+  reservationBox: BalanceBox;
+  advanceBreakdown: BoxRoomBreakdownItem[];
+  reservationBreakdown: BoxRoomBreakdownItem[];
+  keyDepositBox: {
+    broughtForward: number;
+    placedToday: number;
+    refundedToday: number;
+    forfeitedToday: number;
+    activeHeldTotal: number;
+  };
+  heldDepositRooms: HeldDepositRoomItem[];
+  receivableBox: { start: number; end: number };
+  dayShifts: Shift[];
+  handovers: CashHandover[];
+  dayExpenses: LedgerTransaction[];
+  liveReserve: { total: number; rooms: HeldKeyDepositRoom[] };
+  liveRequiredTotal: number;
+  crossLocCollectedForHere: TransferCardReportItem[];
+  crossLocCollectedByHere: TransferCardReportItem[];
+};
+
 export default function DailyReport({
   dateOffset,
   onChangeDateOffset,
@@ -108,70 +154,26 @@ export default function DailyReport({
   const [loading, setLoading] = useState(true);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [transactions, setTransactions] = useState<LedgerTransaction[]>([]);
-  const [isDayClosed, setIsDayClosed] = useState(false);
   const [reportDateLabel, setReportDateLabel] = useState("");
+  const [businessDateStr, setBusinessDateStr] = useState("");
+  const [windowLabelStr, setWindowLabelStr] = useState("06:45 น. - 06:44 น. ของวันถัดไป");
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Left Column: Revenue Breakdown
-  const [roomTargetTotal, setRoomTargetTotal] = useState(0); // 1.1 รายได้ค่าห้อง (ตามราคาเป้าหมาย)
-  const [roomTargetOvernight, setRoomTargetOvernight] = useState(0); // 1.1.1 ค้างคืน
-  const [roomTargetShortStay, setRoomTargetShortStay] = useState(0); // 1.1.2 ชั่วคราว
-  const [earlyLateTotal, setEarlyLateTotal] = useState(0);   // 1.2.1 เข้าก่อน/ออกช้า (Early-Late)
-  const [upsellTotal, setUpsellTotal] = useState(0);         // 1.2.2 ส่วนต่างปรับเพิ่มราคา (ขายสูงกว่าราคาเป้าหมาย)
-  const [roomDiscountTotal, setRoomDiscountTotal] = useState(0); // 1.3 ส่วนลด (ขายต่ำกว่าราคาเป้าหมาย)
-  const [addonRevenue, setAddonRevenue] = useState(0);       // 2. ค่าส่วนเสริม
-  const [minibarRevenue, setMinibarRevenue] = useState(0);   // 3. ค่ามินิบาร์
-  const [fineRevenue, setFineRevenue] = useState(0);         // 4. ค่าปรับ
-  const [otherRevenue, setOtherRevenue] = useState(0);       // 5. ค่าบริการอื่นๆ
-  const [voidedRevenue, setVoidedRevenue] = useState(0);     // 6. ยกเลิก (แสดงเพื่อตรวจสอบ)
+  // Multi-location filter & Accounting Transfer/Card Report Modal
+  const [selectedLocation, setSelectedLocation] = useState<string>("ALL");
+  const [availableLocations, setAvailableLocations] = useState<string[]>(["ซอย1", "ซอย2", "ซามีญ่า"]);
+  const [reportsByLocation, setReportsByLocation] = useState<Record<string, LocationReportSnapshot>>({});
+  const [transferCardItems, setTransferCardItems] = useState<TransferCardReportItem[]>([]);
+  const [showTransferCardModal, setShowTransferCardModal] = useState(false);
 
-  // Middle Column: Payment Breakdown (ไม่รวมเงินมัดจำกุญแจ)
-  const [payCash, setPayCash] = useState(0);
-  const [payTransferTotal, setPayTransferTotal] = useState(0);
-  const [payTransferByBank, setPayTransferByBank] = useState<Record<string, number>>({});
   const [bankAccounts, setBankAccounts] = useState<string[]>(["SCB", "KBANK"]);
-  const [payCredit, setPayCredit] = useState(0);
-  const [payVoidRefund, setPayVoidRefund] = useState(0);
-  const [totalExpense, setTotalExpense] = useState(0);
-
-  // Right Column: Advance Payment & Reservation Balances
-  const [advanceBox, setAdvanceBox] = useState<BalanceBox>({
-    broughtForward: 0,
-    addedToday: 0,
-    usedToday: 0,
-    carriedForward: 0,
-  });
-  const [reservationBox, setReservationBox] = useState<BalanceBox>({
-    broughtForward: 0,
-    addedToday: 0,
-    usedToday: 0,
-    carriedForward: 0,
-  });
-  const [advanceBreakdown, setAdvanceBreakdown] = useState<BoxRoomBreakdownItem[]>([]);
-  const [reservationBreakdown, setReservationBreakdown] = useState<BoxRoomBreakdownItem[]>([]);
   const [showAdvanceChangeDetails, setShowAdvanceChangeDetails] = useState(false);
   const [showReservationChangeDetails, setShowReservationChangeDetails] = useState(false);
   const [showAdvanceDetails, setShowAdvanceDetails] = useState(false);
   const [showReservationDetails, setShowReservationDetails] = useState(false);
-
-  // Separate Key Deposit Box (แยกจากหมวดบัญชีรายได้ตามข้อ 6)
-  const [keyDepositBox, setKeyDepositBox] = useState({
-    broughtForward: 0, // มัดจำกุญแจที่ถืออยู่ต้นวัน
-    placedToday: 0, // กันเป็นมัดจำกุญแจสุทธิวันนี้ (+)
-    refundedToday: 0, // คืนมัดจำเป็นเงินสดวันนี้
-    forfeitedToday: 0, // ริบมัดจำเป็นค่าปรับวันนี้
-    activeHeldTotal: 0, // มัดจำกุญแจที่ถืออยู่สิ้นวัน
-  });
-  const [heldDepositRooms, setHeldDepositRooms] = useState<HeldDepositRoomItem[]>([]);
   const [showHeldDepositRooms, setShowHeldDepositRooms] = useState(false);
-  const [receivableBox, setReceivableBox] = useState({ start: 0, end: 0 });
 
-  // กล่องเงินสดสำหรับเซ็นรับ-เก็บเงินประจำวัน
-  const [dayShifts, setDayShifts] = useState<Shift[]>([]);
-  const [handovers, setHandovers] = useState<CashHandover[]>([]);
-  const [dayExpenses, setDayExpenses] = useState<LedgerTransaction[]>([]);
   const [shiftDrawers, setShiftDrawers] = useState<Record<string, ShiftDrawer>>({});
-  const [liveReserve, setLiveReserve] = useState<{ total: number; rooms: HeldKeyDepositRoom[] }>({ total: 0, rooms: [] });
   const [showExpenseDetails, setShowExpenseDetails] = useState(false);
   const [showPreliminary, setShowPreliminary] = useState(false);
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
@@ -197,6 +199,7 @@ export default function DailyReport({
       const queryEndBound = new Date(end0645.getTime() + 6 * 3600 * 1000);
 
       const reportDateStr = `${start0645.getFullYear()}-${String(start0645.getMonth() + 1).padStart(2, "0")}-${String(start0645.getDate()).padStart(2, "0")}`;
+      setBusinessDateStr(reportDateStr);
       setReportDateLabel(
         start0645.toLocaleDateString("th-TH", {
           weekday: "long",
@@ -253,7 +256,7 @@ export default function DailyReport({
           .limit(10000),
         supabase
           .from("rooms")
-          .select("id, room_no, price_night, price_temp"),
+          .select("id, room_no, location, price_night, price_temp"),
         supabase
           .from("extra_charge_settings")
           .select("name"),
@@ -277,6 +280,13 @@ export default function DailyReport({
       const allRooms: RoomRow[] = (roomsRes.data as RoomRow[]) || [];
       const extraNames = new Set((extraSettingsRes.data || []).map((e: any) => e.name));
       const posNames = new Set((posItemsRes.data || []).map((p: any) => p.name));
+
+      const locSet = new Set<string>(["ซอย1", "ซอย2", "ซามีญ่า"]);
+      allRooms.forEach((r) => {
+        if (r.location && r.location.trim()) locSet.add(r.location.trim());
+      });
+      const orderedLocations = Array.from(locSet);
+      setAvailableLocations(orderedLocations);
 
       const bookingMap: Record<string, BookingRow> = {};
       allBookings.forEach((b) => {
@@ -310,6 +320,7 @@ export default function DailyReport({
       let posCategoryMap: Record<string, "minibar" | "addon" | "fine" | "other"> = {};
       const bookingMetaMap: Record<string, BookingMeta> = {};
       let dayClosed = false;
+      const locDayClosedMap: Record<string, boolean> = {};
       const prevDateStr = addDaysStr(reportDateStr, -1);
       const nextDateStr = addDaysStr(reportDateStr, 1);
       const prevEodKey = `eod_shift_${prevDateStr}`;
@@ -327,6 +338,9 @@ export default function DailyReport({
         } else if (row.key === eodKey) {
           dayClosed = true;
           if (row.value?.closed_at) currEodClosedAt = String(row.value.closed_at);
+        } else if (typeof row.key === "string" && row.key.startsWith(EOD_LOC_KEY_PREFIX) && row.key.endsWith(`_${reportDateStr}`)) {
+          const mid = row.key.slice(EOD_LOC_KEY_PREFIX.length, row.key.length - (`_${reportDateStr}`).length);
+          if (mid) locDayClosedMap[mid] = true;
         } else if (typeof row.key === "string" && row.key.startsWith("booking_meta_")) {
           const bId = row.key.replace("booking_meta_", "");
           bookingMetaMap[bId] = row.value as BookingMeta;
@@ -352,8 +366,10 @@ export default function DailyReport({
         }
       }
 
+      const fmtWindowHm = (d: Date) =>
+        d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+      setWindowLabelStr(`${fmtWindowHm(start0645)} น. ถึง ${fmtWindowHm(new Date(end0645.getTime() - 1000))} น. ของวันถัดไป`);
       setBankAccounts(configuredBanks);
-      setIsDayClosed(dayClosed);
 
       // รายการที่เกิดในรอบวันธุรกิจ 06:45 น. ถึง 06:44:59 น. ของวันถัดไป (นับเป็น 1 วันเดียวกันทุกหมวด)
       const txsIn0645Window = allLedger.filter((tx) => {
@@ -367,286 +383,212 @@ export default function DailyReport({
         return t >= start0645.getTime() && t < end0645.getTime();
       };
 
-      // =========================================================================
-      // 1. คำนวณฝั่งรายได้ (Left Column)
-      // =========================================================================
-      let rTarget = 0;          // 1.1 รายได้ค่าห้อง (ตามราคาเป้าหมาย)
-      let rTargetOvernight = 0; // 1.1.1 ค้างคืน
-      let rTargetShortStay = 0; // 1.1.2 ชั่วคราว
-      let rEarlyLate = 0;       // 1.2.1 early-late
-      let rUpsell = 0;    // 1.2.2 ส่วนต่างปรับเพิ่มราคา
-      let rDiscount = 0;  // 1.3 ส่วนลด
-      let revAddon = 0;   // 2. ค่าส่วนเสริม
-      let revMinibar = 0; // 3. ค่ามินิบาร์
-      let revFine = 0;    // 4. ค่าปรับ
-      let revOther = 0;   // 5. ค่าบริการอื่นๆ
-      let revVoid = 0;    // 6. ยกเลิก
+      // ดึงกะช่วงกว้าง แล้วคัดตาม "วันธุรกิจที่ผูกกับกะ" พร้อมตำแหน่งที่เปิดกะ (shift_location)
+      const dayShiftFrom = new Date(start0645.getTime() - 3 * 3600 * 1000);
+      const dayShiftTo = new Date(end0645.getTime());
+      const [dayShiftsRes, handoverList] = await Promise.all([
+        supabase
+          .from("shifts")
+          .select("*")
+          .gte("start_time", dayShiftFrom.toISOString())
+          .lt("start_time", dayShiftTo.toISOString())
+          .order("start_time", { ascending: true }),
+        fetchHandoversByDate(reportDateStr),
+      ]);
+      const candidateShifts: Shift[] = (dayShiftsRes.data as Shift[]) || [];
+      const allKnownShiftsMap = new Map<string, Shift>();
+      ((shiftRes.data as Shift[]) || []).forEach((s) => allKnownShiftsMap.set(s.id, s));
+      candidateShifts.forEach((s) => allKnownShiftsMap.set(s.id, s));
+      const shiftMetaMap = await fetchShiftMetadata(Array.from(allKnownShiftsMap.values()));
 
-      const processedOvernightBookingIdsToday = new Set<string>();
+      const dayShiftListRaw: Shift[] = candidateShifts.filter(
+        (s) => shiftMetaMap[s.id]?.business_date === reportDateStr
+      );
+      const dayShiftIds = dayShiftListRaw.map((s) => s.id);
+      let shiftLedgerRows: LedgerTransaction[] = [];
+      if (dayShiftIds.length > 0) {
+        const { data: shiftRows } = await supabase
+          .from("ledger_transactions")
+          .select("id, shift_id, staff_name, room_id, booking_id, transaction_type, category, amount, notes, created_at")
+          .in("shift_id", dayShiftIds)
+          .order("created_at", { ascending: true });
+        shiftLedgerRows = (shiftRows as LedgerTransaction[]) || [];
+      }
 
-      // 1A. รับรู้รายได้ค่าห้องค้างคืนแบบรายคืน (Night-by-Night) ตาม target_date === reportDateStr
-      allDailyRates.forEach((dr) => {
-        if (dr.target_date !== reportDateStr) return;
-        const b = bookingMap[dr.booking_id];
-        if (!b || b.status === "cancelled" || b.status === "reserved") return;
-
-        processedOvernightBookingIdsToday.add(dr.booking_id);
-        const room = roomMap[b.room_id];
-        const meta = bookingMetaMap[dr.booking_id];
-        const ratesForBooking = dailyRatesByBooking[dr.booking_id] || [];
-        const isFirstNight = ratesForBooking.length > 0 && ratesForBooking[0].target_date === reportDateStr;
-
-        // สำหรับคืนแรก หากมีแก้ไขค่าห้องใน ledger_transactions ให้ใช้ยอดล่าสุดจาก ledger
-        let actualNightPrice = Number(dr.amount || 0);
-        if (isFirstNight) {
-          const activeRoomTx = allLedger.find(
-            (t) =>
-              t.booking_id === dr.booking_id &&
-              !t.category.includes("Voided") &&
-              (t.category === "room_charge" || t.category === "ค่าห้องพัก")
-          );
-          if (activeRoomTx && ratesForBooking.length === 1) {
-            actualNightPrice = Number(activeRoomTx.amount || 0);
-          }
-        }
-
-        const storedTarget = meta?.targetPrices?.dailyTargets?.[reportDateStr];
-        const targetNightPrice =
-          storedTarget !== undefined
-            ? Number(storedTarget)
-            : Number(room?.price_night || actualNightPrice);
-
-        const diff = actualNightPrice - targetNightPrice;
-        rTarget += targetNightPrice;
-        rTargetOvernight += targetNightPrice;
-        if (diff >= 0) {
-          if (diff > 0) {
-            if (isFirstNight && meta?.targetPrices?.timeBand === "early_in") {
-              // กรณีเข้าพักก่อนเวลา (06:45 - 09:44) ส่วนที่บวกเพิ่มจากราคาเป้าหมายเป็นค่า early-in
-              const earlyCap = Number(room?.price_temp || diff);
-              const earlyPart = Math.min(diff, earlyCap);
-              const upsellPart = Math.max(0, diff - earlyPart);
-              rEarlyLate += earlyPart;
-              rUpsell += upsellPart;
-            } else {
-              rUpsell += diff;
-            }
-          }
-        } else {
-          rDiscount += Math.abs(diff);
-        }
-      });
-
-      // 1B. รับรู้รายได้ค่าห้องจาก ledger_transactions ที่ไม่อยู่ใน booking_daily_rates ของวันนี้
-      // เช่น ชั่วคราว (short_stay), รอบดึก 0 คืน (late_night), พักต่อ (+คืน), บังคับพักต่อ, และค่าเข้าก่อน/ออกช้า
-      allLedger.forEach((tx) => {
-        if (tx.transaction_type !== "revenue") return;
-        const isVoid = tx.category.includes("(Voided)");
-        const isRoomOrEarlyLate =
-          tx.category === "room_charge" ||
-          tx.category.includes("ค่าห้องพัก") ||
-          tx.category === "early_in_fee" ||
-          tx.category === "late_out_fee" ||
-          tx.category.includes("ค่าปรับออกช้า") ||
-          tx.category.includes("ออกช้า") ||
-          tx.category.includes("เข้าก่อน");
-
-        if (isRoomOrEarlyLate) {
-          if (!isInTodayRoomWindow(tx)) return;
-          if (isVoid) {
-            revVoid += Math.abs(Number(tx.amount || 0));
-            return;
-          }
-
-          // รายการ Early / Late โดยตรง -> เข้า 1.2.1 early-late
-          if (
-            tx.category === "early_in_fee" ||
-            tx.category === "late_out_fee" ||
-            tx.category.includes("ค่าปรับออกช้า") ||
-            tx.category.includes("ออกช้า") ||
-            tx.category.includes("เข้าก่อน")
-          ) {
-            rEarlyLate += Number(tx.amount || 0);
-            return;
-          }
-
-          // รายการค่าห้องพักหลัก (ถ้าคืนแรกถูกคำนวณใน 1A ไปแล้ว ให้ข้ามเพื่อไม่ให้ซ้ำ)
-          // และบิลค้างคืนที่มีตารางราคารายคืน (booking_daily_rates) จะรับรู้ค่าห้องตาม target_date ใน 1A เท่านั้น
-          // (ป้องกันกรณีจองล่วงหน้าที่ลงแถว room_charge ไว้ตั้งแต่วันจอง ถูกนับเป็นรายได้ของวันจองซ้ำ)
-          if (
-            (tx.category === "room_charge" || tx.category === "ค่าห้องพัก") &&
-            tx.booking_id &&
-            (processedOvernightBookingIdsToday.has(tx.booking_id) ||
-              (dailyRatesByBooking[tx.booking_id]?.length || 0) > 0)
-          ) {
-            return;
-          }
-
-          // ถ้าเป็นการจองล่วงหน้า (status === 'reserved') ยังไม่รับรู้เป็นรายได้ค่าห้องจนกว่าจะเข้าพัก
-          const b = tx.booking_id ? bookingMap[tx.booking_id] : undefined;
-          if (b && b.status === "reserved") {
-            return;
-          }
-
-          const room = (tx.room_id && roomMap[tx.room_id]) || (b && roomMap[b.room_id]);
-          const meta = tx.booking_id ? bookingMetaMap[tx.booking_id] : undefined;
-          const actualAmt = Number(tx.amount || 0);
-
-          const isShortStay =
-            meta?.targetPrices?.stayType === "short_stay" ||
-            (!tx.category.includes("พักต่อ") &&
-              !tx.category.includes("บังคับพักต่อ") &&
-              !!b &&
-              !(dailyRatesByBooking[b.id]?.length) &&
-              new Date(b.check_out_time).getTime() - new Date(b.check_in_time).getTime() <= 10 * 3600 * 1000 &&
-              new Date(b.check_out_time).getHours() !== 12);
-
-          let targetAmt = actualAmt;
-          if (tx.category.includes("พักต่อ") || tx.category.includes("บังคับพักต่อ")) {
-            const matchNights = tx.category.match(/(\d+)\s*คืน/);
-            const extNights = matchNights ? Number(matchNights[1]) : 1;
-            targetAmt = Number(room?.price_night || actualAmt) * extNights;
-          } else if (meta?.targetPrices?.totalTargetPrice && meta.targetPrices.totalTargetPrice > 0) {
-            targetAmt = Number(meta.targetPrices.totalTargetPrice);
-          } else if (isShortStay) {
-            targetAmt = Number(room?.price_temp || actualAmt);
-          } else if (room?.price_night && actualAmt >= room.price_night * 0.5) {
-            targetAmt = Number(room.price_night);
-          }
-
-          const diff = actualAmt - targetAmt;
-          rTarget += targetAmt;
-          if (isShortStay) {
-            rTargetShortStay += targetAmt;
-          } else {
-            rTargetOvernight += targetAmt;
-          }
-
-          if (diff >= 0) {
-            if (diff > 0) {
-              if (!isShortStay && meta?.targetPrices?.timeBand === "early_in") {
-                const earlyCap = Number(room?.price_temp || diff);
-                const earlyPart = Math.min(diff, earlyCap);
-                const upsellPart = Math.max(0, diff - earlyPart);
-                rEarlyLate += earlyPart;
-                rUpsell += upsellPart;
-              } else {
-                rUpsell += diff;
-              }
-            }
-          } else {
-            rDiscount += Math.abs(diff);
-          }
-        }
-      });
-
-      // Helper: จัดหมวดหมู่รายได้ที่ไม่ใช่ค่าห้องพักตามการตั้งค่า
-      const addCategorizedRevenue = (rawCategory: string, amt: number) => {
-        const cleanCat = rawCategory.replace(" (Voided)", "").trim();
-        const mappedCat = posCategoryMap[cleanCat];
-        if (mappedCat === "addon") {
-          revAddon += amt;
-        } else if (mappedCat === "minibar") {
-          revMinibar += amt;
-        } else if (mappedCat === "fine") {
-          revFine += amt;
-        } else if (mappedCat === "other") {
-          revOther += amt;
-        } else if (
-          extraNames.has(cleanCat) ||
-          cleanCat.includes("เสริม") ||
-          cleanCat.includes("ผ้าห่ม") ||
-          cleanCat.includes("หมอน") ||
-          cleanCat.includes("ผ้าเช็ดตัว")
-        ) {
-          revAddon += amt;
-        } else if (
-          cleanCat.includes("ปรับ") ||
-          cleanCat.includes("ริบมัดจำ") ||
-          cleanCat.includes("เสียหาย") ||
-          cleanCat.includes("กุญแจหาย") ||
-          cleanCat.includes("บุหรี่")
-        ) {
-          revFine += amt;
-        } else if (posNames.has(cleanCat)) {
-          revMinibar += amt;
-        } else {
-          revOther += amt;
-        }
+      // Helper ระบุสถานที่ของห้องพักและรายการบัญชี
+      const getBookingLoc = (b?: BookingRow | null): string => {
+        if (!b) return "ซอย1";
+        const r = roomMap[b.room_id];
+        return (r?.location && r.location.trim()) || "ซอย1";
       };
 
-      // 1C. รายได้ที่ไม่ใช่ค่าห้องพัก (ตัดรอบ 06:45 - 06:44:59 วันถัดไป ตามกฎข้อ 8)
-      txsIn0645Window.forEach((tx) => {
-        if (tx.transaction_type !== "revenue") return;
-        if (tx.category === "key_deposit" || tx.category === "ค่ามัดจำกุญแจ" || tx.category === "คืนมัดจำกุญแจ") return;
-
-        const isRoomOrEarlyLate =
-          tx.category === "room_charge" ||
-          tx.category.includes("ค่าห้องพัก") ||
-          tx.category === "early_in_fee" ||
-          tx.category === "late_out_fee" ||
-          tx.category.includes("ค่าปรับออกช้า") ||
-          tx.category.includes("ออกช้า") ||
-          tx.category.includes("เข้าก่อน");
-        if (isRoomOrEarlyLate) return;
-
-        // หากเป็นบริการเสริมรายวันที่มีระบุวันที่ใน notes ชัดเจน แต่ไม่ใช่วันรายงานนี้ ให้ข้าม (ไปรับรู้ในวันที่ตรงกับ target_date)
-        const noteDateMatch = String(tx.notes || "").match(/ประจำวันที่\s*(\d{4}-\d{2}-\d{2})/);
-        if (noteDateMatch && noteDateMatch[1] !== reportDateStr) return;
-
-        const amt = Number(tx.amount || 0);
-        if (tx.category.includes("(Voided)")) {
-          revVoid += Math.abs(amt);
-          return;
+      const getShiftLoc = (shiftId?: string | null, staffName?: string | null, notes?: string | null): string => {
+        if (notes) {
+          const m = String(notes).match(/\[SHIFT_LOC:([^\]]+)\]/);
+          if (m && m[1].trim()) return m[1].trim();
         }
-
-        addCategorizedRevenue(tx.category, amt);
-      });
-
-      // 1D. บริการเสริมรายวัน (booking_daily_extras) ของวันนี้ที่ยังไม่ได้ถูกสร้างเป็นแถวใน ledger_transactions วันนี้
-      allDailyExtras.forEach((de) => {
-        if (de.target_date !== reportDateStr) return;
-        const b = bookingMap[de.booking_id];
-        if (!b || b.status === "cancelled" || b.status === "reserved") return;
-        const isVoid = String(de.category || "").includes("(Voided)");
-        const baseCat = String(de.category || "").replace(" (Voided)", "").trim();
-        const ratesForBooking = dailyRatesByBooking[de.booking_id] || [];
-        const extrasForBooking = dailyExtrasByBooking[de.booking_id] || [];
-        const firstDate = ratesForBooking[0]?.target_date || extrasForBooking[0]?.target_date || "";
-
-        const alreadyInLedgerToday = txsIn0645Window.some((tx) => {
-          if (tx.booking_id !== de.booking_id || tx.transaction_type !== "revenue") return false;
-          if (String(tx.category || "").replace(" (Voided)", "").trim() !== baseCat) return false;
-          const noteDateMatch = String(tx.notes || "").match(/ประจำวันที่\s*(\d{4}-\d{2}-\d{2})/);
-          if (noteDateMatch) return noteDateMatch[1] === de.target_date;
-          return de.target_date === firstDate;
-        });
-        if (alreadyInLedgerToday) return;
-
-        const amt = Number(de.amount || 0);
-        if (isVoid) {
-          revVoid += Math.abs(amt);
-        } else {
-          // ใช้หมวดที่ตั้งค่าไว้ หากไม่พบใน posCategoryMap ให้ถือเป็นค่าส่วนเสริม (addon) ตามค่าเริ่มต้นของบริการเสริมรายวัน
-          if (posCategoryMap[baseCat]) {
-            addCategorizedRevenue(baseCat, amt);
-          } else {
-            revAddon += amt;
+        if (shiftId && shiftMetaMap[shiftId]?.shift_location) {
+          return shiftMetaMap[shiftId].shift_location!;
+        }
+        const inferred = inferShiftLocation(staffName);
+        if (inferred) return inferred;
+        if (shiftId) {
+          const rowsForShift = shiftLedgerRows.filter((r) => r.shift_id === shiftId);
+          for (const r of rowsForShift) {
+            if (r.room_id && roomMap[r.room_id]?.location) return roomMap[r.room_id].location!.trim();
+            if (r.booking_id && bookingMap[r.booking_id]) {
+              const rm = roomMap[bookingMap[r.booking_id].room_id];
+              if (rm?.location) return rm.location.trim();
+            }
           }
         }
+        return "ซอย1";
+      };
+
+      const getTxRoomLoc = (tx: LedgerTransaction): string => {
+        if (tx.room_id && roomMap[tx.room_id]?.location) {
+          return roomMap[tx.room_id].location!.trim();
+        }
+        if (tx.booking_id && bookingMap[tx.booking_id]) {
+          return getBookingLoc(bookingMap[tx.booking_id]);
+        }
+        if (tx.notes) {
+          const rmMatch = String(tx.notes).match(/\[ROOM_LOC:([^\]]+)\]/);
+          if (rmMatch && rmMatch[1].trim()) return rmMatch[1].trim();
+        }
+        return getShiftLoc(tx.shift_id, tx.staff_name, tx.notes);
+      };
+
+      const dayShiftList: Shift[] = dayShiftListRaw.map((s) => ({
+        ...s,
+        shift_location: s.shift_location || getShiftLoc(s.id, s.staff_name),
+      }));
+
+      const drawers: Record<string, ShiftDrawer> = {};
+      dayShiftList.forEach((s) => {
+        const handedOut = handoverList
+          .filter((h) => h.shift_id === s.id)
+          .reduce(
+            (sum, h) => sum + Number(h.method === "fixed" ? h.actual_amount || 0 : h.required_amount || 0),
+            0
+          );
+        drawers[s.id] = computeDrawerFromRows(
+          Number(s.initial_cash || 0),
+          shiftLedgerRows.filter((r) => r.shift_id === s.id),
+          handedOut
+        );
+      });
+      setShiftDrawers(drawers);
+
+      const expenseRows = shiftLedgerRows.filter(
+        (r) => r.transaction_type === "expense" && !r.category.includes("(Voided)")
+      );
+      let reserveNow = { total: 0, rooms: [] as HeldKeyDepositRoom[] };
+      if (dayShiftList.some((s) => s.status === "open")) {
+        reserveNow = await fetchActiveKeyDeposits(now);
+      }
+
+      // =========================================================================
+      // สร้างรายการสำหรับ "ใบตรวจยอดเงินโอน & บัตรเครดิต (ฝ่ายบัญชี)" เรียงตามเวลาโอน/รูดบัตรจริง
+      // =========================================================================
+      const parsedTransferCardItems: TransferCardReportItem[] = [];
+      txsIn0645Window.forEach((tx) => {
+        if (tx.category.includes("(Voided)")) return;
+        if (tx.transaction_type !== "payment") return;
+        const amt = Number(tx.amount || 0);
+        if (amt >= 0) return; // เฉพาะรายการรับชำระ (amount < 0)
+        if (tx.category !== "transfer" && tx.category !== "credit_card") return;
+
+        const absAmt = Math.abs(amt);
+        const notesStr = String(tx.notes || "");
+        const bankMatch = notesStr.match(/\[BANK:([^\]]+)\]/);
+        const bankName =
+          tx.category === "credit_card"
+            ? "CREDIT_CARD"
+            : bankMatch
+            ? bankMatch[1].trim()
+            : configuredBanks[0] || "SCB";
+
+        const b = tx.booking_id ? bookingMap[tx.booking_id] : undefined;
+        const rm = (tx.room_id && roomMap[tx.room_id]) || (b && roomMap[b.room_id]);
+        const roomNo = rm?.room_no || "-";
+        const roomLocation = getTxRoomLoc(tx);
+        const shiftLocation = getShiftLoc(tx.shift_id, tx.staff_name, tx.notes);
+
+        // ดึงเวลาโอน/รูดบัตรจาก [TXTIME:...] หรือ (โอนเวลา: ...) / (รูดบัตรเวลา: ...)
+        let sortTimestamp = new Date(tx.created_at).getTime();
+        let hasExplicitSlipTime = false;
+        let slipTimeStr = "";
+
+        const txTimeMatch = notesStr.match(/\[TXTIME:([^\]]+)\]/);
+        const thaiTimeMatch = notesStr.match(/\((?:โอนเวลา|รูดบัตรเวลา):\s*([^)]+)\)/);
+        if (txTimeMatch && txTimeMatch[1]) {
+          const parsedDate = new Date(txTimeMatch[1].trim());
+          if (!isNaN(parsedDate.getTime())) {
+            sortTimestamp = parsedDate.getTime();
+            hasExplicitSlipTime = true;
+            slipTimeStr =
+              parsedDate.toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit" }) +
+              " " +
+              parsedDate.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }) +
+              " น.";
+          }
+        } else if (thaiTimeMatch && thaiTimeMatch[1]) {
+          hasExplicitSlipTime = true;
+          const rawLabel = thaiTimeMatch[1].trim();
+          const parsedDate = new Date(rawLabel);
+          if (!isNaN(parsedDate.getTime())) {
+            sortTimestamp = parsedDate.getTime();
+            slipTimeStr =
+              parsedDate.toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit" }) +
+              " " +
+              parsedDate.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }) +
+              " น.";
+          } else {
+            slipTimeStr = rawLabel.includes("น.") ? rawLabel : `${rawLabel} น.`;
+          }
+        }
+
+        if (!slipTimeStr) {
+          const cd = new Date(tx.created_at);
+          slipTimeStr =
+            cd.toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit" }) +
+            " " +
+            cd.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }) +
+            " น.";
+        }
+
+        let allocationLabel = "ค่าห้องพัก/บริการ";
+        if (b && b.status === "reserved") {
+          allocationLabel = "เงินรับจองล่วงหน้า";
+        } else if (notesStr.includes("มัดจำ") || notesStr.includes("จอง")) {
+          allocationLabel = "มัดจำ/รับจอง";
+        } else if (notesStr.includes("เช็คอิน")) {
+          allocationLabel = "ชำระตอนเช็คอิน";
+        } else if (notesStr.includes("พักต่อ")) {
+          allocationLabel = "ชำระค่าพักต่อ";
+        }
+
+        parsedTransferCardItems.push({
+          id: tx.id,
+          category: tx.category as "transfer" | "credit_card",
+          bank: bankName,
+          amount: absAmt,
+          roomNo,
+          roomLocation,
+          staffName: tx.staff_name || "ไม่ระบุชื่อ",
+          shiftLocation,
+          createdAt: tx.created_at,
+          slipTimeStr,
+          sortTimestamp,
+          hasExplicitSlipTime,
+          allocationLabel,
+          rawNotes: tx.notes,
+        });
       });
 
-      setRoomTargetTotal(rTarget);
-      setRoomTargetOvernight(rTargetOvernight);
-      setRoomTargetShortStay(rTargetShortStay);
-      setEarlyLateTotal(rEarlyLate);
-      setUpsellTotal(rUpsell);
-      setRoomDiscountTotal(rDiscount);
-      setAddonRevenue(revAddon);
-      setMinibarRevenue(revMinibar);
-      setFineRevenue(revFine);
-      setOtherRevenue(revOther);
-      setVoidedRevenue(revVoid);
+      parsedTransferCardItems.sort((a, b) => a.sortTimestamp - b.sortTimestamp);
+      setTransferCardItems(parsedTransferCardItems);
 
       // แปลงเวลา ISO/UTC เป็นวันธุรกิจตามเขตเวลาไทย (Asia/Bangkok, +07:00, ตัดรอบ 06:45 - 06:44 ของอีกวัน)
       const toThaiDateStr = (isoStr?: string | null): string => {
@@ -659,13 +601,6 @@ export default function DailyReport({
         return thaiBizTime.toISOString().slice(0, 10);
       };
 
-      // =========================================================================
-      // 2. หลักการเครื่องหมายเพื่อให้เกิดความสมดุล (Balance = 0)
-      //    - ฝั่งรายได้: ธรรมชาติเป็นบวก (+)
-      //    - ฝั่งรับชำระเงิน: รับเงินเป็นลบ (-) / คืนเงินสด และกันเงินมัดจำกุญแจไว้คืนลูกค้าเป็นบวก (+)
-      //    - กล่องจ่ายล่วงหน้า/รับจอง: รับเพิ่มเป็นบวก (+) / ดึงมาใช้เป็นลบ (-)
-      //    รายได้ + รับชำระ + จ่ายล่วงหน้า + รับจอง (+ ค้างชำระ) = 0
-      // =========================================================================
       const txsByBooking: Record<string, LedgerTransaction[]> = {};
       allLedger.forEach((tx) => {
         if (!tx.booking_id) return;
@@ -683,7 +618,6 @@ export default function DailyReport({
         cat.includes("เข้าก่อน");
       const isDepositRelated = (cat: string) => cat.includes("มัดจำกุญแจ") || cat === "key_deposit";
 
-      // ตรวจสอบว่าบริการเสริมรายวัน (booking_daily_extras) ถูกสร้างเป็นแถวใน ledger_transactions ของบิลนั้นแล้วหรือยัง
       const isDailyExtraPostedInLedger = (
         de: any,
         validBookingTxs: LedgerTransaction[],
@@ -700,17 +634,16 @@ export default function DailyReport({
       };
 
       type BookingSnapshot = {
-        paid: number; // เงินที่ลูกค้าจ่ายสุทธิ (หักคืนเงินทอนแล้ว)
-        placed: number; // ยอดที่ถูกกันเป็นมัดจำกุญแจสะสม (ถือ + คืน + ริบ)
-        active: number; // มัดจำกุญแจที่ยังถืออยู่
+        paid: number;
+        placed: number;
+        active: number;
         refunded: number;
         forfeited: number;
-        charges: number; // ค่าใช้จ่ายที่รับรู้เป็นรายได้แล้ว (ไม่รวมมัดจำ/ริบมัดจำ)
-        inHouse: boolean; // เช็คอินแล้ว ณ จุดตัดรอบ
+        charges: number;
+        inHouse: boolean;
         checkInDateStr: string;
       };
 
-      // คำนวณสถานะทางการเงินของแต่ละบิล ณ ต้นวัน (start) และสิ้นวัน (end)
       const snapshotBooking = (b: BookingRow, boundary: "start" | "end"): BookingSnapshot => {
         const cutTime = boundary === "start" ? start0645.getTime() : end0645.getTime();
         const dayIncluded = (d: string) => (boundary === "start" ? d < reportDateStr : d <= reportDateStr);
@@ -742,7 +675,6 @@ export default function DailyReport({
         const parts = inHouse ? computeKeyDepositParts(txBefore, futureUnpostedRates + futureUnpostedExtras) : null;
 
         let charges = 0;
-        // ค่าห้องพักรายคืน (ตาม target_date) — รับรู้เฉพาะเมื่อเข้าพักแล้ว
         if (bRates.length > 0 && inHouse) {
           const singleNightRoomTx =
             bRates.length === 1
@@ -763,7 +695,7 @@ export default function DailyReport({
             if (tt < cutTime) charges += Number(t.amount || 0);
             return;
           }
-          if (isDepositRelated(cat)) return; // มัดจำ/ริบมัดจำ แยกคำนวณผ่านกองมัดจำกุญแจ
+          if (isDepositRelated(cat)) return;
           const noteDate = String(t.notes || "").match(/ประจำวันที่\s*(\d{4}-\d{2}-\d{2})/);
           const included = noteDate ? dayIncluded(noteDate[1]) : new Date(t.created_at).getTime() < cutTime;
           if (included) charges += Number(t.amount || 0);
@@ -788,254 +720,554 @@ export default function DailyReport({
         };
       };
 
-      let advBF = 0,
-        advAdd = 0,
-        advUsed = 0;
-      let resBF = 0,
-        resAdd = 0,
-        resUsed = 0;
-      let arStart = 0,
-        arEnd = 0;
-      let keyPlacedToday = 0,
-        keyActiveStart = 0,
-        keyActiveEnd = 0;
-      const advItems: BoxRoomBreakdownItem[] = [];
-      const resItems: BoxRoomBreakdownItem[] = [];
-      const heldRooms: HeldDepositRoomItem[] = [];
-
+      // Pre-compute booking snapshots once for all bookings
+      const bookingSnapshotsMap: Record<string, { s: BookingSnapshot; e: BookingSnapshot }> = {};
       allBookings.forEach((b) => {
         if (b.status === "cancelled" && !bookingMetaMap[b.id]?.cancelledAt) return;
         if (!(txsByBooking[b.id]?.length || dailyRatesByBooking[b.id]?.length)) return;
         const s = snapshotBooking(b, "start");
         const eRaw = snapshotBooking(b, "end");
-        // เมื่อกันมัดจำกุญแจไว้ตั้งแต่วันเช็คอินแล้ว จะไม่ลดยอด placed ลงหากวันถัดมามีค่าห้องใหม่ที่ยังไม่ได้ชำระ (ให้ขึ้นเป็นค้างชำระแทน)
         const ePlaced = s.inHouse && eRaw.inHouse ? Math.max(s.placed, eRaw.placed) : eRaw.placed;
         const eActive = Math.max(0, ePlaced - eRaw.refunded - eRaw.forfeited);
         const e: BookingSnapshot = { ...eRaw, placed: ePlaced, active: eActive };
-        const balS = s.paid - s.placed - s.charges;
-        const balE = e.paid - e.placed - e.charges;
-        const roomNo = roomMap[b.room_id]?.room_no || "-";
+        bookingSnapshotsMap[b.id] = { s, e };
+      });
 
-        keyPlacedToday += e.placed - s.placed;
-        keyActiveStart += s.active;
-        keyActiveEnd += e.active;
-        if (e.active > 0) {
-          heldRooms.push({ bookingId: b.id, roomNo, guestName: b.guest_name || "ผู้เข้าพัก", amount: e.active });
-        }
+      // ฟังก์ชันคำนวณข้อมูลรายงานสำหรับ "ALL" หรือแยกตามแต่ละสถานที่ ("ซอย1", "ซอย2", "ซามีญ่า")
+      const buildLocationReport = (locFilter: string): LocationReportSnapshot => {
+        const matchBooking = (b?: BookingRow | null) =>
+          locFilter === "ALL" || getBookingLoc(b) === locFilter;
+        const matchTx = (tx: LedgerTransaction) =>
+          locFilter === "ALL" || getTxRoomLoc(tx) === locFilter;
+        const matchShift = (s: Shift) =>
+          locFilter === "ALL" || (s.shift_location || "ซอย1") === locFilter;
+        const matchHandover = (h: CashHandover) => {
+          const hLoc =
+            h.shift_location ||
+            getShiftLoc(h.shift_id, h.shift_staff_name || h.staff_name);
+          return locFilter === "ALL" || hLoc === locFilter;
+        };
 
-        arStart += Math.max(0, -balS);
-        arEnd += Math.max(0, -balE);
-        const posS = Math.max(0, balS);
-        const posE = Math.max(0, balE);
-        const rS = s.inHouse ? 0 : posS;
-        const rE = e.inHouse ? 0 : posE;
-        const aS = s.inHouse ? posS : 0;
-        const aE = e.inHouse ? posE : 0;
+        let rTarget = 0;
+        let rTargetOvernight = 0;
+        let rTargetShortStay = 0;
+        let rEarlyLate = 0;
+        let rUpsell = 0;
+        let rDiscount = 0;
+        let revAddon = 0;
+        let revMinibar = 0;
+        let revFine = 0;
+        let revOther = 0;
+        let revVoid = 0;
 
-        // กล่องรับจอง: ยังไม่เช็คอิน = เงินทั้งก้อนเป็นเงินจอง / เช็คอินวันนี้ = ดึงเงินจองมาใช้ทั้งหมด (-)
-        let bResAdd = 0;
-        let bResUsed = 0;
-        if (!e.inHouse) {
-          bResAdd = Math.max(0, rE - rS);
-          bResUsed = Math.max(0, rS - rE);
-        } else {
-          bResUsed = rS;
-        }
+        const processedOvernightBookingIdsToday = new Set<string>();
 
-        // กล่องจ่ายล่วงหน้า: เข้าพักแล้ว เงินที่จ่ายเกินค่าใช้จ่ายถึงวันนี้ / ถูกดึงมาตัดค่าห้องรายวัน (-)
-        let bAdvAdd = 0;
-        let bAdvUsed = 0;
-        if (e.inHouse) {
-          if (!s.inHouse) {
-            bAdvAdd = aE;
-          } else {
-            const consumption = Math.max(0, e.charges - s.charges + (e.placed - s.placed));
-            bAdvUsed = Math.min(aS, consumption);
-            bAdvAdd = aE - aS + bAdvUsed;
-            if (bAdvAdd < 0) {
-              bAdvUsed = aS - aE;
-              bAdvAdd = 0;
+        // 1A. รายได้ค่าห้องค้างคืนแบบรายคืน
+        allDailyRates.forEach((dr) => {
+          if (dr.target_date !== reportDateStr) return;
+          const b = bookingMap[dr.booking_id];
+          if (!b || b.status === "cancelled" || b.status === "reserved") return;
+          if (!matchBooking(b)) return;
+
+          processedOvernightBookingIdsToday.add(dr.booking_id);
+          const room = roomMap[b.room_id];
+          const meta = bookingMetaMap[dr.booking_id];
+          const ratesForBooking = dailyRatesByBooking[dr.booking_id] || [];
+          const isFirstNight = ratesForBooking.length > 0 && ratesForBooking[0].target_date === reportDateStr;
+
+          let actualNightPrice = Number(dr.amount || 0);
+          if (isFirstNight) {
+            const activeRoomTx = allLedger.find(
+              (t) =>
+                t.booking_id === dr.booking_id &&
+                !t.category.includes("Voided") &&
+                (t.category === "room_charge" || t.category === "ค่าห้องพัก")
+            );
+            if (activeRoomTx && ratesForBooking.length === 1) {
+              actualNightPrice = Number(activeRoomTx.amount || 0);
             }
           }
-        }
 
-        if (rS > 0 || bResAdd > 0 || bResUsed > 0) {
-          resBF += rS;
-          resAdd += bResAdd;
-          resUsed += bResUsed;
-          resItems.push({
-            bookingId: b.id,
-            roomNo,
-            guestName: b.guest_name || "ลูกค้าจอง",
-            checkInDateStr: e.checkInDateStr,
-            broughtForward: rS,
-            addedToday: bResAdd,
-            usedToday: bResUsed,
-            carriedForward: Math.max(0, rS + bResAdd - bResUsed),
-            note: e.inHouse
-              ? "เช็คอินเข้าพักวันนี้ (ดึงเงินจองมาใช้)"
-              : e.checkInDateStr
-              ? `กำหนดเข้าพัก ${e.checkInDateStr}`
-              : "รอเช็คอิน",
-          });
-        }
+          const storedTarget = meta?.targetPrices?.dailyTargets?.[reportDateStr];
+          const targetNightPrice =
+            storedTarget !== undefined
+              ? Number(storedTarget)
+              : Number(room?.price_night || actualNightPrice);
 
-        if (aS > 0 || bAdvAdd > 0 || bAdvUsed > 0) {
-          advBF += aS;
-          advAdd += bAdvAdd;
-          advUsed += bAdvUsed;
-          const chargeToday = e.charges - s.charges;
-          const noteParts: string[] = [];
-          if (chargeToday > 0) noteParts.push(`ค่าใช้จ่ายวันนี้ ฿${chargeToday.toLocaleString()}`);
-          if (e.placed - s.placed > 0) noteParts.push(`กันมัดจำกุญแจ ฿${(e.placed - s.placed).toLocaleString()}`);
-          if (!s.inHouse) noteParts.push("เช็คอินวันนี้");
-          advItems.push({
-            bookingId: b.id,
-            roomNo,
-            guestName: b.guest_name || "ผู้เข้าพัก",
-            checkInDateStr: e.checkInDateStr,
-            broughtForward: aS,
-            addedToday: bAdvAdd,
-            usedToday: bAdvUsed,
-            carriedForward: Math.max(0, aS + bAdvAdd - bAdvUsed),
-            note: noteParts.join(" • "),
-          });
-        }
-      });
+          const diff = actualNightPrice - targetNightPrice;
+          rTarget += targetNightPrice;
+          rTargetOvernight += targetNightPrice;
+          if (diff >= 0) {
+            if (diff > 0) {
+              if (isFirstNight && meta?.targetPrices?.timeBand === "early_in") {
+                const earlyCap = Number(room?.price_temp || diff);
+                const earlyPart = Math.min(diff, earlyCap);
+                const upsellPart = Math.max(0, diff - earlyPart);
+                rEarlyLate += earlyPart;
+                rUpsell += upsellPart;
+              } else {
+                rUpsell += diff;
+              }
+            }
+          } else {
+            rDiscount += Math.abs(diff);
+          }
+        });
 
-      advItems.sort((a, b) => a.roomNo.localeCompare(b.roomNo, undefined, { numeric: true }));
-      resItems.sort((a, b) => a.roomNo.localeCompare(b.roomNo, undefined, { numeric: true }));
-      heldRooms.sort((a, b) => a.roomNo.localeCompare(b.roomNo, undefined, { numeric: true }));
+        // 1B. รายได้ค่าห้องจาก ledger_transactions ที่ไม่อยู่ใน booking_daily_rates ของวันนี้
+        allLedger.forEach((tx) => {
+          if (tx.transaction_type !== "revenue") return;
+          if (!matchTx(tx)) return;
+          const isVoid = tx.category.includes("(Voided)");
+          const isRoomOrEarlyLate =
+            tx.category === "room_charge" ||
+            tx.category.includes("ค่าห้องพัก") ||
+            tx.category === "early_in_fee" ||
+            tx.category === "late_out_fee" ||
+            tx.category.includes("ค่าปรับออกช้า") ||
+            tx.category.includes("ออกช้า") ||
+            tx.category.includes("เข้าก่อน");
 
-      setAdvanceBreakdown(advItems);
-      setReservationBreakdown(resItems);
-      setHeldDepositRooms(heldRooms);
-      setAdvanceBox({
-        broughtForward: advBF,
-        addedToday: advAdd,
-        usedToday: advUsed,
-        carriedForward: Math.max(0, advBF + advAdd - advUsed),
-      });
-      setReservationBox({
-        broughtForward: resBF,
-        addedToday: resAdd,
-        usedToday: resUsed,
-        carriedForward: Math.max(0, resBF + resAdd - resUsed),
-      });
-      setReceivableBox({ start: arStart, end: arEnd });
+          if (isRoomOrEarlyLate) {
+            if (!isInTodayRoomWindow(tx)) return;
+            if (isVoid) {
+              revVoid += Math.abs(Number(tx.amount || 0));
+              return;
+            }
 
-      // =========================================================================
-      // 3. ฝั่งรับชำระเงิน (คอลัมน์กลาง) — ไม่รวมค่าใช้จ่ายเงินสด (ค่าใช้จ่ายแสดงในกล่องเงินสดเท่านั้น)
-      // =========================================================================
-      let cashToday = 0;
-      let transferToday = 0;
-      const transferByBank: Record<string, number> = {};
-      configuredBanks.forEach((bk) => {
-        transferByBank[bk] = 0;
-      });
-      let creditToday = 0;
-      let refundToday = 0;
-      let keyRefundToday = 0;
-      let forfeitToday = 0;
+            if (
+              tx.category === "early_in_fee" ||
+              tx.category === "late_out_fee" ||
+              tx.category.includes("ค่าปรับออกช้า") ||
+              tx.category.includes("ออกช้า") ||
+              tx.category.includes("เข้าก่อน")
+            ) {
+              rEarlyLate += Number(tx.amount || 0);
+              return;
+            }
 
-      txsIn0645Window.forEach((tx) => {
-        if (tx.category.includes("(Voided)")) return;
-        const amt = Number(tx.amount || 0);
-        const absAmt = Math.abs(amt);
-        if (tx.transaction_type === "payment") {
-          if (amt > 0) {
-            refundToday += amt;
+            if (
+              (tx.category === "room_charge" || tx.category === "ค่าห้องพัก") &&
+              tx.booking_id &&
+              (processedOvernightBookingIdsToday.has(tx.booking_id) ||
+                (dailyRatesByBooking[tx.booking_id]?.length || 0) > 0)
+            ) {
+              return;
+            }
+
+            const b = tx.booking_id ? bookingMap[tx.booking_id] : undefined;
+            if (b && b.status === "reserved") {
+              return;
+            }
+
+            const room = (tx.room_id && roomMap[tx.room_id]) || (b && roomMap[b.room_id]);
+            const meta = tx.booking_id ? bookingMetaMap[tx.booking_id] : undefined;
+            const actualAmt = Number(tx.amount || 0);
+
+            const isShortStay =
+              meta?.targetPrices?.stayType === "short_stay" ||
+              (!tx.category.includes("พักต่อ") &&
+                !tx.category.includes("บังคับพักต่อ") &&
+                !!b &&
+                !(dailyRatesByBooking[b.id]?.length) &&
+                new Date(b.check_out_time).getTime() - new Date(b.check_in_time).getTime() <= 10 * 3600 * 1000 &&
+                new Date(b.check_out_time).getHours() !== 12);
+
+            let targetAmt = actualAmt;
+            if (tx.category.includes("พักต่อ") || tx.category.includes("บังคับพักต่อ")) {
+              const matchNights = tx.category.match(/(\d+)\s*คืน/);
+              const extNights = matchNights ? Number(matchNights[1]) : 1;
+              targetAmt = Number(room?.price_night || actualAmt) * extNights;
+            } else if (meta?.targetPrices?.totalTargetPrice && meta.targetPrices.totalTargetPrice > 0) {
+              targetAmt = Number(meta.targetPrices.totalTargetPrice);
+            } else if (isShortStay) {
+              targetAmt = Number(room?.price_temp || actualAmt);
+            } else if (room?.price_night && actualAmt >= room.price_night * 0.5) {
+              targetAmt = Number(room.price_night);
+            }
+
+            const diff = actualAmt - targetAmt;
+            rTarget += targetAmt;
+            if (isShortStay) {
+              rTargetShortStay += targetAmt;
+            } else {
+              rTargetOvernight += targetAmt;
+            }
+
+            if (diff >= 0) {
+              if (diff > 0) {
+                if (!isShortStay && meta?.targetPrices?.timeBand === "early_in") {
+                  const earlyCap = Number(room?.price_temp || diff);
+                  const earlyPart = Math.min(diff, earlyCap);
+                  const upsellPart = Math.max(0, diff - earlyPart);
+                  rEarlyLate += earlyPart;
+                  rUpsell += upsellPart;
+                } else {
+                  rUpsell += diff;
+                }
+              }
+            } else {
+              rDiscount += Math.abs(diff);
+            }
+          }
+        });
+
+        const addCategorizedRevenue = (rawCategory: string, amt: number) => {
+          const cleanCat = rawCategory.replace(" (Voided)", "").trim();
+          const mappedCat = posCategoryMap[cleanCat];
+          if (mappedCat === "addon") {
+            revAddon += amt;
+          } else if (mappedCat === "minibar") {
+            revMinibar += amt;
+          } else if (mappedCat === "fine") {
+            revFine += amt;
+          } else if (mappedCat === "other") {
+            revOther += amt;
+          } else if (
+            extraNames.has(cleanCat) ||
+            cleanCat.includes("เสริม") ||
+            cleanCat.includes("ผ้าห่ม") ||
+            cleanCat.includes("หมอน") ||
+            cleanCat.includes("ผ้าเช็ดตัว")
+          ) {
+            revAddon += amt;
+          } else if (
+            cleanCat.includes("ปรับ") ||
+            cleanCat.includes("ริบมัดจำ") ||
+            cleanCat.includes("เสียหาย") ||
+            cleanCat.includes("กุญแจหาย") ||
+            cleanCat.includes("บุหรี่")
+          ) {
+            revFine += amt;
+          } else if (posNames.has(cleanCat)) {
+            revMinibar += amt;
+          } else {
+            revOther += amt;
+          }
+        };
+
+        // 1C. รายได้ที่ไม่ใช่ค่าห้องพัก
+        txsIn0645Window.forEach((tx) => {
+          if (tx.transaction_type !== "revenue") return;
+          if (!matchTx(tx)) return;
+          if (tx.category === "key_deposit" || tx.category === "ค่ามัดจำกุญแจ" || tx.category === "คืนมัดจำกุญแจ") return;
+
+          const isRoomOrEarlyLate =
+            tx.category === "room_charge" ||
+            tx.category.includes("ค่าห้องพัก") ||
+            tx.category === "early_in_fee" ||
+            tx.category === "late_out_fee" ||
+            tx.category.includes("ค่าปรับออกช้า") ||
+            tx.category.includes("ออกช้า") ||
+            tx.category.includes("เข้าก่อน");
+          if (isRoomOrEarlyLate) return;
+
+          const noteDateMatch = String(tx.notes || "").match(/ประจำวันที่\s*(\d{4}-\d{2}-\d{2})/);
+          if (noteDateMatch && noteDateMatch[1] !== reportDateStr) return;
+
+          const amt = Number(tx.amount || 0);
+          if (tx.category.includes("(Voided)")) {
+            revVoid += Math.abs(amt);
             return;
           }
-          if (tx.category === "cash") {
-            cashToday += absAmt;
-          } else if (tx.category === "transfer") {
-            transferToday += absAmt;
-            const bankMatch = tx.notes?.match(/\[BANK:([^\]]+)\]/);
-            const bankName = bankMatch ? bankMatch[1].trim() : configuredBanks[0] || "SCB";
-            transferByBank[bankName] = (transferByBank[bankName] || 0) + absAmt;
-          } else if (tx.category === "credit_card") {
-            creditToday += absAmt;
+
+          addCategorizedRevenue(tx.category, amt);
+        });
+
+        // 1D. บริการเสริมรายวัน (booking_daily_extras)
+        allDailyExtras.forEach((de) => {
+          if (de.target_date !== reportDateStr) return;
+          const b = bookingMap[de.booking_id];
+          if (!b || b.status === "cancelled" || b.status === "reserved") return;
+          if (!matchBooking(b)) return;
+          const isVoid = String(de.category || "").includes("(Voided)");
+          const baseCat = String(de.category || "").replace(" (Voided)", "").trim();
+          const ratesForBooking = dailyRatesByBooking[de.booking_id] || [];
+          const extrasForBooking = dailyExtrasByBooking[de.booking_id] || [];
+          const firstDate = ratesForBooking[0]?.target_date || extrasForBooking[0]?.target_date || "";
+
+          const alreadyInLedgerToday = txsIn0645Window.some((tx) => {
+            if (tx.booking_id !== de.booking_id || tx.transaction_type !== "revenue") return false;
+            if (String(tx.category || "").replace(" (Voided)", "").trim() !== baseCat) return false;
+            const noteDateMatch = String(tx.notes || "").match(/ประจำวันที่\s*(\d{4}-\d{2}-\d{2})/);
+            if (noteDateMatch) return noteDateMatch[1] === de.target_date;
+            return de.target_date === firstDate;
+          });
+          if (alreadyInLedgerToday) return;
+
+          const amt = Number(de.amount || 0);
+          if (isVoid) {
+            revVoid += Math.abs(amt);
           } else {
-            cashToday += absAmt;
+            if (posCategoryMap[baseCat]) {
+              addCategorizedRevenue(baseCat, amt);
+            } else {
+              revAddon += amt;
+            }
           }
-        } else if (tx.transaction_type === "deposit" && amt < 0) {
-          if (tx.category.includes("คืนเงินทอน")) refundToday += absAmt;
-          else if (tx.category.includes("คืนมัดจำ")) keyRefundToday += absAmt;
-        } else if (tx.transaction_type === "revenue" && tx.category.includes("ริบมัดจำ")) {
-          forfeitToday += absAmt;
-        }
-      });
+        });
 
-      setPayCash(cashToday);
-      setPayTransferTotal(transferToday);
-      setPayTransferByBank(transferByBank);
-      setPayCredit(creditToday);
-      setPayVoidRefund(refundToday);
+        // 2. จ่ายล่วงหน้า, รับจอง, มัดจำกุญแจ, ค้างชำระ
+        let advBF = 0,
+          advAdd = 0,
+          advUsed = 0;
+        let resBF = 0,
+          resAdd = 0,
+          resUsed = 0;
+        let arStart = 0,
+          arEnd = 0;
+        let keyPlacedToday = 0,
+          keyActiveStart = 0,
+          keyActiveEnd = 0;
+        const advItems: BoxRoomBreakdownItem[] = [];
+        const resItems: BoxRoomBreakdownItem[] = [];
+        const heldRooms: HeldDepositRoomItem[] = [];
 
-      setKeyDepositBox({
-        broughtForward: keyActiveStart,
-        placedToday: keyPlacedToday,
-        refundedToday: keyRefundToday,
-        forfeitedToday: forfeitToday,
-        activeHeldTotal: keyActiveEnd,
-      });
+        allBookings.forEach((b) => {
+          if (!matchBooking(b)) return;
+          const snap = bookingSnapshotsMap[b.id];
+          if (!snap) return;
+          const { s, e } = snap;
+          const balS = s.paid - s.placed - s.charges;
+          const balE = e.paid - e.placed - e.charges;
+          const roomNo = roomMap[b.room_id]?.room_no || "-";
 
-      // =========================================================================
-      // 4. กล่องเงินสดสำหรับเซ็นรับ-เก็บเงินประจำวัน (อิงกะของวันนั้น)
-      // =========================================================================
-      // ดึงกะช่วงกว้าง แล้วคัดตาม "วันธุรกิจที่ผูกกับกะ" (กะเก่าไม่มีข้อมูล → ใช้เวลาเปิดกะ +1 ชม.)
-      const dayShiftFrom = new Date(start0645.getTime() - 3 * 3600 * 1000);
-      const dayShiftTo = new Date(end0645.getTime());
-      const [dayShiftsRes, handoverList] = await Promise.all([
-        supabase
-          .from("shifts")
-          .select("*")
-          .gte("start_time", dayShiftFrom.toISOString())
-          .lt("start_time", dayShiftTo.toISOString())
-          .order("start_time", { ascending: true }),
-        fetchHandoversByDate(reportDateStr),
-      ]);
-      const candidateShifts: Shift[] = (dayShiftsRes.data as Shift[]) || [];
-      const shiftBdMap = await fetchShiftBusinessDates(candidateShifts);
-      const dayShiftList: Shift[] = candidateShifts.filter((s) => shiftBdMap[s.id] === reportDateStr);
-      const dayShiftIds = dayShiftList.map((s) => s.id);
-      let shiftLedgerRows: LedgerTransaction[] = [];
-      if (dayShiftIds.length > 0) {
-        const { data: shiftRows } = await supabase
-          .from("ledger_transactions")
-          .select("id, shift_id, staff_name, room_id, booking_id, transaction_type, category, amount, notes, created_at")
-          .in("shift_id", dayShiftIds)
-          .order("created_at", { ascending: true });
-        shiftLedgerRows = (shiftRows as LedgerTransaction[]) || [];
-      }
-      const drawers: Record<string, ShiftDrawer> = {};
-      dayShiftList.forEach((s) => {
-        const handedOut = handoverList
-          .filter((h) => h.shift_id === s.id)
-          .reduce(
-            (sum, h) => sum + Number(h.method === "fixed" ? h.actual_amount || 0 : h.required_amount || 0),
-            0
-          );
-        drawers[s.id] = computeDrawerFromRows(
-          Number(s.initial_cash || 0),
-          shiftLedgerRows.filter((r) => r.shift_id === s.id),
-          handedOut
+          keyPlacedToday += e.placed - s.placed;
+          keyActiveStart += s.active;
+          keyActiveEnd += e.active;
+          if (e.active > 0) {
+            heldRooms.push({ bookingId: b.id, roomNo, guestName: b.guest_name || "ผู้เข้าพัก", amount: e.active });
+          }
+
+          arStart += Math.max(0, -balS);
+          arEnd += Math.max(0, -balE);
+          const posS = Math.max(0, balS);
+          const posE = Math.max(0, balE);
+          const rS = s.inHouse ? 0 : posS;
+          const rE = e.inHouse ? 0 : posE;
+          const aS = s.inHouse ? posS : 0;
+          const aE = e.inHouse ? posE : 0;
+
+          let bResAdd = 0;
+          let bResUsed = 0;
+          if (!e.inHouse) {
+            bResAdd = Math.max(0, rE - rS);
+            bResUsed = Math.max(0, rS - rE);
+          } else {
+            bResUsed = rS;
+          }
+
+          let bAdvAdd = 0;
+          let bAdvUsed = 0;
+          if (e.inHouse) {
+            if (!s.inHouse) {
+              bAdvAdd = aE;
+            } else {
+              const consumption = Math.max(0, e.charges - s.charges + (e.placed - s.placed));
+              bAdvUsed = Math.min(aS, consumption);
+              bAdvAdd = aE - aS + bAdvUsed;
+              if (bAdvAdd < 0) {
+                bAdvUsed = aS - aE;
+                bAdvAdd = 0;
+              }
+            }
+          }
+
+          if (rS > 0 || bResAdd > 0 || bResUsed > 0) {
+            resBF += rS;
+            resAdd += bResAdd;
+            resUsed += bResUsed;
+            resItems.push({
+              bookingId: b.id,
+              roomNo,
+              guestName: b.guest_name || "ลูกค้าจอง",
+              checkInDateStr: e.checkInDateStr,
+              broughtForward: rS,
+              addedToday: bResAdd,
+              usedToday: bResUsed,
+              carriedForward: Math.max(0, rS + bResAdd - bResUsed),
+              note: e.inHouse
+                ? "เช็คอินเข้าพักวันนี้ (ดึงเงินจองมาใช้)"
+                : e.checkInDateStr
+                ? `กำหนดเข้าพัก ${e.checkInDateStr}`
+                : "รอเช็คอิน",
+            });
+          }
+
+          if (aS > 0 || bAdvAdd > 0 || bAdvUsed > 0) {
+            advBF += aS;
+            advAdd += bAdvAdd;
+            advUsed += bAdvUsed;
+            const chargeToday = e.charges - s.charges;
+            const noteParts: string[] = [];
+            if (chargeToday > 0) noteParts.push(`ค่าใช้จ่ายวันนี้ ฿${chargeToday.toLocaleString()}`);
+            if (e.placed - s.placed > 0) noteParts.push(`กันมัดจำกุญแจ ฿${(e.placed - s.placed).toLocaleString()}`);
+            if (!s.inHouse) noteParts.push("เช็คอินวันนี้");
+            advItems.push({
+              bookingId: b.id,
+              roomNo,
+              guestName: b.guest_name || "ผู้เข้าพัก",
+              checkInDateStr: e.checkInDateStr,
+              broughtForward: aS,
+              addedToday: bAdvAdd,
+              usedToday: bAdvUsed,
+              carriedForward: Math.max(0, aS + bAdvAdd - bAdvUsed),
+              note: noteParts.join(" • "),
+            });
+          }
+        });
+
+        advItems.sort((a, b) => a.roomNo.localeCompare(b.roomNo, undefined, { numeric: true }));
+        resItems.sort((a, b) => a.roomNo.localeCompare(b.roomNo, undefined, { numeric: true }));
+        heldRooms.sort((a, b) => a.roomNo.localeCompare(b.roomNo, undefined, { numeric: true }));
+
+        // 3. ฝั่งรับชำระเงิน
+        let cashToday = 0;
+        let transferToday = 0;
+        const transferByBank: Record<string, number> = {};
+        configuredBanks.forEach((bk) => {
+          transferByBank[bk] = 0;
+        });
+        let creditToday = 0;
+        let refundToday = 0;
+        let keyRefundToday = 0;
+        let forfeitToday = 0;
+
+        txsIn0645Window.forEach((tx) => {
+          if (tx.category.includes("(Voided)")) return;
+          if (!matchTx(tx)) return;
+          const amt = Number(tx.amount || 0);
+          const absAmt = Math.abs(amt);
+          if (tx.transaction_type === "payment") {
+            if (amt > 0) {
+              refundToday += amt;
+              return;
+            }
+            if (tx.category === "cash") {
+              cashToday += absAmt;
+            } else if (tx.category === "transfer") {
+              transferToday += absAmt;
+              const bankMatch = tx.notes?.match(/\[BANK:([^\]]+)\]/);
+              const bankName = bankMatch ? bankMatch[1].trim() : configuredBanks[0] || "SCB";
+              transferByBank[bankName] = (transferByBank[bankName] || 0) + absAmt;
+            } else if (tx.category === "credit_card") {
+              creditToday += absAmt;
+            } else {
+              cashToday += absAmt;
+            }
+          } else if (tx.transaction_type === "deposit" && amt < 0) {
+            if (tx.category.includes("คืนเงินทอน")) refundToday += absAmt;
+            else if (tx.category.includes("คืนมัดจำ")) keyRefundToday += absAmt;
+          } else if (tx.transaction_type === "revenue" && tx.category.includes("ริบมัดจำ")) {
+            forfeitToday += absAmt;
+          }
+        });
+
+        // 4. กล่องเงินสดและกะของสถานที่นั้น
+        const locDayShifts = dayShiftList.filter(matchShift);
+        const locHandovers = handoverList.filter(matchHandover);
+        const locExpenses = expenseRows.filter((e) => locDayShifts.some((s) => s.id === e.shift_id));
+        const locTotalExpense = locExpenses.reduce((sum, r) => sum + Math.abs(Number(r.amount || 0)), 0);
+
+        const locReserveRooms =
+          locFilter === "ALL"
+            ? reserveNow.rooms
+            : reserveNow.rooms.filter((r) => (r.location || "ซอย1") === locFilter);
+        const locReserveTotal = locReserveRooms.reduce((sum, r) => sum + r.amount, 0);
+
+        const locOpenShifts = locDayShifts.filter((s) => s.status === "open");
+        const getReserveForShift = (sh: Shift) => {
+          if (dayShiftList.filter((s) => s.status === "open").length === 1 && !shiftMetaMap[sh.id]?.shift_location) {
+            return locFilter === "ALL" ? reserveNow.total : locReserveTotal;
+          }
+          const shLoc = sh.shift_location || "ซอย1";
+          return reserveNow.rooms
+            .filter((r) => (r.location || "ซอย1") === shLoc)
+            .reduce((sum, r) => sum + r.amount, 0);
+        };
+        const locLiveRequiredTotal = locOpenShifts.reduce(
+          (s, sh) => s + ((drawers[sh.id]?.drawer || 0) - getReserveForShift(sh)),
+          0
         );
+
+        const isLocDayClosed =
+          locFilter === "ALL"
+            ? dayClosed || (orderedLocations.some((l) => locDayClosedMap[l]) && locOpenShifts.length === 0)
+            : Boolean(locDayClosedMap[locFilter] || dayClosed);
+
+        const crossLocCollectedForHere =
+          locFilter === "ALL"
+            ? parsedTransferCardItems.filter((it) => it.shiftLocation && it.shiftLocation !== it.roomLocation)
+            : parsedTransferCardItems.filter(
+                (it) => it.roomLocation === locFilter && it.shiftLocation && it.shiftLocation !== locFilter
+              );
+        const crossLocCollectedByHere =
+          locFilter === "ALL"
+            ? []
+            : parsedTransferCardItems.filter(
+                (it) => it.shiftLocation === locFilter && it.roomLocation !== locFilter
+              );
+
+        return {
+          location: locFilter,
+          isDayClosed: isLocDayClosed,
+          roomTargetTotal: rTarget,
+          roomTargetOvernight: rTargetOvernight,
+          roomTargetShortStay: rTargetShortStay,
+          earlyLateTotal: rEarlyLate,
+          upsellTotal: rUpsell,
+          roomDiscountTotal: rDiscount,
+          addonRevenue: revAddon,
+          minibarRevenue: revMinibar,
+          fineRevenue: revFine,
+          otherRevenue: revOther,
+          voidedRevenue: revVoid,
+          payCash: cashToday,
+          payTransferTotal: transferToday,
+          payTransferByBank: transferByBank,
+          payCredit: creditToday,
+          payVoidRefund: refundToday,
+          totalExpense: locTotalExpense,
+          advanceBox: {
+            broughtForward: advBF,
+            addedToday: advAdd,
+            usedToday: advUsed,
+            carriedForward: Math.max(0, advBF + advAdd - advUsed),
+          },
+          reservationBox: {
+            broughtForward: resBF,
+            addedToday: resAdd,
+            usedToday: resUsed,
+            carriedForward: Math.max(0, resBF + resAdd - resUsed),
+          },
+          advanceBreakdown: advItems,
+          reservationBreakdown: resItems,
+          keyDepositBox: {
+            broughtForward: keyActiveStart,
+            placedToday: keyPlacedToday,
+            refundedToday: keyRefundToday,
+            forfeitedToday: forfeitToday,
+            activeHeldTotal: keyActiveEnd,
+          },
+          heldDepositRooms: heldRooms,
+          receivableBox: { start: arStart, end: arEnd },
+          dayShifts: locDayShifts,
+          handovers: locHandovers,
+          dayExpenses: locExpenses,
+          liveReserve: { total: locReserveTotal, rooms: locReserveRooms },
+          liveRequiredTotal: locLiveRequiredTotal,
+          crossLocCollectedForHere,
+          crossLocCollectedByHere,
+        };
+      };
+
+      const computedMap: Record<string, LocationReportSnapshot> = {
+        ALL: buildLocationReport("ALL"),
+      };
+      orderedLocations.forEach((loc) => {
+        computedMap[loc] = buildLocationReport(loc);
       });
-      const expenseRows = shiftLedgerRows.filter(
-        (r) => r.transaction_type === "expense" && !r.category.includes("(Voided)")
-      );
-      let reserveNow = { total: 0, rooms: [] as HeldKeyDepositRoom[] };
-      if (dayShiftList.some((s) => s.status === "open")) {
-        reserveNow = await fetchActiveKeyDeposits(now);
-      }
-      setDayShifts(dayShiftList);
-      setHandovers(handoverList);
-      setDayExpenses(expenseRows);
-      setTotalExpense(expenseRows.reduce((sum, r) => sum + Math.abs(Number(r.amount || 0)), 0));
-      setShiftDrawers(drawers);
-      setLiveReserve(reserveNow);
+      setReportsByLocation(computedMap);
 
       setLoading(false);
     }
@@ -1043,14 +1275,49 @@ export default function DailyReport({
     fetchDailyData();
   }, [dateOffset, getNow, getActiveBusinessDate, currentBusinessDate, refreshKey]);
 
-
-  if (loading) {
+  if (loading || !reportsByLocation["ALL"]) {
     return (
       <div className="text-center py-12 text-slate-500 animate-pulse font-bold">
         กำลังประมวลผลรายงานเงินสดประจำวัน...
       </div>
     );
   }
+
+  const activeReport = reportsByLocation[selectedLocation] || reportsByLocation["ALL"];
+  const {
+    isDayClosed,
+    roomTargetTotal,
+    roomTargetOvernight,
+    roomTargetShortStay,
+    earlyLateTotal,
+    upsellTotal,
+    roomDiscountTotal,
+    addonRevenue,
+    minibarRevenue,
+    fineRevenue,
+    otherRevenue,
+    voidedRevenue,
+    payCash,
+    payTransferTotal,
+    payTransferByBank,
+    payCredit,
+    payVoidRefund,
+    totalExpense,
+    advanceBox,
+    reservationBox,
+    advanceBreakdown,
+    reservationBreakdown,
+    keyDepositBox,
+    heldDepositRooms,
+    receivableBox,
+    dayShifts,
+    handovers,
+    dayExpenses,
+    liveReserve,
+    liveRequiredTotal,
+    crossLocCollectedForHere,
+    crossLocCollectedByHere,
+  } = activeReport;
 
   // สรุปตัวเลขคอลัมน์ซ้าย (ฝั่งรายได้) — ธรรมชาติเป็นบวก (+)
   const roomExtraTotal = earlyLateTotal + upsellTotal; // 1.2 รายได้ส่วนเพิ่ม (1.2.1 + 1.2.2)
@@ -1078,10 +1345,6 @@ export default function DailyReport({
   // ===================== กล่องเงินสดสำหรับเซ็นรับ-เก็บเงินประจำวัน =====================
   const openShifts = dayShifts.filter((s) => s.status === "open");
   const handoverRequiredTotal = handovers.reduce((s, h) => s + Number(h.required_amount || 0), 0);
-  const liveRequiredTotal = openShifts.reduce(
-    (s, sh) => s + ((shiftDrawers[sh.id]?.drawer || 0) - liveReserve.total),
-    0
-  );
   const totalRequiredToSend = handoverRequiredTotal + liveRequiredTotal;
   const cashReceivedNet = totalRequiredToSend + totalExpense;
   const cashOverTotal = handovers.reduce(
@@ -1179,6 +1442,255 @@ export default function DailyReport({
 
   return (
     <div className="space-y-6">
+      {/* แถบเลือกสถานที่ (รวมทั้งหมด / ซอย1 / ซอย2 / ซามีญ่า) + ปุ่มใบตรวจยอดโอน & บัตรเครดิต (พิมพ์ A4) */}
+      <div className="bg-white rounded-2xl border-2 border-slate-200 p-3.5 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-black text-slate-500 uppercase tracking-wider mr-1">
+            📍 เลือกสถานที่รายงาน:
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelectedLocation("ALL")}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
+              selectedLocation === "ALL"
+                ? "bg-slate-900 text-white shadow-sm ring-2 ring-slate-900/20"
+                : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+            }`}
+          >
+            <span>📊 รวมทั้งหมด (ทุกสาขา)</span>
+          </button>
+          {availableLocations.map((loc) => {
+            const locRep = reportsByLocation[loc];
+            const locNetRev = locRep
+              ? locRep.roomTargetTotal +
+                locRep.earlyLateTotal +
+                locRep.upsellTotal -
+                locRep.roomDiscountTotal +
+                locRep.addonRevenue +
+                locRep.minibarRevenue +
+                locRep.fineRevenue +
+                locRep.otherRevenue
+              : 0;
+            const locOpenCount = locRep ? locRep.dayShifts.filter((s) => s.status === "open").length : 0;
+            const isSelected = selectedLocation === loc;
+            return (
+              <button
+                key={loc}
+                type="button"
+                onClick={() => setSelectedLocation(loc)}
+                className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
+                  isSelected
+                    ? "bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-600/30"
+                    : "bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-800 border border-slate-200/80"
+                }`}
+              >
+                <span>📍 {loc}</span>
+                <span
+                  className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
+                    isSelected ? "bg-indigo-800 text-indigo-100" : "bg-white text-slate-600"
+                  }`}
+                >
+                  {fmt(locNetRev)}
+                </span>
+                {locOpenCount > 0 && (
+                  <span
+                    className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"
+                    title={`มีกะเปิดอยู่ ${locOpenCount} กะ`}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowTransferCardModal(true)}
+          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white font-black text-xs shadow-sm flex items-center justify-center gap-2 shrink-0 transition-all"
+        >
+          <span>🖨️ ใบตรวจยอดโอน & บัตรเครดิต (พิมพ์ A4)</span>
+          <span className="px-2 py-0.5 rounded-full bg-white/20 text-white text-[11px] font-black">
+            {transferCardItems.length} รายการ
+          </span>
+        </button>
+      </div>
+
+      {/* แถบสรุปเปรียบเทียบแยกตามสถานที่ (แสดงเมื่อดู "รวมทั้งหมด") */}
+      {selectedLocation === "ALL" && (
+        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-black text-slate-700 flex items-center gap-1.5">
+              <span>🏢 สรุปภาพรวมแยกตามสถานที่ (คลิกที่การ์ดเพื่อเจาะดูรายงานเฉพาะสถานที่นั้น)</span>
+            </div>
+            <span className="text-[11px] text-slate-500 font-semibold">
+              แยกกล่องเงินสดและมัดจำกุญแจตามจุดเคาน์เตอร์แต่ละสาขาชัดเจน
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+            {availableLocations.map((loc) => {
+              const rep = reportsByLocation[loc];
+              if (!rep) return null;
+              const locNetRev =
+                rep.roomTargetTotal +
+                rep.earlyLateTotal +
+                rep.upsellTotal -
+                rep.roomDiscountTotal +
+                rep.addonRevenue +
+                rep.minibarRevenue +
+                rep.fineRevenue +
+                rep.otherRevenue;
+              const locOpen = rep.dayShifts.filter((s) => s.status === "open");
+              const locHandoverReq = rep.handovers.reduce((s, h) => s + Number(h.required_amount || 0), 0);
+              const locReqTotal = locHandoverReq + rep.liveRequiredTotal;
+              const locActualCash = rep.handovers.reduce((s, h) => s + Number(h.actual_amount || 0), 0);
+              const locTransferCardTotal = rep.payTransferTotal + rep.payCredit;
+              const locGrossPay = rep.payCash + rep.payTransferTotal + rep.payCredit;
+              const locNetPay =
+                -locGrossPay + rep.payVoidRefund + rep.keyDepositBox.placedToday - rep.keyDepositBox.forfeitedToday;
+              const locNetAdv = rep.advanceBox.addedToday - rep.advanceBox.usedToday;
+              const locNetRes = rep.reservationBox.addedToday - rep.reservationBox.usedToday;
+              const locRecChange = rep.receivableBox.end - rep.receivableBox.start;
+              const locBal = locNetRev + locNetPay + locNetAdv + locNetRes - locRecChange;
+              const locBalanced = Math.abs(locBal) < 0.5;
+              const allBanksForLoc = Array.from(new Set([...bankAccounts, ...Object.keys(rep.payTransferByBank)]));
+
+              return (
+                <div
+                  key={loc}
+                  onClick={() => setSelectedLocation(loc)}
+                  className="bg-white hover:bg-indigo-50/30 border border-slate-200 hover:border-indigo-300 rounded-xl p-3.5 shadow-2xs transition-all cursor-pointer flex flex-col justify-between space-y-2.5"
+                >
+                  <div>
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-black text-sm text-slate-900">📍 {loc}</span>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            locBalanced
+                              ? "bg-emerald-100 text-emerald-800"
+                              : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          {locBalanced ? "✅ สมดุล 0" : `⚠️ ต่าง ${fmtSigned(locBal)}`}
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-bold text-indigo-600 hover:underline">
+                        ดูสาขานี้ →
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 mt-2.5 text-xs">
+                      <div className="bg-slate-50 rounded-lg p-2 border border-slate-100">
+                        <div className="text-[10px] text-slate-500 font-bold">รายได้สุทธิ</div>
+                        <div className="text-sm font-black text-indigo-700 mt-0.5">{fmt(locNetRev)}</div>
+                      </div>
+                      <div className="bg-emerald-50/70 rounded-lg p-2 border border-emerald-100">
+                        <div className="text-[10px] text-emerald-800 font-bold">เงินสดต้องส่ง / ส่งจริง</div>
+                        <div className="text-xs font-black text-emerald-900 mt-0.5">
+                          {fmt(locReqTotal)} <span className="text-slate-400">/</span>{" "}
+                          <span className="text-emerald-700">{fmt(locActualCash)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ยอดโอน + บัตรเครดิต พร้อมแยก SCB / KBANK / บัตรเครดิต ของแต่ละสถานที่ */}
+                    <div className="mt-2 bg-blue-50/60 border border-blue-100 rounded-lg p-2 space-y-1">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-bold text-blue-950">📱💳 รวมโอน+บัตร ({loc})</span>
+                        <span className="font-black text-blue-700">{fmt(locTransferCardTotal)}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1 pt-0.5">
+                        {allBanksForLoc.map((bk) => (
+                          <span
+                            key={bk}
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white border border-blue-200/80 text-slate-700"
+                          >
+                            {bk}: <b className="text-blue-800">{fmt(rep.payTransferByBank[bk] || 0)}</b>
+                          </span>
+                        ))}
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white border border-purple-200/80 text-slate-700">
+                          บัตรเครดิต: <b className="text-purple-800">{fmt(rep.payCredit)}</b>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                    <span className="text-amber-800 font-bold">
+                      🔑 มัดจำกุญแจถืออยู่: <b>{fmt(rep.keyDepositBox.activeHeldTotal)}</b> ({rep.heldDepositRooms.length} ห้อง)
+                    </span>
+                    <span className="text-slate-500 font-semibold">
+                      {locOpen.length > 0
+                        ? `🟢 เปิดกะ (${locOpen.map((s) => s.staff_name).join(", ")})`
+                        : rep.dayShifts.length > 0
+                        ? `✅ ปิดกะแล้ว (${rep.dayShifts.length} กะ)`
+                        : "⚪ ไม่มีการเปิดกะ"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* แบนเนอร์บอกสถานะเมื่อกำลังดูเฉพาะสถานที่ + แสดงรายการรับโอน/บัตรข้ามสาขา (ถ้ามี) */}
+      {selectedLocation !== "ALL" && (
+        <div className="bg-indigo-900 text-white rounded-2xl p-4 shadow-sm space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1 rounded-full bg-indigo-500 text-white text-xs font-black">
+                📍 สถานที่: {selectedLocation}
+              </span>
+              <span className="text-sm font-bold text-indigo-100">
+                กำลังแสดงเฉพาะรายได้, เงินรับชำระ, มัดจำกุญแจ และกล่องเงินสดของสาขา <b>{selectedLocation}</b>
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedLocation("ALL")}
+              className="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-black transition-colors"
+            >
+              ↩️ กลับไปดูรวมทั้งหมด (ทุกสาขา)
+            </button>
+          </div>
+
+          {(crossLocCollectedForHere.length > 0 || crossLocCollectedByHere.length > 0) && (
+            <div className="bg-indigo-950/80 border border-indigo-700 rounded-xl p-3 text-xs space-y-1.5">
+              <div className="font-black text-amber-300 flex items-center gap-1.5">
+                <span>⚡ รายการรับเงินโอน/บัตรเครดิตข้ามสาขา (Cross-Location Transactions)</span>
+              </div>
+              {crossLocCollectedForHere.length > 0 && (
+                <div className="text-indigo-100">
+                  • <b>ห้องพักสาขา {selectedLocation}</b> ที่พนักงานสาขาอื่นรับโอน/บัตรเครดิตให้ ({crossLocCollectedForHere.length} รายการ — นับรวมในยอดโอน/บัตรของสาขา {selectedLocation} แล้ว):{" "}
+                  {crossLocCollectedForHere.map((it) => (
+                    <span
+                      key={it.id}
+                      className="inline-block bg-indigo-800/90 border border-indigo-600 rounded px-2 py-0.5 mr-1.5 mt-1 text-[11px]"
+                    >
+                      ห้อง <b>{it.roomNo}</b> ({it.bank === "CREDIT_CARD" ? "บัตรเครดิต" : it.bank} {fmt(it.amount)} • รับโดย {it.staffName} กะ{it.shiftLocation})
+                    </span>
+                  ))}
+                </div>
+              )}
+              {crossLocCollectedByHere.length > 0 && (
+                <div className="text-indigo-200">
+                  • <b>พนักงานกะสาขา {selectedLocation}</b> รับโอน/บัตรเครดิตให้ห้องพักสาขาอื่น ({crossLocCollectedByHere.length} รายการ — ยอดไปแสดงในรายงานของสาขาห้องพักนั้น):{" "}
+                  {crossLocCollectedByHere.map((it) => (
+                    <span
+                      key={it.id}
+                      className="inline-block bg-slate-800 border border-slate-600 rounded px-2 py-0.5 mr-1.5 mt-1 text-[11px]"
+                    >
+                      ห้อง <b>{it.roomNo}</b> ({it.roomLocation}) • {it.bank === "CREDIT_CARD" ? "บัตรเครดิต" : it.bank} {fmt(it.amount)} (รับโดย {it.staffName})
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* แถบสถานะประจำวันและเวลาตัดรอบ */}
       <div
         className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
@@ -1188,7 +1700,7 @@ export default function DailyReport({
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h2 className={`text-lg font-black ${isCashComplete ? "text-indigo-900" : "text-slate-800"}`}>
-              📊 รายงานเงินสดประจำวัน ({reportDateLabel})
+              📊 รายงานเงินสดประจำวัน {selectedLocation !== "ALL" ? `[เฉพาะสาขา ${selectedLocation}]` : "(รวมทุกสาขา)"} ({reportDateLabel})
             </h2>
             <span
               className={`px-3 py-0.5 rounded-full font-bold text-xs ${
@@ -1199,7 +1711,7 @@ export default function DailyReport({
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            ⏱️ รอบวันรายงาน: <b>06:45 น. ถึง 06:44 น. ของวันถัดไป</b> (ตัดค่าห้องพักค้างคืนอัตโนมัติเวลา 09:45 น.)
+            ⏱️ รอบวันรายงาน: <b>{windowLabelStr}</b> (ตัดค่าห้องพักค้างคืนอัตโนมัติเวลา 09:45 น.)
           </p>
         </div>
         {onChangeDateOffset && (
@@ -1396,6 +1908,21 @@ export default function DailyReport({
               </span>
               <span className="font-black text-base text-purple-700">{fmtSigned(-payCredit)}</span>
             </div>
+
+            {/* ปุ่มเปิดใบตรวจยอดโอน & บัตรเครดิต (ฝ่ายบัญชี + พิมพ์ A4) */}
+            <button
+              type="button"
+              onClick={() => setShowTransferCardModal(true)}
+              className="w-full py-2.5 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-900 font-black text-xs flex items-center justify-between transition-colors shadow-2xs"
+            >
+              <span className="flex items-center gap-1.5">
+                <span>🧾</span>
+                <span>เปิดใบตรวจยอดโอน & บัตร (เรียงตามเวลาโอนจริง)</span>
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] font-black">
+                พิมพ์ A4 ({transferCardItems.length})
+              </span>
+            </button>
 
             {/* คืนเงินสดให้ลูกค้า */}
             <div className="flex justify-between items-center px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-600">
@@ -1922,11 +2449,16 @@ export default function DailyReport({
                   return (
                     <div key={h.id} className="border border-slate-200 rounded-xl p-3 space-y-2">
                       <div className="flex flex-wrap justify-between items-center gap-2">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="w-6 h-6 rounded-full bg-emerald-700 text-white text-xs font-black flex items-center justify-center">
                             {idx + 1}
                           </span>
                           <span className="font-black text-slate-800 text-sm">กะ {h.shift_staff_name || shiftNameOf(h.shift_id)}</span>
+                          {(h.shift_location || dayShifts.find((s) => s.id === h.shift_id)?.shift_location) && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
+                              📍 {h.shift_location || dayShifts.find((s) => s.id === h.shift_id)?.shift_location}
+                            </span>
+                          )}
                           <span
                             className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                               h.kind === "shift_close" ? "bg-slate-800 text-white" : "bg-emerald-100 text-emerald-800"
@@ -1966,15 +2498,25 @@ export default function DailyReport({
                 })}
 
                 {openShifts.map((s) => {
-                  const live = (shiftDrawers[s.id]?.drawer || 0) - liveReserve.total;
+                  const shLoc = s.shift_location || "ซอย1";
+                  const shLocReserve =
+                    reportsByLocation[shLoc]?.liveReserve?.total ?? liveReserve.total;
+                  const live = (shiftDrawers[s.id]?.drawer || 0) - shLocReserve;
                   return (
                     <div key={s.id} className="border-2 border-dashed border-amber-300 bg-amber-50/60 rounded-xl p-3 text-sm">
                       <div className="flex justify-between items-center font-black text-amber-900">
-                        <span>⏳ กะ {s.staff_name} (ยังไม่ปิดกะ)</span>
+                        <span className="flex items-center gap-1.5 flex-wrap">
+                          <span>⏳ กะ {s.staff_name} (ยังไม่ปิดกะ)</span>
+                          {s.shift_location && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
+                              📍 {s.shift_location}
+                            </span>
+                          )}
+                        </span>
                         <span>ประมาณการต้องส่ง {fmtSigned(live)}</span>
                       </div>
                       <div className="text-[11px] text-amber-800 mt-0.5">
-                        เงินในลิ้นชักขณะนี้ {fmt(shiftDrawers[s.id]?.drawer || 0)} − มัดจำกุญแจคงเหลือ {fmt(liveReserve.total)}
+                        เงินในลิ้นชักขณะนี้ {fmt(shiftDrawers[s.id]?.drawer || 0)} − มัดจำกุญแจคงเหลือ ({shLoc}) {fmt(shLocReserve)}
                       </div>
                     </div>
                   );
@@ -2011,12 +2553,17 @@ export default function DailyReport({
               const d = shiftDrawers[shift.id];
               return (
                 <div key={shift.id} className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm space-y-1">
-                  <div className="flex justify-between items-center">
-                    <span className="font-bold text-slate-800">
-                      กะ {idx + 1}: {shift.staff_name}
+                  <div className="flex justify-between items-center gap-1">
+                    <span className="font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                      <span>กะ {idx + 1}: {shift.staff_name}</span>
+                      {shift.shift_location && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
+                          📍 {shift.shift_location}
+                        </span>
+                      )}
                     </span>
                     <span
-                      className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                      className={`text-xs px-2 py-0.5 rounded-full font-bold shrink-0 ${
                         shift.status === "open" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"
                       }`}
                     >
@@ -2107,6 +2654,17 @@ export default function DailyReport({
           <img src={viewPhoto} alt="bill" className="max-w-full max-h-full rounded-xl" />
         </div>
       )}
+
+      {/* หน้าต่างใบตรวจยอดเงินโอน & บัตรเครดิต (ฝ่ายบัญชี) + พิมพ์กระดาษ A4 อัจฉริยะ */}
+      <TransferCardReportModal
+        isOpen={showTransferCardModal}
+        onClose={() => setShowTransferCardModal(false)}
+        businessDate={reportDateLabel || businessDateStr}
+        windowLabel={windowLabelStr}
+        items={transferCardItems}
+        locations={availableLocations}
+        bankAccounts={bankAccounts}
+      />
     </div>
   );
 }

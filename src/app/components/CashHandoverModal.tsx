@@ -41,13 +41,16 @@ export default function CashHandoverModal({ onClose }: { onClose: () => void }) 
     if (!activeShift) return;
     (async () => {
       setLoading(true);
-      const [d, keyDep] = await Promise.all([computeShiftDrawer(activeShift), fetchActiveKeyDeposits()]);
+      const [d, keyDep] = await Promise.all([
+        computeShiftDrawer(activeShift),
+        fetchActiveKeyDeposits(undefined, activeShift.shift_location || null),
+      ]);
       setDrawer(d);
       setReserve(keyDep.total);
       setReserveRooms(keyDep.rooms);
       setLoading(false);
     })();
-  }, [activeShift?.id]);
+  }, [activeShift?.id, activeShift?.shift_location]);
 
   if (!activeShift) return null;
 
@@ -90,6 +93,7 @@ export default function CashHandoverModal({ onClose }: { onClose: () => void }) 
       business_date: activeShift.business_date || getShiftBusinessDateStr(activeShift.start_time),
       shift_id: activeShift.id,
       shift_staff_name: activeShift.staff_name,
+      shift_location: activeShift.shift_location || null,
       kind: "mid_shift",
       method,
       drawer_cash: drawerCash,

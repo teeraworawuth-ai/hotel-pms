@@ -15,6 +15,7 @@ export type CashHandover = {
   business_date: string; // YYYY-MM-DD (วันธุรกิจ ตัดรอบ 06:45)
   shift_id: string;
   shift_staff_name: string;
+  shift_location?: string | null; // สถานที่ประจำกะ เช่น ซอย1, ซอย2, ซามีญ่า
   kind: "mid_shift" | "shift_close";
   method?: "all_except_reserve" | "fixed";
   drawer_cash: number; // เงินสดในลิ้นชักตามระบบก่อนส่ง
@@ -31,6 +32,21 @@ export type CashHandover = {
   note?: string | null;
   created_at: string;
 };
+
+/** อนุมานสถานที่ของกะจากค่าที่บันทึกไว้ หรือจากชื่อพนักงาน/สิทธิ์สถานที่ */
+export function inferShiftLocation(
+  staffName?: string | null,
+  savedLocation?: string | null,
+  allowedLocations?: string[]
+): string | null {
+  if (savedLocation && String(savedLocation).trim()) return String(savedLocation).trim();
+  const name = String(staffName || "").trim();
+  if (name.includes("ซอย1") || name.includes("ซอย 1") || name.includes("โอลีฟ")) return "ซอย1";
+  if (name.includes("ซอย2") || name.includes("ซอย 2")) return "ซอย2";
+  if (name.includes("ซามิญา") || name.includes("ซามีญ่า")) return "ซามีญ่า";
+  if (allowedLocations && allowedLocations.length === 1) return allowedLocations[0];
+  return null;
+}
 
 export const toLocalDateStr = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -59,6 +75,7 @@ export function getShiftBusinessDateStr(shiftStartIso: string): string {
 // =============================================================================
 export const SHIFT_BD_KEY_PREFIX = "shift_bd_";
 export const EOD_KEY_PREFIX = "eod_shift_";
+export const EOD_LOC_KEY_PREFIX = "eod_loc_shift_";
 export const EOD_ALLOWED_FROM = { h: 5, m: 30 };
 export const SHIFT_LOCK_FROM = { h: 6, m: 30 };
 
@@ -98,18 +115,29 @@ export async function resolveBusinessDateForNewShift(now: Date): Promise<string>
   return clockBD;
 }
 
-export async function saveShiftBusinessDate(shiftId: string, bd: string) {
+export async function saveShiftBusinessDate(shiftId: string, bd: string, shiftLocation?: string | null) {
   return supabase
     .from("system_settings")
-    .upsert({ key: `${SHIFT_BD_KEY_PREFIX}${shiftId}`, value: { business_date: bd } }, { onConflict: "key" });
+    .upsert(
+      {
+        key: `${SHIFT_BD_KEY_PREFIX}${shiftId}`,
+        value: { business_date: bd, ...(shiftLocation ? { shift_location: shiftLocation } : {}) },
+      },
+      { onConflict: "key" }
+    );
 }
 
-/** ดึงวันธุรกิจที่ผูกไว้ของหลายกะ (กะเก่าที่ไม่มีข้อมูลจะใช้ค่าสำรองจากเวลาเปิดกะ) */
-export async function fetchShiftBusinessDates(
-  shifts: { id: string; start_time: string }[]
-): Promise<Record<string, string>> {
-  const out: Record<string, string> = {};
-  shifts.forEach((s) => (out[s.id] = getShiftBusinessDateStr(s.start_time)));
+/** ดึงวันธุรกิจและสถานที่ที่ผูกไว้ของหลายกะ (กะเก่าที่ไม่มีข้อมูลจะใช้ค่าสำรองจากเวลาเปิดกะและชื่อพนักงาน) */
+export async function fetchShiftMetadata(
+  shifts: { id: string; start_time: string; staff_name?: string }[]
+): Promise<Record<string, { business_date: string; shift_location: string | null }>> {
+  const out: Record<string, { business_date: string; shift_location: string | null }> = {};
+  shifts.forEach((s) => {
+    out[s.id] = {
+      business_date: getShiftBusinessDateStr(s.start_time),
+      shift_location: inferShiftLocation(s.staff_name, null),
+    };
+  });
   if (shifts.length === 0) return out;
   const { data } = await supabase
     .from("system_settings")
@@ -120,7 +148,27 @@ export async function fetchShiftBusinessDates(
     );
   (data || []).forEach((r: any) => {
     const id = String(r.key).slice(SHIFT_BD_KEY_PREFIX.length);
-    if (r.value?.business_date) out[id] = r.value.business_date;
+    const shiftObj = shifts.find((s) => s.id === id);
+    const prev = out[id] || {
+      business_date: shiftObj ? getShiftBusinessDateStr(shiftObj.start_time) : "",
+      shift_location: inferShiftLocation(shiftObj?.staff_name, null),
+    };
+    out[id] = {
+      business_date: r.value?.business_date || prev.business_date,
+      shift_location: inferShiftLocation(shiftObj?.staff_name, r.value?.shift_location) || prev.shift_location,
+    };
+  });
+  return out;
+}
+
+/** ดึงวันธุรกิจที่ผูกไว้ของหลายกะ (กะเก่าที่ไม่มีข้อมูลจะใช้ค่าสำรองจากเวลาเปิดกะ) */
+export async function fetchShiftBusinessDates(
+  shifts: { id: string; start_time: string; staff_name?: string }[]
+): Promise<Record<string, string>> {
+  const meta = await fetchShiftMetadata(shifts);
+  const out: Record<string, string> = {};
+  Object.entries(meta).forEach(([id, v]) => {
+    out[id] = v.business_date;
   });
   return out;
 }
