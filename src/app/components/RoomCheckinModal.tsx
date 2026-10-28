@@ -489,6 +489,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   };
 
   // States for managing extra_charge_settings directly inside "+ รายการอื่นๆ / จัดการ ▾"
+  const [showAddonsSection, setShowAddonsSection] = useState(false);
   const [showOtherExtrasMenu, setShowOtherExtrasMenu] = useState(false);
   const [showManageQuickButtonsInMenu, setShowManageQuickButtonsInMenu] = useState(false);
   const [editingExtraSettingId, setEditingExtraSettingId] = useState<string | null>(null);
@@ -2988,7 +2989,25 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
               {true && (
                 <div className="pt-1">
                   <div className="flex justify-between items-center mb-1.5">
-                    <label className="text-xs font-bold text-slate-600">บริการเสริม (Add-ons)</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddonsSection(prev => !prev)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border transition-colors ${
+                        showAddonsSection
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                          : 'bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border-slate-200 hover:border-indigo-300'
+                      }`}
+                    >
+                      <span>บริการเสริม (Add-ons)</span>
+                      {dailyExtras.length > 0 && (
+                        <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                          showAddonsSection ? 'bg-white text-indigo-700' : 'bg-indigo-600 text-white'
+                        }`}>
+                          {dailyExtras.length}
+                        </span>
+                      )}
+                      <span className="text-[10px] opacity-80">{showAddonsSection ? '▴ ซ่อน' : '▾ กดดู'}</span>
+                    </button>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -3050,7 +3069,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     </div>
                   )}
 
-                  {(room.status !== 'occupied' || extrasManagerUnlocked) && (
+                  {showAddonsSection && (room.status !== 'occupied' || extrasManagerUnlocked) && (
                     <>
                       <div className="flex flex-wrap gap-1.5 items-center">
                         {extraSettings.filter(e => e.ui_type === 'quick_button').map(e => (

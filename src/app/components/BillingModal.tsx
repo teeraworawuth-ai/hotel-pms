@@ -42,6 +42,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   // Unified Extra / POS Settings & Post-Check-in Staged Cart
   const [extraSettings, setExtraSettings] = useState<any[]>([]);
   const [posCategoryMap, setPosCategoryMap] = useState<Record<string, 'addon' | 'minibar' | 'fine' | 'other'>>({});
+  const [showPostAddonsSection, setShowPostAddonsSection] = useState(false);
   const [showOtherExtrasMenu, setShowOtherExtrasMenu] = useState(false);
   const [showManageQuickButtonsInMenu, setShowManageQuickButtonsInMenu] = useState(false);
   const [editingExtraSettingId, setEditingExtraSettingId] = useState<string | null>(null);
@@ -1681,7 +1682,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
 
             {/* 2. เพิ่มรายการ / บริการเสริม / POS (หลังเช็คอิน - รูปแบบเดียวกับก่อนเช็คอินเป๊ะๆ) */}
             <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <div>
                   <h3 className="text-sm font-black text-slate-800 flex items-center gap-1.5">
                     <span>➕</span> เพิ่มรายการ / บริการเสริม / POS (หลังเช็คอิน)
@@ -1690,8 +1691,21 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                     เลือกรายการแบบครั้งเดียว หรือระบุวันรายคืนได้เหมือนก่อนเช็คอิน (แสดงเฉพาะรายการที่เพิ่มระหว่างเข้าพัก)
                   </p>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPostAddonsSection(prev => !prev)}
+                  className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+                    showPostAddonsSection
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                      : 'bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border-slate-200 hover:border-indigo-300'
+                  }`}
+                >
+                  <span>{showPostAddonsSection ? '▴ ซ่อนรายการ' : '▾ กดดูบริการเสริม'}</span>
+                </button>
               </div>
 
+              {showPostAddonsSection && (
+                <>
               {/* แถวปุ่มลัด + ปุ่ม "+ รายการอื่นๆ / จัดการ" + ปุ่ม "+ พิมพ์รายการเอง" */}
               <div className="flex flex-wrap gap-1.5">
                 {extraSettings.filter(e => e.ui_type === 'quick_button').map(ext => (
@@ -2119,6 +2133,8 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                     เลือก
                   </button>
                 </div>
+              )}
+                </>
               )}
 
               {/* รายการที่กำลังเลือกเพิ่มในรอบนี้ (สลับ 1️⃣ ครั้งเดียว <-> 📅 ระบุวัน และปรับจำนวน [-] 1 [+] ได้เหมือนก่อนเช็คอินเป๊ะๆ) */}
