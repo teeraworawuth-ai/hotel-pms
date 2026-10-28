@@ -8,12 +8,15 @@ import { fetchActiveKeyDeposits, HeldKeyDepositRoom } from "@/lib/keyDeposit";
 import {
   CashHandover,
   computeShiftDrawer,
-  getBusinessDateStr,
+  EOD_KEY_PREFIX,
   getShiftBusinessDateStr,
   newHandoverId,
+  resolveBusinessDateForNewShift,
   saveHandover,
+  saveShiftBusinessDate,
   ShiftDrawer,
 } from "@/lib/cashHandover";
+import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
 import SignaturePad, { SignaturePadHandle } from "./SignaturePad";
 import CashHandoverModal from "./CashHandoverModal";
 import ShiftExpenseButton from "./ShiftExpenseModal";
@@ -26,7 +29,8 @@ interface ShiftManagerProps {
 const fmt = (n: number) => `฿${Number(n || 0).toLocaleString()}`;
 
 export default function ShiftManager({ compact = false, hideExpense = false }: ShiftManagerProps = {}) {
-  const { activeShift, currentUser, operatorName, loading, refreshShift } = useShift();
+  const { activeShift, currentUser, operatorName, loading, refreshShift, shiftLock } = useShift();
+  const { getNow } = useSimulatedTime();
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [showHandoverModal, setShowHandoverModal] = useState(false);
@@ -104,18 +108,27 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       return;
     }
 
-    const { error: shiftError } = await supabase.from("shifts").insert({
-      staff_id: staffData.id,
-      staff_name: staffData.name,
-      initial_cash: initialCash,
-      expected_cash: initialCash,
-      status: "open",
-    });
+    const newShiftBD = await resolveBusinessDateForNewShift(getNow());
 
-    if (shiftError) {
+    const { data: insertedShift, error: shiftError } = await supabase
+      .from("shifts")
+      .insert({
+        staff_id: staffData.id,
+        staff_name: staffData.name,
+        initial_cash: initialCash,
+        expected_cash: initialCash,
+        status: "open",
+      })
+      .select("id")
+      .single();
+
+    if (shiftError || !insertedShift) {
       setErrorMsg("เกิดข้อผิดพลาดในการเปิดกะ");
       return;
     }
+
+    // ผูกวันธุรกิจเข้ากับกะโดยตรง (กะที่เปิดหลังปิดรอบวันเมื่อวานแล้ว = กะแรกของวันใหม่)
+    await saveShiftBusinessDate(insertedShift.id, newShiftBD);
 
     await logActivity({
       category: "shift",
@@ -148,6 +161,13 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
   const requiredSend = drawerCash - closeReserve;
   const actualSendNum = actualSend === "" ? 0 : Number(actualSend);
   const sendDiff = actualSendNum - requiredSend; // + เกิน / - ขาด
+  // กติกาปิดรอบวัน: ติ๊กได้ตั้งแต่ 05:30 น. ของวันถัดไป / ตั้งแต่ 06:30 น. บังคับเป็นกะสุดท้ายของวันอัตโนมัติ
+  const effectiveEndOfDay = shiftLock.locked ? true : shiftLock.canCloseEod && isEndOfDay;
+
+  // เปิดหน้าต่างปิดกะในช่วง 05:30+ → ติ๊ก "กะสุดท้ายของวัน" ให้เป็นค่าเริ่มต้น
+  useEffect(() => {
+    if (showCloseModal && shiftLock.canCloseEod) setIsEndOfDay(true);
+  }, [showCloseModal, shiftLock.canCloseEod]);
 
   const handleCloseShift = async () => {
     setErrorMsg("");
@@ -197,7 +217,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       return;
     }
 
-    const businessDate = getShiftBusinessDateStr(activeShift.start_time);
+    const businessDate = activeShift.business_date || getShiftBusinessDateStr(activeShift.start_time);
     const record: CashHandover = {
       id: newHandoverId(),
       business_date: businessDate,
@@ -219,19 +239,14 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
     };
     await saveHandover(record);
 
-    if (isEndOfDay) {
-      const eodKey = `eod_shift_${getBusinessDateStr(new Date())}`;
+    if (effectiveEndOfDay) {
+      // ปิดรอบวันให้ "วันธุรกิจของกะนี้" เท่านั้น (แม้จะกดปิดหลัง 06:45 น. ก็ไม่ไปปิดวันใหม่)
       await supabase
         .from("system_settings")
-        .upsert({ key: eodKey, value: { shift_id: activeShift.id, closed_at: nowIso } }, { onConflict: "key" });
-      if (businessDate !== getBusinessDateStr(new Date())) {
-        await supabase
-          .from("system_settings")
-          .upsert(
-            { key: `eod_shift_${businessDate}`, value: { shift_id: activeShift.id, closed_at: nowIso } },
-            { onConflict: "key" }
-          );
-      }
+        .upsert(
+          { key: `${EOD_KEY_PREFIX}${businessDate}`, value: { shift_id: activeShift.id, closed_at: nowIso } },
+          { onConflict: "key" }
+        );
     }
 
     await logActivity({
@@ -244,7 +259,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
         closeReserve
       )}, ต้องส่ง ${fmt(requiredSend)}, ส่งจริง ${fmt(actualSendNum)}, ${sendDiff >= 0 ? "เกิน" : "ขาด"} ${fmt(
         Math.abs(sendDiff)
-      )}${isEndOfDay ? " • ปิดรอบวัน EOD" : ""}) • รอผู้จัดการเซ็นรับ`,
+      )}${effectiveEndOfDay ? ` • ปิดรอบวัน EOD (${businessDate})` : ""}) • รอผู้จัดการเซ็นรับ`,
     });
 
     // ปิดกะแล้วออกจากระบบทันที ป้องกันคนอื่นใช้งานต่อในชื่อกะเดิม
@@ -496,14 +511,36 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
                   />
                 </div>
 
-                <label className="flex items-center gap-3 bg-indigo-50 border border-indigo-100 p-3.5 rounded-xl cursor-pointer">
+                <label
+                  className={`flex items-start gap-3 border p-3.5 rounded-xl ${
+                    shiftLock.canCloseEod && !shiftLock.locked
+                      ? "bg-indigo-50 border-indigo-100 cursor-pointer"
+                      : "bg-slate-50 border-slate-200 cursor-not-allowed"
+                  }`}
+                >
                   <input
                     type="checkbox"
-                    checked={isEndOfDay}
+                    checked={effectiveEndOfDay}
+                    disabled={!shiftLock.canCloseEod || shiftLock.locked}
                     onChange={(e) => setIsEndOfDay(e.target.checked)}
-                    className="w-5 h-5 text-indigo-600 rounded"
+                    className="w-5 h-5 mt-0.5 text-indigo-600 rounded"
                   />
-                  <span className="text-sm font-bold text-indigo-800">นี่คือกะสุดท้ายของวัน (สรุปปิดยอดประจำวัน)</span>
+                  <span className="text-sm font-bold text-indigo-800">
+                    นี่คือกะสุดท้ายของวัน (สรุปปิดยอดประจำวัน)
+                    {shiftLock.businessDate && (
+                      <span className="block text-[11px] font-semibold text-slate-500 mt-0.5">
+                        ปิดรอบวันธุรกิจ{" "}
+                        {new Date(`${shiftLock.businessDate}T00:00:00`).toLocaleDateString("th-TH", {
+                          weekday: "short",
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                        {!shiftLock.canCloseEod && " • ติ๊กได้ตั้งแต่ 05:30 น. ของวันถัดไป"}
+                        {shiftLock.locked && " • เลย 06:30 น. แล้ว ระบบบังคับเป็นกะสุดท้ายของวันอัตโนมัติ"}
+                      </span>
+                    )}
+                  </span>
                 </label>
               </div>
             )}

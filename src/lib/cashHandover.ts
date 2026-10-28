@@ -44,10 +44,85 @@ export function getBusinessDateStr(date: Date): string {
   return toLocalDateStr(d);
 }
 
-/** วันธุรกิจของกะ: อิงเวลาเปิดกะ (+1 ชม. เผื่อกรณีเปิดกะก่อนเวลาตัดรอบเล็กน้อย) */
+/** วันธุรกิจของกะ: อิงเวลาเปิดกะ (+1 ชม. เผื่อกรณีเปิดกะก่อนเวลาตัดรอบเล็กน้อย) — ใช้เป็นค่าสำรองเมื่อไม่มีวันธุรกิจที่ผูกไว้กับกะ */
 export function getShiftBusinessDateStr(shiftStartIso: string): string {
   const t = new Date(shiftStartIso).getTime() + 60 * 60 * 1000;
   return getBusinessDateStr(new Date(t));
+}
+
+// =============================================================================
+// วันธุรกิจที่ผูกกับกะโดยตรง + กติกาปิดรอบวัน / ล็อกกะข้ามวัน
+//  - ปิด "กะสุดท้ายของวัน" ได้ตั้งแต่ 05:30 น. ของวันถัดไป (นับจากวันธุรกิจของกะ)
+//  - ตั้งแต่ 06:30 น. ของวันถัดไป กะเก่าที่ยังไม่ปิดจะถูกล็อกการรับเงิน/เช็คอิน/เพิ่มค่าบริการ/ค่าใช้จ่าย
+//    (ยังปิดกะได้ตามปกติ)
+//  - กะที่เปิดหลังวันก่อนหน้าถูกปิดรอบวันแล้ว (05:30–06:44) นับเป็นกะแรกของวันใหม่ทันที
+// =============================================================================
+export const SHIFT_BD_KEY_PREFIX = "shift_bd_";
+export const EOD_KEY_PREFIX = "eod_shift_";
+export const EOD_ALLOWED_FROM = { h: 5, m: 30 };
+export const SHIFT_LOCK_FROM = { h: 6, m: 30 };
+
+export function addDaysStr(dateStr: string, n: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + n);
+  return toLocalDateStr(dt);
+}
+
+export function atLocalTime(dateStr: string, h: number, m: number): Date {
+  const [y, mo, d] = dateStr.split("-").map(Number);
+  return new Date(y, mo - 1, d, h, m, 0, 0);
+}
+
+/** เวลาที่เริ่มปิดกะสุดท้ายได้ / เวลาที่เริ่มล็อกกะ ของวันธุรกิจ bd */
+export function getShiftCutoffs(bd: string) {
+  const next = addDaysStr(bd, 1);
+  return {
+    eodAllowedFrom: atLocalTime(next, EOD_ALLOWED_FROM.h, EOD_ALLOWED_FROM.m),
+    lockFrom: atLocalTime(next, SHIFT_LOCK_FROM.h, SHIFT_LOCK_FROM.m),
+  };
+}
+
+/** วันธุรกิจที่ควรผูกให้กะใหม่ที่เปิด ณ เวลา now */
+export async function resolveBusinessDateForNewShift(now: Date): Promise<string> {
+  const clockBD = getBusinessDateStr(now);
+  // ช่วง 05:30–06:44 ของเช้าวันใหม่: ถ้าวันก่อนหน้า (clockBD) ปิดรอบวันแล้ว → กะนี้เป็นกะแรกของวันใหม่
+  const { eodAllowedFrom } = getShiftCutoffs(clockBD);
+  if (now.getTime() >= eodAllowedFrom.getTime()) {
+    const { data } = await supabase
+      .from("system_settings")
+      .select("key")
+      .eq("key", `${EOD_KEY_PREFIX}${clockBD}`)
+      .maybeSingle();
+    if (data) return addDaysStr(clockBD, 1);
+  }
+  return clockBD;
+}
+
+export async function saveShiftBusinessDate(shiftId: string, bd: string) {
+  return supabase
+    .from("system_settings")
+    .upsert({ key: `${SHIFT_BD_KEY_PREFIX}${shiftId}`, value: { business_date: bd } }, { onConflict: "key" });
+}
+
+/** ดึงวันธุรกิจที่ผูกไว้ของหลายกะ (กะเก่าที่ไม่มีข้อมูลจะใช้ค่าสำรองจากเวลาเปิดกะ) */
+export async function fetchShiftBusinessDates(
+  shifts: { id: string; start_time: string }[]
+): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  shifts.forEach((s) => (out[s.id] = getShiftBusinessDateStr(s.start_time)));
+  if (shifts.length === 0) return out;
+  const { data } = await supabase
+    .from("system_settings")
+    .select("key, value")
+    .in(
+      "key",
+      shifts.map((s) => `${SHIFT_BD_KEY_PREFIX}${s.id}`)
+    );
+  (data || []).forEach((r: any) => {
+    const id = String(r.key).slice(SHIFT_BD_KEY_PREFIX.length);
+    if (r.value?.business_date) out[id] = r.value.business_date;
+  });
+  return out;
 }
 
 /** ยอดเงินสดในลิ้นชักของกะตามระบบ */

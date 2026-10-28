@@ -2,7 +2,8 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { computeShiftDrawer } from "@/lib/cashHandover";
+import { computeShiftDrawer, fetchShiftBusinessDates, getShiftCutoffs } from "@/lib/cashHandover";
+import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
 
 export interface Shift {
   id: string;
@@ -21,6 +22,17 @@ export interface Shift {
   discrepancy: number | null;
   status: 'open' | 'closed';
   signature_data: string | null;
+  business_date?: string; // วันธุรกิจที่ผูกกับกะ (YYYY-MM-DD)
+}
+
+export interface ShiftLockState {
+  locked: boolean; // เลย 06:30 น. ของวันถัดไปแล้ว → ล็อกการทำรายการ (ยกเว้นปิดกะ)
+  nearLock: boolean; // 05:30–06:29 น. → ปิดกะสุดท้ายได้แล้ว ใกล้ถึงเวลาล็อก
+  canCloseEod: boolean; // ติ๊ก "กะสุดท้ายของวัน" ได้แล้ว
+  businessDate: string | null;
+  lockFrom: Date | null;
+  eodAllowedFrom: Date | null;
+  message: string;
 }
 
 export interface LoggedInUser {
@@ -37,7 +49,11 @@ type ShiftContextType = {
   operatorName: string;
   loading: boolean;
   refreshShift: () => Promise<void>;
+  shiftLock: ShiftLockState;
+  ensureShiftWritable: () => boolean;
 };
+
+const DEFAULT_LOCK: ShiftLockState = { locked: false, nearLock: false, canCloseEod: false, businessDate: null, lockFrom: null, eodAllowedFrom: null, message: '' };
 
 const ShiftContext = createContext<ShiftContextType>({
   activeShift: null,
@@ -45,11 +61,14 @@ const ShiftContext = createContext<ShiftContextType>({
   operatorName: "",
   loading: true,
   refreshShift: async () => {},
+  shiftLock: DEFAULT_LOCK,
+  ensureShiftWritable: () => true,
 });
 
 export const useShift = () => useContext(ShiftContext);
 
 export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
+  const { getNow } = useSimulatedTime();
   const [activeShift, setActiveShift] = useState<Shift | null>(null);
   const [currentUser, setCurrentUser] = useState<LoggedInUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -130,8 +149,12 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
       }
 
       // คำนวณยอดเงินสดในลิ้นชักจาก Ledger (รับเงินสด - ค่าใช้จ่าย/คืนเงินสด - ยอดที่ส่งเงินระหว่างกะไปแล้ว)
-      const drawer = await computeShiftDrawer(shiftData);
+      const [drawer, bdMap] = await Promise.all([
+        computeShiftDrawer(shiftData),
+        fetchShiftBusinessDates([shiftData]),
+      ]);
       shiftData.expected_cash = drawer.drawer;
+      shiftData.business_date = bdMap[shiftData.id];
     
       // อัปเดตตาราง shifts ด้วยเพื่อความแน่ใจ
       supabase.from('shifts').update({ expected_cash: shiftData.expected_cash }).eq('id', shiftData.id).then();
@@ -147,8 +170,51 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
 
   const operatorName = currentUser?.name || activeShift?.operator_name || activeShift?.staff_name || "";
 
+  // นาฬิกาสำหรับตรวจล็อกกะข้ามวัน (อัปเดตทุก 20 วินาที รองรับเวลาจำลอง)
+  const [clockTick, setClockTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setClockTick((x) => x + 1), 20000);
+    return () => clearInterval(t);
+  }, []);
+
+  const computeLock = (): ShiftLockState => {
+    const isReal = !!activeShift && activeShift.id !== 'dummy-shift-id' && !activeShift.housekeeper_only;
+    if (!isReal || !activeShift?.business_date) {
+      return { locked: false, nearLock: false, canCloseEod: false, businessDate: activeShift?.business_date || null, lockFrom: null, eodAllowedFrom: null, message: '' };
+    }
+    const bd = activeShift.business_date;
+    const { lockFrom, eodAllowedFrom } = getShiftCutoffs(bd);
+    const nowMs = getNow().getTime();
+    const locked = nowMs >= lockFrom.getTime();
+    const canCloseEod = nowMs >= eodAllowedFrom.getTime();
+    const bdLabel = new Date(`${bd}T00:00:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+    return {
+      locked,
+      nearLock: !locked && canCloseEod,
+      canCloseEod,
+      businessDate: bd,
+      lockFrom,
+      eodAllowedFrom,
+      message: locked
+        ? `🔒 เลยเวลาตัดรอบวันใหม่ (06:30 น.) แล้ว\nกะของ ${activeShift.staff_name} (วันที่ ${bdLabel}) ยังไม่ได้ปิด\n\nกรุณา "ปิดกะ" (กะสุดท้ายของวัน) แล้วเปิดกะของวันใหม่ก่อนทำรายการ รับเงิน / เช็คอิน / เพิ่มค่าบริการ-มินิบาร์ / ค่าใช้จ่าย`
+        : '',
+    };
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const shiftLock = React.useMemo(computeLock, [activeShift, clockTick, getNow]);
+
+  /** คืนค่า true ถ้าทำรายการได้ / false (พร้อมแจ้งเตือน) ถ้ากะถูกล็อกข้ามวัน */
+  const ensureShiftWritable = () => {
+    const s = computeLock();
+    if (s.locked) {
+      alert(s.message);
+      return false;
+    }
+    return true;
+  };
+
   return (
-    <ShiftContext.Provider value={{ activeShift, currentUser, operatorName, loading, refreshShift }}>
+    <ShiftContext.Provider value={{ activeShift, currentUser, operatorName, loading, refreshShift, shiftLock, ensureShiftWritable }}>
       {children}
     </ShiftContext.Provider>
   );

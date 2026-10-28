@@ -8,6 +8,7 @@ type LedgerTransaction = { id: string, category: string, amount: number, created
 import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
 import BillingModal from "./BillingModal";
 import CheckoutSummaryModal from "./CheckoutSummaryModal";
+import TransferTimePicker from "./TransferTimePicker";
 import { useShift } from "@/contexts/ShiftContext";
 import { logActivity, fetchActivityLogs, ActivityLogEntry, ACTIVITY_ACTION_LABELS } from "@/lib/activityLog";
 
@@ -50,7 +51,7 @@ interface ModalProps {
 
 export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }: ModalProps) {
   const { getNow } = useSimulatedTime();
-  const { activeShift, operatorName } = useShift();
+  const { activeShift, operatorName, ensureShiftWritable } = useShift();
   const displayDate = getNow();
   if (displayDate.getHours() < 6 || (displayDate.getHours() === 6 && displayDate.getMinutes() < 45)) {
     displayDate.setDate(displayDate.getDate() - 1);
@@ -62,7 +63,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [newBookingId, setNewBookingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [guestCount, setGuestCount] = useState<number | ''>(room.guest_count || 2);
-  const [guestName, setGuestName] = useState<string>(room.guest_name || "");
+  const [guestName, setGuestName] = useState<string>(room.guest_name === 'ไม่ระบุชื่อ' ? "" : (room.guest_name || ""));
   const [guestPhone, setGuestPhone] = useState<string>(room.guest_phone || "");
   const [skipPhone, setSkipPhone] = useState<boolean>(false);
   const phoneInputRef = useRef<HTMLInputElement>(null);
@@ -815,6 +816,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   const [customExtraChargeType, setCustomExtraChargeType] = useState<'one_time' | 'per_night'>('one_time');
 
   const handleAddExtra = (setting: any) => {
+    if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     const qty = 1;
     const isPerNight = setting.charge_type === 'per_night';
     const currentDates = dailyBreakdown.length > 0
@@ -862,6 +864,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   };
 
   const handleAddCustomExtraInline = () => {
+    if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     const trimmed = customExtraName.trim();
     const numPrice = Number(customExtraPrice);
     if (!trimmed || !numPrice || numPrice <= 0) return;
@@ -1112,6 +1115,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   };
 
   const handleCheckIn = async (type: 'overnight' | 'short_stay', isReservationForToday: boolean = false) => {
+    if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     if (!activeShift) {
       alert('กรุณาเปิดกะก่อนทำการจองหรือ Check-in');
       return;
@@ -1163,7 +1167,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       .from('bookings')
       .insert({
         room_id: room.id,
-        guest_name: guestName.trim(),
+        guest_name: guestName.trim() || 'ไม่ระบุชื่อ',
         guest_phone: guestPhone.trim(),
         check_in_time: startDate.toISOString(),
         check_out_time: checkoutDate.toISOString(),
@@ -1383,6 +1387,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   };
 
   const handleSaveManagerEdits = async () => {
+    if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     if (!room.booking_id) return;
     if (!skipPhone && (!guestPhone.trim() || guestPhone.length !== 10 || !/^\d+$/.test(guestPhone))) {
       alert('กรุณากรอกเบอร์โทรศัพท์ลูกค้า (ตัวเลข 10 หลัก) ให้ถูกต้อง\nหรือกด "ไม่ระบุเบอร์" หากลูกค้าไม่สะดวกให้เบอร์');
@@ -1432,7 +1437,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
       : new Date(baseInDate.getTime() + (Number(hours) || 1) * 3600000);
 
     await supabase.from('bookings').update({
-      guest_name: guestName.trim(),
+      guest_name: guestName.trim() || 'ไม่ระบุชื่อ',
       guest_phone: guestPhone.trim(),
       check_out_time: updatedCheckout.toISOString(),
       actual_price: actualPrice === '' ? 0 : Number(actualPrice),
@@ -1590,6 +1595,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   };
 
   const handleAdditionalPayment = async () => {
+    if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     if (!activeShift) {
       alert('กรุณาเปิดกะก่อนทำรายการ');
       return;
@@ -1905,7 +1911,8 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
         }
 
         const resolvedPhone = bRow?.guest_phone ?? room.guest_phone ?? '';
-        const resolvedName = bRow?.guest_name ?? room.guest_name ?? '';
+        const rawResolvedName = bRow?.guest_name ?? room.guest_name ?? '';
+        const resolvedName = rawResolvedName === 'ไม่ระบุชื่อ' ? '' : rawResolvedName;
         const resolvedPrice = bRow?.actual_price !== undefined && bRow?.actual_price !== null ? Number(bRow.actual_price) : Number(room.actual_price || 0);
         if (!resolvedPhone) setSkipPhone(true);
         if (bRow?.guest_phone !== undefined) setGuestPhone(resolvedPhone);
@@ -1933,6 +1940,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   }, [room.booking_id]);
 
   const handleCheckInReserved = async () => {
+    if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     if (!room.booking_id) {
       alert('ไม่พบข้อมูลการจอง');
       return;
@@ -2006,6 +2014,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   };
 
   const handleExecuteVoid = async () => {
+    if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     if (!voidReason.trim()) {
       setVoidError('กรุณาระบุสาเหตุการยกเลิก');
       return;
@@ -2117,6 +2126,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
 
   const handleCheckOut = async (skipBalanceCheck: boolean = false) => {
+    if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     const isCancelling = room.status === 'reserved';
 
     // กรณีกดยกเลิกห้องที่จองไว้ (reserved) แต่มีการรับเงินมัดจำการจองไว้แล้ว -> ให้ผ่านหน้าต่างยืนยันคืนเงิน/หักค่าปรับเพื่อความถูกต้องของบัญชี
@@ -2311,6 +2321,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   }, [rescheduleCheckIn, rescheduleCheckOut, isReschedulingBooking]);
 
   const handleRescheduleBooking = async () => {
+    if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     if (!room.booking_id) {
       alert("ไม่พบรหัสการจอง");
       return;
@@ -2423,6 +2434,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   };
 
   const handleChangeRoom = async () => {
+    if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     if (!targetRoomId) return;
     setLoading(true);
 
@@ -2553,6 +2565,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
   };
 
   const handleExtend = async (type: 'nights' | 'hours') => {
+    if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     if (!room.check_out_time || !activeShift || !room.booking_id) return;
     setLoading(true);
     
@@ -2789,8 +2802,9 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                     value={guestName} 
                     onChange={(e) => setGuestName(e.target.value)} 
                     disabled={isBookingLocked}
-                    placeholder="สมชาย ใจดี"
-                    className="w-full border border-slate-300/80 rounded-2xl pl-11 pr-4 py-3 text-base font-bold text-slate-800 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 bg-white disabled:opacity-50 transition-all shadow-xs"
+                    placeholder="ไม่ระบุชื่อ"
+                    title="ปล่อยว่างไว้ = บันทึกเป็น “ไม่ระบุชื่อ” (กดที่ช่องเพื่อพิมพ์ชื่อได้)"
+                    className="w-full border border-slate-300/80 rounded-2xl pl-11 pr-4 py-3 text-base font-bold text-slate-800 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 bg-white placeholder-shown:bg-slate-200 placeholder-shown:border-slate-300 placeholder:text-slate-500 focus:bg-white focus:placeholder:text-slate-300 disabled:opacity-50 transition-all shadow-xs cursor-text"
                   />
                 </div>
                 {renderFieldHistory('guest_name')}
@@ -3812,12 +3826,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                             ))}
                           </div>
                           <div className="flex gap-2 items-center">
-                            <input 
-                              type="datetime-local" 
-                              value={paymentTime} 
-                              onChange={e => setPaymentTime(e.target.value)} 
-                              className="flex-1 border border-blue-200 rounded-lg px-2 py-1 text-xs bg-white text-slate-700" 
-                            />
+                            <TransferTimePicker value={paymentTime} onChange={setPaymentTime} />
                             <label className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors shadow-xs shrink-0">
                               {isScanningSlip ? '⏳...' : '📷 สแกนสลิป'}
                               <input type="file" accept="image/*" className="hidden" onChange={handleScanSlip} disabled={isScanningSlip} />

@@ -19,7 +19,7 @@ interface Props {
 type DepositMode = 'full' | 'partial' | 'forfeit';
 
 export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClose, onConfirmed }: Props) {
-  const { activeShift, operatorName, refreshShift } = useShift();
+  const { activeShift, operatorName, refreshShift, ensureShiftWritable } = useShift();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [txs, setTxs] = useState<Tx[]>([]);
@@ -108,6 +108,7 @@ export default function CheckoutSummaryModal({ roomId, roomNo, bookingId, onClos
   };
 
   const handleConfirm = async () => {
+    if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     if (!canConfirm()) return;
     setSaving(true);
     setError('');

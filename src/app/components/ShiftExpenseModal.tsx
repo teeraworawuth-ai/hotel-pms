@@ -64,7 +64,7 @@ export default function ShiftExpenseButton({
   onCloseExternal?: () => void;
   hideTrigger?: boolean;
 }) {
-  const { activeShift, operatorName, refreshShift } = useShift();
+  const { activeShift, operatorName, refreshShift, ensureShiftWritable } = useShift();
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<ExpenseRow[]>([]);
   const [reason, setReason] = useState("");
@@ -131,6 +131,7 @@ export default function ShiftExpenseButton({
 
   const handleSave = async () => {
     setError("");
+    if (!ensureShiftWritable()) return;
     if (!reason.trim() || !amount || Number(amount) <= 0) {
       setError("กรุณากรอกรายการและจำนวนเงินให้ครบ");
       return;

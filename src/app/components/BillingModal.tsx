@@ -5,6 +5,7 @@ import { useSimulatedTime } from '@/contexts/SimulatedTimeContext';
 import { computeDeposit } from '@/lib/depositMath';
 import { logActivity } from '@/lib/activityLog';
 import FolioReceiptModal from './FolioReceiptModal';
+import TransferTimePicker from './TransferTimePicker';
 
 type PosItem = { id: string, name: string, default_price: number };
 type Transaction = { id: string, transaction_type: string, category: string, amount: number, created_at: string, staff_name: string, notes?: string };
@@ -28,7 +29,7 @@ interface BillingModalProps {
 }
 
 export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuccess }: BillingModalProps) {
-  const { activeShift, operatorName, refreshShift } = useShift();
+  const { activeShift, operatorName, refreshShift, ensureShiftWritable } = useShift();
   const effectiveStaffName = operatorName || activeShift?.staff_name || 'Admin';
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -548,6 +549,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   };
 
   const handleSelectPostExtra = (setting: any) => {
+    if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     const isPerNight = setting.charge_type === 'per_night';
     setStagedPostExtras(prev => {
       const existingIdx = prev.findIndex(e => e.name === setting.name);
@@ -581,6 +583,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   };
 
   const handleAddCustomPostExtraInline = () => {
+    if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     const trimmed = customExtraName.trim();
     const numPrice = Number(customExtraPrice);
     if (!trimmed || !numPrice || numPrice <= 0) return;
@@ -672,6 +675,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   const totalStagedPostExtrasAmount = stagedPostExtras.reduce((sum, ext) => sum + stagedLineTotal(ext), 0);
 
   const handleCommitStagedPostExtras = async () => {
+    if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     if (stagedPostExtras.length === 0) return;
     if (!activeShift) {
       alert('กรุณาเปิดกะก่อนทำรายการ');
@@ -800,6 +804,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
 
 
   const handleSaveDeposit = async () => {
+    if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     if (!activeShift) { alert('กรุณาเปิดกะก่อนทำรายการ'); return; }
     const oldDepAmt = activeDepositTx ? Number(activeDepositTx.amount) : 0;
     const newDepAmt = depositChecked ? (Number(depositInput) || 0) : 0;
@@ -883,6 +888,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   };
 
   const handleSaveRoomCharge = async (tx: Transaction) => {
+    if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     const newAmt = Number(editingRoomTxAmounts[tx.id]);
     if (isNaN(newAmt) || newAmt < 0) return;
     const oldAmt = Number(tx.amount);
@@ -958,6 +964,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   };
 
   const handleConfirmCancelFutureExtra = async () => {
+    if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     if (!cancellingExtra) return;
     if (!cancelExtraPin) {
       setCancelExtraError('กรุณากรอกรหัส PIN ผู้จัดการ/Admin');
@@ -1103,6 +1110,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   };
 
   const handlePayment = async () => {
+    if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     if (loading) return;
     if (!activeShift) { alert('กรุณาเปิดกะก่อนทำรายการ'); return; }
     
@@ -2385,12 +2393,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                         ))}
                       </div>
                       <div className="flex items-center gap-2">
-                        <input 
-                          type="datetime-local" 
-                          value={paymentTime} 
-                          onChange={e => setPaymentTime(e.target.value)} 
-                          className="flex-1 border border-slate-200 rounded-lg p-1.5 text-xs focus:ring-blue-500 bg-white" 
-                        />
+                        <TransferTimePicker value={paymentTime} onChange={setPaymentTime} />
                         <label className="flex items-center gap-1 bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-colors border border-blue-200">
                           {isScanningSlip ? '⏳ สแกน...' : '📷 สแกนสลิป'}
                           <input type="file" accept="image/*" className="hidden" onChange={handleScanSlip} disabled={isScanningSlip} />

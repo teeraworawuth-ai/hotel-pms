@@ -9,6 +9,7 @@ import {
   CashHandover,
   computeDrawerFromRows,
   fetchHandoversByDate,
+  fetchShiftBusinessDates,
   saveHandover,
   ShiftDrawer,
   verifyManagerPin,
@@ -262,6 +263,7 @@ export default function DailyReport({
           .from("system_settings")
           .select("key, value")
           .not("key", "like", "cash_handover_%")
+          .not("key", "like", "shift_bd_%")
           .limit(10000),
       ]);
 
@@ -954,8 +956,9 @@ export default function DailyReport({
       // =========================================================================
       // 4. กล่องเงินสดสำหรับเซ็นรับ-เก็บเงินประจำวัน (อิงกะของวันนั้น)
       // =========================================================================
-      const dayShiftFrom = new Date(start0645.getTime() - 3600 * 1000);
-      const dayShiftTo = new Date(end0645.getTime() - 3600 * 1000);
+      // ดึงกะช่วงกว้าง แล้วคัดตาม "วันธุรกิจที่ผูกกับกะ" (กะเก่าไม่มีข้อมูล → ใช้เวลาเปิดกะ +1 ชม.)
+      const dayShiftFrom = new Date(start0645.getTime() - 3 * 3600 * 1000);
+      const dayShiftTo = new Date(end0645.getTime());
       const [dayShiftsRes, handoverList] = await Promise.all([
         supabase
           .from("shifts")
@@ -965,7 +968,9 @@ export default function DailyReport({
           .order("start_time", { ascending: true }),
         fetchHandoversByDate(reportDateStr),
       ]);
-      const dayShiftList: Shift[] = (dayShiftsRes.data as Shift[]) || [];
+      const candidateShifts: Shift[] = (dayShiftsRes.data as Shift[]) || [];
+      const shiftBdMap = await fetchShiftBusinessDates(candidateShifts);
+      const dayShiftList: Shift[] = candidateShifts.filter((s) => shiftBdMap[s.id] === reportDateStr);
       const dayShiftIds = dayShiftList.map((s) => s.id);
       let shiftLedgerRows: LedgerTransaction[] = [];
       if (dayShiftIds.length > 0) {

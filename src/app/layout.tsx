@@ -6,6 +6,7 @@ import AuthGuard from "./components/AuthGuard";
 import { SimulatedTimeProvider } from "@/contexts/SimulatedTimeContext";
 import { ShiftProvider } from "@/contexts/ShiftContext";
 import TimeSimulatorOverlay from "./components/TimeSimulatorOverlay";
+import ShiftLockBanner from "./components/ShiftLockBanner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,6 +36,7 @@ export default function RootLayout({
           <ShiftProvider>
             {/* Top Navbar - รองรับมือถือแล้ว */}
             <Navbar />
+            <ShiftLockBanner />
 
             {/* Main Content */}
             <main className="flex-1 w-full max-w-7xl mx-auto px-2 py-3 sm:p-6 lg:p-8">

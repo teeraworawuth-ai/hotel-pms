@@ -87,7 +87,7 @@ export default function CashHandoverModal({ onClose }: { onClose: () => void }) 
     const nowIso = new Date().toISOString();
     const record: CashHandover = {
       id: newHandoverId(),
-      business_date: getShiftBusinessDateStr(activeShift.start_time),
+      business_date: activeShift.business_date || getShiftBusinessDateStr(activeShift.start_time),
       shift_id: activeShift.id,
       shift_staff_name: activeShift.staff_name,
       kind: "mid_shift",
