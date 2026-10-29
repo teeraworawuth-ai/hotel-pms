@@ -10,12 +10,16 @@ import {
   computeShiftDrawer,
   EOD_KEY_PREFIX,
   EOD_LOC_KEY_PREFIX,
+  fetchLastClosedDrawer,
   fetchShiftMetadata,
   getShiftBusinessDateStr,
   inferShiftLocation,
+  LastClosedDrawerInfo,
+  markLastClosedDrawerConsumed,
   newHandoverId,
   resolveBusinessDateForNewShift,
   saveHandover,
+  saveLastClosedDrawer,
   saveShiftBusinessDate,
   ShiftDrawer,
 } from "@/lib/cashHandover";
@@ -46,6 +50,10 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
   const [availableLocations, setAvailableLocations] = useState<string[]>(["ซอย1", "ซอย2", "ซามีญ่า"]);
   const [initialCash, setInitialCash] = useState<number | "">(0);
   const [suggestedReserve, setSuggestedReserve] = useState<number | null>(null);
+  const [suggestedReserveRoomsCount, setSuggestedReserveRoomsCount] = useState<number>(0);
+  const [lastClosedDrawer, setLastClosedDrawer] = useState<LastClosedDrawerInfo | null>(null);
+  const [openCashConfirmed, setOpenCashConfirmed] = useState<boolean>(false);
+  const [openCashMode, setOpenCashMode] = useState<"matched" | "custom">("matched");
   const [errorMsg, setErrorMsg] = useState("");
 
   // Close Shift State
@@ -54,6 +62,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
   const [closeDrawer, setCloseDrawer] = useState<ShiftDrawer | null>(null);
   const [closeReserve, setCloseReserve] = useState(0);
   const [closeReserveRooms, setCloseReserveRooms] = useState<HeldKeyDepositRoom[]>([]);
+  const [carriedToNextShift, setCarriedToNextShift] = useState<number | "">(0);
   const [actualSend, setActualSend] = useState<number | "">("");
   const [closePin, setClosePin] = useState("");
   const [isEndOfDay, setIsEndOfDay] = useState(false);
@@ -121,14 +130,54 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
     }
   }, [name, showOpenModal, availableLocations, currentUser?.role, staffPrimaryLocation]);
 
-  // เปิดหน้าต่างเปิดกะ หรือเปลี่ยนสถานที่: แนะนำเงินสดตั้งต้น = มัดจำกุญแจคงเหลือของสถานที่นั้น
+  // เปิดหน้าต่างเปิดกะ หรือเปลี่ยนสถานที่: ดึงมัดจำกุญแจคงเหลือ + เงินทอนส่งต่อจากกะก่อนหน้าของสถานที่นั้น
   useEffect(() => {
     if (!showOpenModal) return;
-    fetchActiveKeyDeposits(undefined, shiftLocation || null).then((r) => {
+    const loc = shiftLocation || staffPrimaryLocation || "ซอย1";
+    Promise.all([
+      fetchActiveKeyDeposits(undefined, loc),
+      fetchLastClosedDrawer(loc),
+    ]).then(([r, lastDrawer]) => {
       setSuggestedReserve(r.total);
-      setInitialCash(r.total);
+      setSuggestedReserveRoomsCount(r.rooms.length);
+      setLastClosedDrawer(lastDrawer);
+      const unconsumedCarry =
+        lastDrawer && !lastDrawer.consumed_by_shift_id ? Math.max(0, Number(lastDrawer.carried_cash || 0)) : 0;
+      const expectedTotal = r.total + unconsumedCarry;
+      setInitialCash(expectedTotal);
+      setOpenCashMode("matched");
+      // หากยอดคาดหมายเป็น 0 ให้ถือว่ายืนยันได้ทันที แต่ถ้ามีเงินส่งต่อหรือมัดจำในลิ้นชัก ให้พนักงานกดปุ่มยืนยันตรวจนับเงินก่อน
+      setOpenCashConfirmed(expectedTotal === 0);
     });
-  }, [showOpenModal, shiftLocation]);
+  }, [showOpenModal, shiftLocation, staffPrimaryLocation]);
+
+  // ตรวจสอบแบบ Real-time ทันทีเมื่อกดปุ่ม "เปิดกะ" เพื่อป้องกันการเปิดกะซ้ำซ้อนในสถานที่เดียวกัน (Layer 2)
+  const handleRequestOpenModal = async () => {
+    setErrorMsg("");
+    try {
+      const { data: existingOpenShifts } = await supabase
+        .from("shifts")
+        .select("id, staff_name, start_time")
+        .eq("status", "open");
+
+      if (existingOpenShifts && existingOpenShifts.length > 0 && currentUser?.role === "staff" && staffPrimaryLocation) {
+        const meta = await fetchShiftMetadata(existingOpenShifts);
+        const conflict = existingOpenShifts.find((s) => {
+          const loc = meta[s.id]?.shift_location || inferShiftLocation(s.staff_name, null);
+          return loc === staffPrimaryLocation;
+        });
+        if (conflict) {
+          localStorage.setItem("active_shift_id", conflict.id);
+          await refreshShift();
+          alert(
+            `ℹ️ สถานที่ "${staffPrimaryLocation}" มีกะของ ${conflict.staff_name} เปิดใช้งานอยู่แล้ว\nระบบได้เชื่อมเข้ากะปัจจุบันให้เรียบร้อยครับ (ไม่ต้องเปิดกะซ้ำ)`
+          );
+          return;
+        }
+      }
+    } catch (e) {}
+    setShowOpenModal(true);
+  };
 
   // เปิดหน้าต่างปิดกะ: คำนวณเงินในลิ้นชัก + มัดจำกุญแจคงเหลือปัจจุบัน (เฉพาะสถานที่ของกะนั้น)
   useEffect(() => {
@@ -142,14 +191,28 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       setCloseDrawer(d);
       setCloseReserve(keyDep.total);
       setCloseReserveRooms(keyDep.rooms);
+      setCarriedToNextShift(0);
       setCloseLoading(false);
     })();
   }, [showCloseModal, activeShift?.id, activeShift?.shift_location]);
+
+  const unconsumedCarryFromPrev =
+    lastClosedDrawer && !lastClosedDrawer.consumed_by_shift_id
+      ? Math.max(0, Number(lastClosedDrawer.carried_cash || 0))
+      : 0;
+  const expectedOpenDrawerTotal = (suggestedReserve || 0) + unconsumedCarryFromPrev;
+  const openCashDiff = (initialCash === "" ? 0 : Number(initialCash)) - expectedOpenDrawerTotal;
 
   const handleOpenShift = async () => {
     setErrorMsg("");
     if (initialCash === "") {
       setErrorMsg("กรุณาระบุเงินสดตั้งต้นในลิ้นชัก (ใส่ 0 ก็ได้)");
+      return;
+    }
+    if (expectedOpenDrawerTotal > 0 && !openCashConfirmed) {
+      setErrorMsg(
+        `กรุณาตรวจนับเงินสดในลิ้นชักแล้วกดปุ่ม "✅ นับเงินในลิ้นชักครบตรงกัน (${fmt(expectedOpenDrawerTotal)})" หรือระบุยอดที่นับได้จริงเพื่อยืนยันก่อนเปิดกะ`
+      );
       return;
     }
     const upperName = name.toUpperCase();
@@ -206,8 +269,14 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
         return loc === chosenLocation;
       });
       if (conflict) {
-        setErrorMsg(`มีกะของ ${conflict.staff_name} เปิดใช้งานอยู่ที่ "${chosenLocation}" แล้ว กรุณาปิดกะเดิมของ ${chosenLocation} ก่อน`);
-        refreshShift();
+        localStorage.setItem("active_shift_id", conflict.id);
+        setShowOpenModal(false);
+        setName("");
+        setPin("");
+        await refreshShift();
+        alert(
+          `ℹ️ สถานที่ "${chosenLocation}" มีกะของ ${conflict.staff_name} เปิดใช้งานอยู่แล้ว\nระบบได้เชื่อมเข้ากะปัจจุบันให้เรียบร้อยครับ (ป้องกันการเปิดกะซ้ำซ้อน)`
+        );
         return;
       }
     }
@@ -235,7 +304,45 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
 
     // ผูกวันธุรกิจและสถานที่เข้ากับกะโดยตรง
     await saveShiftBusinessDate(insertedShift.id, newShiftBD, chosenLocation);
+
+    // Layer 3: ป้องกันกรณี 2 เครื่องกดปุ่มยืนยันเปิดกะในเสี้ยววินาทีเดียวกันเป๊ะ (Millisecond Race Condition)
+    const { data: postInsertOpenShifts } = await supabase
+      .from("shifts")
+      .select("id, staff_name, start_time")
+      .eq("status", "open")
+      .order("start_time", { ascending: true });
+
+    if (postInsertOpenShifts && postInsertOpenShifts.length > 1) {
+      const postMeta = await fetchShiftMetadata(postInsertOpenShifts);
+      const sameLocShifts = postInsertOpenShifts
+        .filter((s) => {
+          const loc = postMeta[s.id]?.shift_location || inferShiftLocation(s.staff_name, null);
+          return loc === chosenLocation;
+        })
+        .sort((a, b) => {
+          const tDiff = new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
+          if (tDiff !== 0) return tDiff;
+          return String(a.id).localeCompare(String(b.id));
+        });
+
+      if (sameLocShifts.length > 1 && sameLocShifts[0].id !== insertedShift.id) {
+        // มีอีกเครื่องเปิดกะที่สถานที่เดียวกันก่อนเสี้ยววินาที → ยกเลิกแถวที่ซ้ำนี้และเชื่อมเข้ากับกะหลักทันที
+        await supabase.from("shifts").delete().eq("id", insertedShift.id);
+        await supabase.from("system_settings").delete().eq("key", `shift_bd_${insertedShift.id}`);
+        localStorage.setItem("active_shift_id", sameLocShifts[0].id);
+        setShowOpenModal(false);
+        setName("");
+        setPin("");
+        await refreshShift();
+        alert(
+          `ℹ️ ระบบตรวจพบว่า ${sameLocShifts[0].staff_name} เพิ่งเปิดกะที่ "${chosenLocation}" พร้อมกันพอดี\nจึงเชื่อมเข้ากะของ ${sameLocShifts[0].staff_name} ให้อัตโนมัติเพื่อไม่ให้เกิดกะซ้ำซ้อนครับ`
+        );
+        return;
+      }
+    }
+
     localStorage.setItem("active_shift_id", insertedShift.id);
+    await markLastClosedDrawerConsumed(chosenLocation, insertedShift.id, Number(initialCash || 0), nowOpenIso);
 
     await logActivity({
       category: "shift",
@@ -243,8 +350,10 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       staffName: staffData.name,
       shiftName: `${staffData.name} (${chosenLocation})`,
       target: `เปิดกะ ${staffData.name} • ${chosenLocation}`,
-      details: `เปิดกะการทำงานที่ "${chosenLocation}" โดย ${staffData.name} (เงินสดตั้งต้นในลิ้นชัก ${fmt(Number(initialCash || 0))}${
-        suggestedReserve !== null ? ` • มัดจำกุญแจคงเหลือของ ${chosenLocation} ${fmt(suggestedReserve)}` : ""
+      details: `เปิดกะการทำงานที่ "${chosenLocation}" โดย ${staffData.name} (เงินสดตั้งต้นในลิ้นชัก ${fmt(Number(initialCash || 0))} • มัดจำกุญแจ ${fmt(
+        suggestedReserve || 0
+      )} + เงินส่งต่อจากกะก่อนหน้า ${fmt(unconsumedCarryFromPrev)} = ยอดที่ควรมี ${fmt(expectedOpenDrawerTotal)}${
+        openCashDiff !== 0 ? ` • ⚠️ ต่างจากยอดส่งต่อ ${openCashDiff > 0 ? "+" : ""}${fmt(openCashDiff)}` : " • ✅ ยืนยันนับเงินตรงกัน"
       })`,
     });
 
@@ -252,12 +361,14 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
     setName("");
     setPin("");
     setInitialCash(0);
+    setOpenCashConfirmed(false);
     refreshShift();
   };
 
   const resetCloseState = () => {
     setShowCloseModal(false);
     setClosePin("");
+    setCarriedToNextShift(0);
     setActualSend("");
     setIsEndOfDay(false);
     setErrorMsg("");
@@ -265,7 +376,10 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
   };
 
   const drawerCash = closeDrawer?.drawer || 0;
-  const requiredSend = drawerCash - closeReserve;
+  const netCashBeforeCarry = drawerCash - closeReserve;
+  const carriedNum = carriedToNextShift === "" ? 0 : Math.max(0, Number(carriedToNextShift || 0));
+  const requiredSend = netCashBeforeCarry - carriedNum;
+  const nextShiftDrawerTotal = closeReserve + carriedNum;
   const actualSendNum = actualSend === "" ? 0 : Number(actualSend);
   const sendDiff = actualSendNum - requiredSend; // + เกิน / - ขาด
   // กติกาปิดรอบวัน: ติ๊กได้ตั้งแต่ 05:30 น. ของวันถัดไป / ตั้งแต่ 06:30 น. บังคับเป็นกะสุดท้ายของวันอัตโนมัติ
@@ -304,7 +418,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
     }
 
     const nowIso = getNow().toISOString();
-    const countedDrawer = actualSendNum + closeReserve;
+    const countedDrawer = actualSendNum + closeReserve + carriedNum;
 
     const { error: shiftError } = await supabase
       .from("shifts")
@@ -336,6 +450,8 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       drawer_cash: drawerCash,
       key_reserve: closeReserve,
       key_reserve_rooms: closeReserveRooms.length,
+      carried_to_next_shift: carriedNum,
+      next_shift_drawer_total: nextShiftDrawerTotal,
       required_amount: requiredSend,
       actual_amount: actualSendNum,
       staff_name: activeShift.staff_name,
@@ -344,9 +460,26 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       manager_name: null,
       manager_signature: null,
       manager_signed_at: null,
+      note:
+        carriedNum > 0
+          ? `เหลือเงินสด/เงินทอนติดลิ้นชักส่งต่อให้กะถัดไป ${fmt(carriedNum)} (รวมในลิ้นชัก ${fmt(nextShiftDrawerTotal)})`
+          : null,
       created_at: nowIso,
     };
     await saveHandover(record);
+    await saveLastClosedDrawer({
+      shift_id: activeShift.id,
+      staff_name: activeShift.staff_name,
+      shift_location: shiftLoc || "ซอย1",
+      closed_at: nowIso,
+      business_date: businessDate,
+      key_reserve: closeReserve,
+      key_reserve_rooms: closeReserveRooms.length,
+      carried_cash: carriedNum,
+      total_in_drawer: nextShiftDrawerTotal,
+      sent_to_manager: actualSendNum,
+      consumed_by_shift_id: null,
+    });
 
     if (effectiveEndOfDay) {
       if (shiftLoc) {
@@ -377,7 +510,9 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       target: `ปิดกะ ${activeShift.staff_name}${shiftLoc ? ` • ${shiftLoc}` : ""}`,
       details: `ปิดกะและส่งเงิน ${activeShift.staff_name}${shiftLoc ? ` (${shiftLoc})` : ""} (เงินในลิ้นชักตามระบบ ${fmt(drawerCash)}, กันมัดจำกุญแจ ${fmt(
         closeReserve
-      )}, ต้องส่ง ${fmt(requiredSend)}, ส่งจริง ${fmt(actualSendNum)}, ${sendDiff >= 0 ? "เกิน" : "ขาด"} ${fmt(
+      )}${carriedNum > 0 ? `, เหลือเงินสดส่งต่อกะถัดไป ${fmt(carriedNum)} [รวมในลิ้นชัก ${fmt(nextShiftDrawerTotal)}]` : ""}, ต้องส่งผู้จัดการ ${fmt(
+        requiredSend
+      )}, ส่งจริง ${fmt(actualSendNum)}, ${sendDiff >= 0 ? "เกิน" : "ขาด"} ${fmt(
         Math.abs(sendDiff)
       )}${effectiveEndOfDay ? ` • ปิดรอบวัน EOD (${businessDate})` : ""}) • รอผู้จัดการเซ็นรับ`,
     });
@@ -396,7 +531,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
     <div>
       {!activeShift ? (
         <button
-          onClick={() => setShowOpenModal(true)}
+          onClick={handleRequestOpenModal}
           className={`bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm flex items-center gap-1.5 transition-all active:scale-95 ${
             compact ? "px-3 py-1.5 rounded-xl text-xs" : "px-4 py-1.5 rounded-full text-sm animate-pulse"
           }`}
@@ -619,20 +754,100 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
                     </div>
                   )}
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">
-                    เงินสดตั้งต้นในลิ้นชัก {shiftLocation ? `(${shiftLocation})` : ""}
-                  </label>
-                  <input
-                    type="number"
-                    value={initialCash}
-                    onChange={(e) => setInitialCash(e.target.value === "" ? "" : Number(e.target.value))}
-                    className="w-full p-3 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
-                  />
-                  {suggestedReserve !== null && (
-                    <p className="text-[11px] text-amber-700 mt-1 font-bold">
-                      🔑 ควรมีเงินสดสำรองมัดจำกุญแจในลิ้นชัก {shiftLocation ? `(${shiftLocation})` : ""} อย่างน้อย {fmt(suggestedReserve)} (ตามห้องที่ยังไม่เช็คเอาท์ของสถานที่นี้)
-                    </p>
+                {/* กล่องตรวจสอบและยืนยันเงินสดในลิ้นชักจากกะก่อนหน้า */}
+                <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/70 p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-emerald-950">
+                      📦 เงินสดในลิ้นชักส่งต่อ {shiftLocation ? `(${shiftLocation})` : ""}
+                    </span>
+                    {lastClosedDrawer && !lastClosedDrawer.consumed_by_shift_id && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-700 text-white">
+                        ส่งต่อจากกะ {lastClosedDrawer.staff_name}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="bg-white rounded-lg border border-emerald-200/80 p-2.5 space-y-1 text-xs">
+                    <div className="flex justify-between text-amber-800 font-semibold">
+                      <span>🔑 เงินสำรองมัดจำกุญแจ ({suggestedReserveRoomsCount} ห้อง)</span>
+                      <span className="font-bold">{fmt(suggestedReserve || 0)}</span>
+                    </div>
+                    <div className="flex justify-between text-indigo-800 font-semibold">
+                      <span>
+                        🪙 เงินทอน/เงินสดส่งต่อจากกะก่อนหน้า
+                        {lastClosedDrawer && !lastClosedDrawer.consumed_by_shift_id
+                          ? ` (${lastClosedDrawer.staff_name})`
+                          : ""}
+                      </span>
+                      <span className="font-bold">+{fmt(unconsumedCarryFromPrev)}</span>
+                    </div>
+                    <div className="flex justify-between items-center pt-1.5 border-t border-slate-200 font-black text-slate-900 text-sm">
+                      <span>= รวมเงินที่ต้องมีในลิ้นชัก</span>
+                      <span className="text-emerald-700 text-base">{fmt(expectedOpenDrawerTotal)}</span>
+                    </div>
+                  </div>
+
+                  {/* ปุ่มยืนยันการตรวจนับเงินตอนเปิดกะ */}
+                  <div className="grid grid-cols-1 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInitialCash(expectedOpenDrawerTotal);
+                        setOpenCashMode("matched");
+                        setOpenCashConfirmed(true);
+                      }}
+                      className={`w-full py-2.5 px-3 rounded-xl text-xs font-black border-2 transition-all flex items-center justify-between ${
+                        openCashConfirmed && openCashMode === "matched" && Number(initialCash || 0) === expectedOpenDrawerTotal
+                          ? "bg-emerald-600 text-white border-emerald-700 shadow-xs"
+                          : "bg-white hover:bg-emerald-100 text-emerald-900 border-emerald-300"
+                      }`}
+                    >
+                      <span>✅ นับเงินในลิ้นชักครบตรงกัน ({fmt(expectedOpenDrawerTotal)})</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/20">
+                        {openCashConfirmed && openCashMode === "matched" && Number(initialCash || 0) === expectedOpenDrawerTotal
+                          ? "ยืนยันแล้ว ✓"
+                          : "กดยืนยัน"}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpenCashMode("custom");
+                        setOpenCashConfirmed(true);
+                      }}
+                      className={`w-full py-2 px-3 rounded-xl text-[11px] font-bold border transition-all text-left flex items-center justify-between ${
+                        openCashMode === "custom"
+                          ? "bg-amber-600 text-white border-amber-700"
+                          : "bg-white hover:bg-amber-50 text-slate-600 border-slate-200"
+                      }`}
+                    >
+                      <span>⚠️ นับเงินจริงในลิ้นชักไม่ตรง / ต้องการระบุยอดเอง</span>
+                      <span>{openCashMode === "custom" ? "กำลังระบุ ▾" : "แก้ไข"}</span>
+                    </button>
+                  </div>
+
+                  {openCashMode === "custom" && (
+                    <div className="pt-1 space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">
+                        ระบุเงินสดที่นับได้จริงในลิ้นชักตอนเปิดกะ {shiftLocation ? `(${shiftLocation})` : ""}
+                      </label>
+                      <input
+                        type="number"
+                        value={initialCash}
+                        onChange={(e) => {
+                          setInitialCash(e.target.value === "" ? "" : Number(e.target.value));
+                          setOpenCashConfirmed(true);
+                        }}
+                        className="w-full p-2.5 rounded-xl border border-amber-300 bg-white font-black text-base text-slate-900 focus:border-amber-500 outline-none"
+                      />
+                      {initialCash !== "" && openCashDiff !== 0 && (
+                        <p className={`text-[11px] font-bold ${openCashDiff > 0 ? "text-emerald-700" : "text-rose-600"}`}>
+                          {openCashDiff > 0 ? "เงินในลิ้นชักเกินจากยอดส่งต่อ (+)" : "เงินในลิ้นชักขาดจากยอดส่งต่อ (-)"}:{" "}
+                          {fmt(Math.abs(openCashDiff))} (ระบบจะบันทึกแจ้งไว้ในประวัติการเปิดกะ)
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -701,19 +916,92 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
                     <span>- กันเงินมัดจำกุญแจคงเหลือ ({closeReserveRooms.length} ห้อง) ทิ้งไว้ให้กะถัดไป</span>
                     <span>-{fmt(closeReserve)}</span>
                   </div>
+                  {carriedNum > 0 && (
+                    <div className="flex justify-between text-indigo-700 font-bold">
+                      <span>- เหลือเงินสด/เงินทอนติดลิ้นชักส่งต่อให้กะถัดไป</span>
+                      <span>-{fmt(carriedNum)}</span>
+                    </div>
+                  )}
                   <div
                     className={`flex justify-between font-black text-base pt-1.5 border-t border-slate-200 ${
                       requiredSend >= 0 ? "text-emerald-700" : "text-rose-700"
                     }`}
                   >
-                    <span>{requiredSend >= 0 ? "👉 ยอดเงินสดที่ต้องส่ง" : "⚠️ เงินสดขาด (ผู้จัดการต้องเติม)"}</span>
+                    <span>
+                      {requiredSend >= 0
+                        ? "👉 ยอดเงินสดที่ต้องนำส่งเข้ากล่องผู้จัดการ"
+                        : "⚠️ เงินสดขาด (ผู้จัดการต้องเติม)"}
+                    </span>
                     <span>{fmt(Math.abs(requiredSend))}</span>
+                  </div>
+                  <div className="mt-1 pt-1.5 border-t border-dashed border-slate-200 flex justify-between items-center text-xs font-black text-indigo-900 bg-indigo-50/80 px-2.5 py-1.5 rounded-lg">
+                    <span>📌 รวมเงินที่ต้องคงเหลือไว้ในลิ้นชักให้กะถัดไป</span>
+                    <span>
+                      {fmt(nextShiftDrawerTotal)} (มัดจำ {fmt(closeReserve)} + ส่งต่อ {fmt(carriedNum)})
+                    </span>
+                  </div>
+                </div>
+
+                {/* ส่วนเลือกเหลือเงินทอนติดลิ้นชัก หรือส่งต่อเงินสดทั้งหมดให้กะถัดไป */}
+                <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-black text-indigo-950">
+                      🪙 เงินสดเหลือติดลิ้นชักส่งต่อให้กะถัดไป (เผื่อทอน / ยกยอดไปกะหน้า)
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCarriedToNextShift(0);
+                        setActualSend(Math.max(0, netCashBeforeCarry));
+                      }}
+                      className={`py-2 px-2 rounded-lg text-[11px] font-bold border transition-all ${
+                        carriedNum === 0
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
+                          : "bg-white hover:bg-indigo-50 text-slate-700 border-slate-200"
+                      }`}
+                    >
+                      💵 ส่งผู้จัดการทั้งหมด (เหลือเฉพาะมัดจำ)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allCarry = Math.max(0, netCashBeforeCarry);
+                        setCarriedToNextShift(allCarry);
+                        setActualSend(0);
+                      }}
+                      className={`py-2 px-2 rounded-lg text-[11px] font-bold border transition-all ${
+                        netCashBeforeCarry > 0 && carriedNum === Math.max(0, netCashBeforeCarry)
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
+                          : "bg-white hover:bg-indigo-50 text-indigo-900 border-indigo-200"
+                      }`}
+                    >
+                      🔄 ส่งต่อให้กะถัดไปทั้งจำนวน ({fmt(Math.max(0, netCashBeforeCarry))})
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-slate-600 shrink-0">หรือระบุเงินทอนที่เหลือไว้:</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={carriedToNextShift}
+                      onChange={(e) => {
+                        const val = e.target.value === "" ? "" : Math.max(0, Number(e.target.value));
+                        setCarriedToNextShift(val);
+                        const numVal = val === "" ? 0 : val;
+                        setActualSend(Math.max(0, netCashBeforeCarry - numVal));
+                      }}
+                      className="flex-1 text-right font-black text-sm p-2 rounded-lg border border-indigo-200 bg-white text-indigo-900 focus:ring-1 focus:ring-indigo-500 outline-none"
+                      placeholder="0"
+                    />
+                    <span className="text-xs font-bold text-slate-600">บาท</span>
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">
-                    ยอดเงินสดที่ส่งจริง (หลังกันมัดจำกุญแจไว้ในลิ้นชักแล้ว)
+                    ยอดเงินสดที่นำส่งเข้ากล่องผู้จัดการจริง (หลังกันมัดจำกุญแจ + เงินส่งต่อกะถัดไป)
                   </label>
                   <input
                     type="number"
@@ -725,6 +1013,11 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
                   {actualSend !== "" && sendDiff !== 0 && (
                     <p className={`text-xs mt-1 font-bold ${sendDiff > 0 ? "text-emerald-600" : "text-red-500"}`}>
                       {sendDiff > 0 ? "เงินสดเกิน (+)" : "เงินสดขาด (-)"}: {fmt(Math.abs(sendDiff))}
+                    </p>
+                  )}
+                  {actualSend !== "" && sendDiff === 0 && (
+                    <p className="text-xs mt-1 font-bold text-emerald-600">
+                      ✅ ยอดส่งเงินตรงตามระบบ (คงเหลือไว้ในลิ้นชักให้กะถัดไปรวม {fmt(nextShiftDrawerTotal)})
                     </p>
                   )}
                 </div>

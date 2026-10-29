@@ -9,6 +9,7 @@
 import { supabase } from "@/lib/supabase";
 
 export const HANDOVER_KEY_PREFIX = "cash_handover_";
+export const LAST_CLOSED_DRAWER_PREFIX = "last_closed_drawer_";
 
 export type CashHandover = {
   id: string;
@@ -21,8 +22,10 @@ export type CashHandover = {
   drawer_cash: number; // เงินสดในลิ้นชักตามระบบก่อนส่ง
   key_reserve: number; // เงินมัดจำกุญแจคงเหลือที่ต้องกันไว้ในลิ้นชัก
   key_reserve_rooms?: number;
-  required_amount: number; // ยอดที่ต้องส่งตามระบบ
-  actual_amount: number; // ยอดที่ส่งจริง
+  carried_to_next_shift?: number; // เงินสด/เงินทอนที่เหลือติดลิ้นชักส่งต่อให้กะถัดไป (นอกเหนือจากมัดจำกุญแจ)
+  next_shift_drawer_total?: number; // รวมเงินสดในลิ้นชักที่ส่งต่อให้กะถัดไป = key_reserve + carried_to_next_shift
+  required_amount: number; // ยอดที่ต้องนำส่งผู้จัดการตามระบบ
+  actual_amount: number; // ยอดที่นำส่งผู้จัดการจริง
   staff_name: string;
   staff_signature: string | null;
   staff_signed_at: string | null;
@@ -31,6 +34,22 @@ export type CashHandover = {
   manager_signed_at: string | null;
   note?: string | null;
   created_at: string;
+};
+
+export type LastClosedDrawerInfo = {
+  shift_id: string;
+  staff_name: string;
+  shift_location: string;
+  closed_at: string;
+  business_date: string;
+  key_reserve: number;
+  key_reserve_rooms?: number;
+  carried_cash: number; // เงินทอน/เงินสดที่เหลือติดลิ้นชักส่งต่อให้กะถัดไป
+  total_in_drawer: number; // รวมเงินสดที่ทิ้งไว้ในลิ้นชักตอนปิดกะ = key_reserve + carried_cash
+  sent_to_manager: number; // ยอดที่นำส่งผู้จัดการตอนปิดกะ
+  consumed_by_shift_id?: string | null;
+  consumed_at?: string | null;
+  confirmed_initial_cash?: number | null;
 };
 
 /** อนุมานสถานที่ของกะจากค่าที่บันทึกไว้ หรือจากชื่อพนักงาน/สิทธิ์สถานที่ */
@@ -270,6 +289,58 @@ export async function fetchHandoversByDate(businessDate: string): Promise<CashHa
 
 export function newHandoverId() {
   return `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** บันทึกยอดเงินสดคงเหลือในลิ้นชักจากกะที่เพิ่งปิดไปของสถานที่นั้น เพื่อให้กะถัดไปตรวจสอบและกดยืนยันตอนเปิดกะ */
+export async function saveLastClosedDrawer(info: LastClosedDrawerInfo) {
+  const loc = (info.shift_location || "ซอย1").trim();
+  return supabase
+    .from("system_settings")
+    .upsert(
+      {
+        key: `${LAST_CLOSED_DRAWER_PREFIX}${loc}`,
+        value: { ...info, shift_location: loc },
+      },
+      { onConflict: "key" }
+    );
+}
+
+/** ดึงข้อมูลเงินสดคงเหลือในลิ้นชักจากกะล่าสุดที่เพิ่งปิดไปของสถานที่นั้น */
+export async function fetchLastClosedDrawer(location?: string | null): Promise<LastClosedDrawerInfo | null> {
+  const loc = (location || "ซอย1").trim();
+  const { data } = await supabase
+    .from("system_settings")
+    .select("value")
+    .eq("key", `${LAST_CLOSED_DRAWER_PREFIX}${loc}`)
+    .maybeSingle();
+  if (!data || !data.value) return null;
+  return data.value as LastClosedDrawerInfo;
+}
+
+/** บันทึกว่ากะใหม่ได้เปิดรับช่วงต่อเงินในลิ้นชักจากกะก่อนหน้าเรียบร้อยแล้ว */
+export async function markLastClosedDrawerConsumed(
+  location: string | null | undefined,
+  consumedByShiftId: string,
+  confirmedInitialCash: number,
+  nowIso: string
+) {
+  const existing = await fetchLastClosedDrawer(location);
+  if (!existing) return;
+  const loc = (location || existing.shift_location || "ซอย1").trim();
+  await supabase
+    .from("system_settings")
+    .upsert(
+      {
+        key: `${LAST_CLOSED_DRAWER_PREFIX}${loc}`,
+        value: {
+          ...existing,
+          consumed_by_shift_id: consumedByShiftId,
+          consumed_at: nowIso,
+          confirmed_initial_cash: confirmedInitialCash,
+        },
+      },
+      { onConflict: "key" }
+    );
 }
 
 /** ตรวจ PIN ผู้จัดการ/แอดมิน */

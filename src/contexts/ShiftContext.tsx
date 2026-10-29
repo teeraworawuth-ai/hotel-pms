@@ -300,6 +300,19 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     refreshShift();
+
+    // ซิงค์สถานะกะแบบ Real-time: หากมีพนักงานอีกเครื่องเปิด/ปิดกะของสถานที่เดียวกัน หน้าจอนี้จะเชื่อมกะให้อัตโนมัติทันทีโดยไม่เปิดกะซ้ำซ้อน
+    const shiftChannel = supabase
+      .channel('shifts-realtime-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shifts' }, () => {
+        refreshShift();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(shiftChannel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const operatorName = currentUser?.name || activeShift?.operator_name || activeShift?.staff_name || "";

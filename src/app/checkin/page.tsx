@@ -9,7 +9,7 @@ import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
 import { useShift } from "@/contexts/ShiftContext";
 import ShiftManager from "@/app/components/ShiftManager";
 import { logActivity } from "@/lib/activityLog";
-import { computeActiveHeldDeposit } from "@/lib/keyDeposit";
+import { computeActiveHeldDeposit, computeKeyDepositParts } from "@/lib/keyDeposit";
 import {
   addDaysStr,
   atLocalTime,
@@ -108,6 +108,7 @@ export default function CheckinPage() {
   const [adminPinError, setAdminPinError] = useState("");
   const [adminActionLoading, setAdminActionLoading] = useState(false);
   const [showAdminTools, setShowAdminTools] = useState(false);
+  const [showUnpaidSummary, setShowUnpaidSummary] = useState(false);
 
   // สำหรับจับเวลา Double Tap ของแม่บ้านบนหน้ากระดานหลัก
   const lastTapRef = useRef<{ [key: string]: number }>({});
@@ -366,18 +367,22 @@ export default function CheckinPage() {
       }
 
       const futureUnpostedByBooking: Record<string, number> = {};
+      const dailyRatesUpToTodayByBooking: Record<string, number> = {};
 
       if (allDailyRates) {
         allDailyRates.forEach(dr => {
           if (!financialSummary[dr.booking_id]) {
             financialSummary[dr.booking_id] = { charges: 0, payments: 0, balance: 0, c_all: 0, c_today: 0 };
           }
-          financialSummary[dr.booking_id].c_all += Number(dr.amount);
+          const amt = Number(dr.amount || 0);
+          financialSummary[dr.booking_id].c_all += amt;
           if (String(dr.target_date || '') > targetDateStr) {
-            futureUnpostedByBooking[dr.booking_id] = (futureUnpostedByBooking[dr.booking_id] || 0) + Number(dr.amount || 0);
+            futureUnpostedByBooking[dr.booking_id] = (futureUnpostedByBooking[dr.booking_id] || 0) + amt;
+          } else {
+            dailyRatesUpToTodayByBooking[dr.booking_id] = (dailyRatesUpToTodayByBooking[dr.booking_id] || 0) + amt;
           }
           if (dr.target_date === targetDateStr) {
-            dailyRatesMap[dr.booking_id] = Number(dr.amount);
+            dailyRatesMap[dr.booking_id] = amt;
           }
         });
       }
@@ -401,6 +406,8 @@ export default function CheckinPage() {
         .in('booking_id', activeBookingIds);
         
       if (!ledgerError && ledgers) {
+        const postedRoomChargesByBooking: Record<string, number> = {};
+        const depositPlacedByBooking: Record<string, number> = {};
         ledgers.forEach(tx => {
           if (tx.booking_id) {
             if (!ledgersByBooking[tx.booking_id]) ledgersByBooking[tx.booking_id] = [];
@@ -408,7 +415,9 @@ export default function CheckinPage() {
           }
         });
         Object.entries(ledgersByBooking).forEach(([bid, txs]) => {
-          heldDepositByBooking[bid] = computeActiveHeldDeposit(txs, futureUnpostedByBooking[bid] || 0);
+          const validTxs = txs.filter(t => !String(t.category || '').includes('(Voided)'));
+          heldDepositByBooking[bid] = computeActiveHeldDeposit(validTxs, futureUnpostedByBooking[bid] || 0);
+          depositPlacedByBooking[bid] = computeKeyDepositParts(validTxs, futureUnpostedByBooking[bid] || 0).placed;
         });
         ledgers.forEach(tx => {
           if (tx.booking_id) {
@@ -438,13 +447,36 @@ export default function CheckinPage() {
               } else {
                 financialSummary[tx.booking_id].charges += amt;
                 financialSummary[tx.booking_id].c_today += amt;
-                if (cat !== 'ค่าห้องพัก' && cat !== 'room_charge') {
+                if (cat === 'ค่าห้องพัก' || cat === 'room_charge') {
+                  postedRoomChargesByBooking[tx.booking_id] = (postedRoomChargesByBooking[tx.booking_id] || 0) + amt;
+                } else {
                   financialSummary[tx.booking_id].c_all += amt;
                 }
               }
             } else {
               financialSummary[tx.booking_id].payments += Math.abs(amt);
             }
+          }
+        });
+
+        // ปรับปรุงยอดค่าห้องพักรายวัน (booking_daily_rates) ที่ถึงกำหนดแล้วแต่ยังไม่มีแถว room_charge ใน ledger + บวกเงินมัดจำกุญแจที่กันไว้เข้าในดุลค้างชำระ (ให้ตรงกับรายงานประจำวัน 100%)
+        activeBookingIds.forEach(bid => {
+          const bObj = allTargetBookings?.find(b => b.id === bid);
+          if (!bObj || bObj.status === 'reserved' || bObj.status === 'cancelled') return;
+          if (!financialSummary[bid]) {
+            financialSummary[bid] = { charges: 0, payments: 0, balance: 0, c_all: 0, c_today: 0, has_key_deposit: false };
+          }
+          const drUpToToday = dailyRatesUpToTodayByBooking[bid] || 0;
+          const postedRoom = postedRoomChargesByBooking[bid] || 0;
+          if (drUpToToday > postedRoom) {
+            const unpostedDiff = drUpToToday - postedRoom;
+            financialSummary[bid].charges += unpostedDiff;
+            financialSummary[bid].c_today += unpostedDiff;
+            financialSummary[bid].balance += unpostedDiff;
+          }
+          const depPlaced = depositPlacedByBooking[bid] || 0;
+          if (depPlaced > 0) {
+            financialSummary[bid].balance += depPlaced;
           }
         });
       }
@@ -998,6 +1030,28 @@ export default function CheckinPage() {
     };
   });
 
+  // รายชื่อห้องที่มียอดค้างชำระ (ลูกหนี้) สำหรับแสดงปุ่มแจ้งเตือนแบบพับเก็บได้บนแถบด้านบน (ซ่อนรายละเอียดไว้จนกว่าจะกดดู)
+  const seenUnpaidGroupIds = new Set<string>();
+  const unpaidRoomsList = rooms
+    .filter(r => {
+      if (r.status !== 'occupied') return false;
+      if ((r.unpaid_balance || 0) < 0.5) return false;
+      const loc = r.location || 'ทั่วไป';
+      if (!isManagerOrAdmin && !userVisibleLocations.includes(loc)) return false;
+      if (selectedLocationFilter && loc !== selectedLocationFilter) return false;
+      if (r.group_info?.groupId) {
+        if (seenUnpaidGroupIds.has(r.group_info.groupId)) return false;
+        seenUnpaidGroupIds.add(r.group_info.groupId);
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const locCmp = String(a.location || '').localeCompare(String(b.location || ''));
+      if (locCmp !== 0) return locCmp;
+      return a.room_no.localeCompare(b.room_no, undefined, { numeric: true });
+    });
+  const totalUnpaidAmount = unpaidRoomsList.reduce((sum, r) => sum + Math.round(r.unpaid_balance || 0), 0);
+
   const getStayDetails = (room: RoomStatus) => {
     if (room.status !== 'occupied' || !room.check_out_time) return null;
     if (dateOffset !== 0) return null;
@@ -1306,7 +1360,22 @@ export default function CheckinPage() {
                 )}
               </div>
 
-              <div className="flex items-center gap-1 ml-auto">
+              <div className="flex items-center gap-1 ml-auto flex-wrap">
+                {!isHousekeeper && dateOffset === 0 && unpaidRoomsList.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowUnpaidSummary(prev => !prev)}
+                    className={`px-2 py-0.5 rounded-lg text-[10.5px] font-black transition-all flex items-center gap-1 border ${
+                      showUnpaidSummary
+                        ? "bg-rose-600 text-white border-rose-700 shadow-2xs"
+                        : "bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-300"
+                    }`}
+                    title="คลิกเพื่อดูห้องที่มียอดค้างชำระและกดเปิดบิลรับชำระเงินทันที"
+                  >
+                    <span>⚠️ค้างชำระ {unpaidRoomsList.length} ห้อง (฿{totalUnpaidAmount.toLocaleString()})</span>
+                    <span>{showUnpaidSummary ? "▲" : "▼"}</span>
+                  </button>
+                )}
                 {isManagerOrAdmin && dateOffset === 0 && rooms.some(r => r.status === 'dirty') && (
                   <button 
                     onClick={handleCleanAllDirtyRooms}
@@ -1330,6 +1399,52 @@ export default function CheckinPage() {
                     ผัง
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* แถบสรุปห้องค้างชำระแบบกระชับ (ซ่อนไว้เป็นค่าเริ่มต้น แสดงเฉพาะเมื่อพนักงานกดปุ่ม ⚠️ค้างชำระ ด้านบน) */}
+          {!isHousekeeper && dateOffset === 0 && showUnpaidSummary && unpaidRoomsList.length > 0 && (
+            <div className="pt-1.5 border-t border-rose-100 bg-rose-50/70 rounded-lg px-2.5 py-1.5 space-y-1">
+              <div className="flex items-center justify-between text-[10.5px] font-black text-rose-900">
+                <span>📋 ห้องที่มียอดค้างชำระ (คลิกที่ห้องเพื่อเปิดบิลรับชำระเงินได้ทันที)</span>
+                <button
+                  type="button"
+                  onClick={() => setShowUnpaidSummary(false)}
+                  className="text-rose-600 hover:text-rose-800 font-bold text-[10px]"
+                >
+                  ✕ ซ่อน
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {unpaidRoomsList.map(r => {
+                  const roomCharges = Math.round(r.total_charges || 0);
+                  const keyDep = Math.round(r.held_key_deposit || 0);
+                  const paidAmt = Math.round(r.total_payments || 0);
+                  const unpaidAmt = Math.round(r.unpaid_balance || 0);
+                  return (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => setSelectedRoom(r)}
+                      className="inline-flex flex-wrap items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white hover:bg-rose-50 border border-rose-300 text-[11px] shadow-2xs transition-colors text-left cursor-pointer"
+                    >
+                      <span className="font-black text-indigo-800">
+                        📍{r.location || "ทั่วไป"} ห้อง {r.room_no}
+                      </span>
+                      {r.guest_name && r.guest_name !== "ไม่ระบุชื่อ" && (
+                        <span className="text-slate-600 font-semibold">({r.guest_name})</span>
+                      )}
+                      <span className="text-slate-500 text-[10px]">
+                        ค่าห้อง/บริการ ฿{roomCharges.toLocaleString()}
+                        {keyDep > 0 ? ` + มัดจำ ฿${keyDep.toLocaleString()}` : ""} • จ่ายแล้ว ฿{paidAmt.toLocaleString()}
+                      </span>
+                      <span className="px-1.5 py-0.2 rounded bg-rose-600 text-white font-black text-[10.5px]">
+                        ค้าง ฿{unpaidAmt.toLocaleString()} • 💳 เก็บเงิน
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

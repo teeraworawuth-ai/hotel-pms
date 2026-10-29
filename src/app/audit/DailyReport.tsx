@@ -1502,7 +1502,15 @@ export default function DailyReport({
     0
   );
   const cashCollectedTotal = handovers.reduce((s, h) => s + Number(h.actual_amount || 0), 0);
-  const pendingManagerSign = handovers.filter((h) => !h.manager_signature);
+  const pendingManagerSign = handovers.filter(
+    (h) =>
+      !h.manager_signature &&
+      !(
+        Number(h.actual_amount || 0) === 0 &&
+        Number(h.required_amount || 0) === 0 &&
+        Number(h.carried_to_next_shift || 0) > 0
+      )
+  );
   const closedShiftsWithoutHandover = dayShifts.filter(
     (s) => s.status === "closed" && !handovers.some((h) => h.shift_id === s.id && h.kind === "shift_close")
   );
@@ -2837,6 +2845,19 @@ export default function DailyReport({
                       <div className="text-[10px] text-slate-500">
                         เงินในลิ้นชักตามระบบ {fmt(h.drawer_cash)} • กันมัดจำกุญแจ {fmt(h.key_reserve)}
                         {h.key_reserve_rooms !== undefined ? ` (${h.key_reserve_rooms} ห้อง)` : ""}
+                        {Number(h.carried_to_next_shift || 0) > 0 && (
+                          <span className="text-indigo-700 font-bold">
+                            {" "}
+                            • 🪙 เหลือเงินสดส่งต่อกะถัดไป {fmt(Number(h.carried_to_next_shift || 0))} (รวมในลิ้นชัก{" "}
+                            {fmt(
+                              Number(
+                                h.next_shift_drawer_total ??
+                                  Number(h.key_reserve || 0) + Number(h.carried_to_next_shift || 0)
+                              )
+                            )}
+                            )
+                          </span>
+                        )}
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {renderSigCell("ผู้ส่งเงิน", sender)}
