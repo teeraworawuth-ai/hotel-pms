@@ -40,6 +40,8 @@ type BookingRow = {
   id: string;
   room_id: string;
   guest_name: string;
+  guest_phone?: string | null;
+  staff_name?: string | null;
   status: string;
   check_in_time: string;
   check_out_time: string;
@@ -100,6 +102,37 @@ type HeldDepositRoomItem = {
   amount: number;
 };
 
+type ReceivableChargeItem = {
+  label: string;
+  amount: number;
+  isDeposit?: boolean;
+};
+
+type ReceivablePaymentItem = {
+  label: string;
+  amount: number;
+};
+
+type ReceivableRoomBreakdownItem = {
+  bookingId: string;
+  roomNo: string;
+  location: string;
+  guestName: string;
+  guestPhone?: string;
+  staffName?: string;
+  status: string;
+  checkInDateStr: string;
+  unpaidStart: number;
+  unpaidAddedToday: number;
+  unpaidPaidToday: number;
+  unpaidEnd: number;
+  totalCharges: number;
+  depositPlaced: number;
+  totalPaid: number;
+  chargeItems: ReceivableChargeItem[];
+  paymentItems: ReceivablePaymentItem[];
+};
+
 type LocationReportSnapshot = {
   location: string;
   isDayClosed: boolean;
@@ -133,6 +166,7 @@ type LocationReportSnapshot = {
   };
   heldDepositRooms: HeldDepositRoomItem[];
   receivableBox: { start: number; end: number };
+  receivableBreakdown: ReceivableRoomBreakdownItem[];
   dayShifts: Shift[];
   handovers: CashHandover[];
   dayExpenses: LedgerTransaction[];
@@ -172,6 +206,7 @@ export default function DailyReport({
   const [showAdvanceDetails, setShowAdvanceDetails] = useState(false);
   const [showReservationDetails, setShowReservationDetails] = useState(false);
   const [showHeldDepositRooms, setShowHeldDepositRooms] = useState(false);
+  const [showReceivableDetails, setShowReceivableDetails] = useState(false);
 
   const [shiftDrawers, setShiftDrawers] = useState<Record<string, ShiftDrawer>>({});
   const [showExpenseDetails, setShowExpenseDetails] = useState(false);
@@ -242,7 +277,7 @@ export default function DailyReport({
           .limit(10000),
         supabase
           .from("bookings")
-          .select("id, room_id, guest_name, status, check_in_time, check_out_time, actual_check_in_time, actual_price, created_at")
+          .select("id, room_id, guest_name, guest_phone, staff_name, status, check_in_time, check_out_time, actual_check_in_time, actual_price, created_at")
           .or(`check_out_time.gte.${windowStart.toISOString()},status.in.(reserved,checked_in)`)
           .limit(10000),
         supabase
@@ -643,6 +678,8 @@ export default function DailyReport({
         charges: number;
         inHouse: boolean;
         checkInDateStr: string;
+        chargeItems: ReceivableChargeItem[];
+        paymentItems: ReceivablePaymentItem[];
       };
 
       const snapshotBooking = (b: BookingRow, boundary: "start" | "end"): BookingSnapshot => {
@@ -676,6 +713,7 @@ export default function DailyReport({
         const parts = inHouse ? computeKeyDepositParts(txBefore, futureUnpostedRates + futureUnpostedExtras) : null;
 
         let charges = 0;
+        const chargeItems: ReceivableChargeItem[] = [];
         if (bRates.length > 0 && inHouse) {
           const singleNightRoomTx =
             bRates.length === 1
@@ -683,30 +721,93 @@ export default function DailyReport({
               : undefined;
           bRates.forEach((dr) => {
             if (!dayIncluded(dr.target_date)) return;
-            charges += singleNightRoomTx ? Number(singleNightRoomTx.amount || 0) : Number(dr.amount || 0);
+            const amt = singleNightRoomTx ? Number(singleNightRoomTx.amount || 0) : Number(dr.amount || 0);
+            charges += amt;
+            if (amt > 0) {
+              chargeItems.push({ label: `🛏️ ค่าห้องพัก (คืน ${dr.target_date})`, amount: amt });
+            }
           });
         }
         bTxs.forEach((t) => {
           if (t.transaction_type !== "revenue") return;
           const cat = t.category;
+          const amt = Number(t.amount || 0);
           if (isRoomTypeCategory(cat)) {
             if (b.status === "reserved") return;
             if ((cat === "room_charge" || cat === "ค่าห้องพัก") && bRates.length > 0) return;
             const tt = new Date(t.created_at).getTime();
-            if (tt < cutTime) charges += Number(t.amount || 0);
+            if (tt < cutTime) {
+              charges += amt;
+              if (amt > 0) {
+                const labelCat =
+                  cat === "room_charge"
+                    ? "ค่าห้องพัก"
+                    : cat === "early_in_fee"
+                    ? "ค่าเข้าพักก่อนเวลา"
+                    : cat === "late_out_fee"
+                    ? "ค่าปรับเช็คเอาท์ช้า"
+                    : cat;
+                chargeItems.push({ label: `🛏️ ${labelCat}`, amount: amt });
+              }
+            }
             return;
           }
           if (isDepositRelated(cat)) return;
           const noteDate = String(t.notes || "").match(/ประจำวันที่\s*(\d{4}-\d{2}-\d{2})/);
           const included = noteDate ? dayIncluded(noteDate[1]) : new Date(t.created_at).getTime() < cutTime;
-          if (included) charges += Number(t.amount || 0);
+          if (included) {
+            charges += amt;
+            if (amt > 0) {
+              chargeItems.push({
+                label: `🛎️ ${cat}${noteDate ? ` (${noteDate[1]})` : ""}`,
+                amount: amt,
+              });
+            }
+          }
         });
         if (inHouse) {
           bExtras.forEach((de) => {
             if (!dayIncluded(String(de.target_date))) return;
             if (isDailyExtraPostedInLedger(de, bTxs, firstStayDate)) return;
-            charges += Number(de.amount || 0);
+            const amt = Number(de.amount || 0);
+            charges += amt;
+            if (amt > 0) {
+              chargeItems.push({
+                label: `🛎️ ${de.category} (${de.target_date})`,
+                amount: amt,
+              });
+            }
           });
+        }
+
+        const paymentItems: ReceivablePaymentItem[] = [];
+        txBefore
+          .filter((t) => t.transaction_type === "payment")
+          .forEach((t) => {
+            const rawAmt = Number(t.amount || 0);
+            const absAmt = Math.abs(rawAmt);
+            if (absAmt <= 0) return;
+            const timeStr = new Date(t.created_at).toLocaleTimeString("th-TH", {
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+            if (rawAmt < 0) {
+              const bankMatch = String(t.notes || "").match(/\[BANK:([^\]]+)\]/);
+              const methodLabel =
+                t.category === "cash"
+                  ? "💵 เงินสด"
+                  : t.category === "transfer"
+                  ? `📱 โอนเงิน${bankMatch ? ` (${bankMatch[1].trim()})` : ""}`
+                  : t.category === "credit_card"
+                  ? "💳 บัตรเครดิต"
+                  : `💰 ${t.category}`;
+              paymentItems.push({ label: `${methodLabel} (${timeStr} น.)`, amount: absAmt });
+            } else {
+              paymentItems.push({ label: `↩️ คืนเงิน (${timeStr} น.)`, amount: -absAmt });
+            }
+          });
+        if (changeRefunded > 0) {
+          paymentItems.push({ label: "↩️ คืนเงินทอน", amount: -changeRefunded });
         }
 
         return {
@@ -718,6 +819,8 @@ export default function DailyReport({
           charges,
           inHouse,
           checkInDateStr,
+          chargeItems,
+          paymentItems,
         };
       };
 
@@ -1025,6 +1128,7 @@ export default function DailyReport({
         const advItems: BoxRoomBreakdownItem[] = [];
         const resItems: BoxRoomBreakdownItem[] = [];
         const heldRooms: HeldDepositRoomItem[] = [];
+        const receivableItems: ReceivableRoomBreakdownItem[] = [];
 
         allBookings.forEach((b) => {
           if (!matchBooking(b)) return;
@@ -1034,6 +1138,7 @@ export default function DailyReport({
           const balS = s.paid - s.placed - s.charges;
           const balE = e.paid - e.placed - e.charges;
           const roomNo = roomMap[b.room_id]?.room_no || "-";
+          const roomLoc = getBookingLoc(b);
 
           keyPlacedToday += e.placed - s.placed;
           keyActiveStart += s.active;
@@ -1042,8 +1147,40 @@ export default function DailyReport({
             heldRooms.push({ bookingId: b.id, roomNo, guestName: b.guest_name || "ผู้เข้าพัก", amount: e.active });
           }
 
-          arStart += Math.max(0, -balS);
-          arEnd += Math.max(0, -balE);
+          const bUnpaidStart = Math.max(0, -balS);
+          const bUnpaidEnd = Math.max(0, -balE);
+          arStart += bUnpaidStart;
+          arEnd += bUnpaidEnd;
+
+          if (bUnpaidStart >= 0.5 || bUnpaidEnd >= 0.5) {
+            const fullChargeItems: ReceivableChargeItem[] = [...e.chargeItems];
+            if (e.placed > 0) {
+              fullChargeItems.push({
+                label: "🔑 ค่ามัดจำกุญแจ (กันไว้ในลิ้นชัก)",
+                amount: e.placed,
+                isDeposit: true,
+              });
+            }
+            receivableItems.push({
+              bookingId: b.id,
+              roomNo,
+              location: roomLoc,
+              guestName: b.guest_name || "ไม่ระบุชื่อ",
+              guestPhone: b.guest_phone || undefined,
+              staffName: b.staff_name || undefined,
+              status: b.status,
+              checkInDateStr: e.checkInDateStr,
+              unpaidStart: bUnpaidStart,
+              unpaidAddedToday: Math.max(0, bUnpaidEnd - bUnpaidStart),
+              unpaidPaidToday: Math.max(0, bUnpaidStart - bUnpaidEnd),
+              unpaidEnd: bUnpaidEnd,
+              totalCharges: e.charges,
+              depositPlaced: e.placed,
+              totalPaid: e.paid,
+              chargeItems: fullChargeItems,
+              paymentItems: e.paymentItems,
+            });
+          }
           const posS = Math.max(0, balS);
           const posE = Math.max(0, balE);
           const rS = s.inHouse ? 0 : posS;
@@ -1123,6 +1260,10 @@ export default function DailyReport({
         advItems.sort((a, b) => a.roomNo.localeCompare(b.roomNo, undefined, { numeric: true }));
         resItems.sort((a, b) => a.roomNo.localeCompare(b.roomNo, undefined, { numeric: true }));
         heldRooms.sort((a, b) => a.roomNo.localeCompare(b.roomNo, undefined, { numeric: true }));
+        receivableItems.sort((a, b) => {
+          if (b.unpaidEnd !== a.unpaidEnd) return b.unpaidEnd - a.unpaidEnd;
+          return a.roomNo.localeCompare(b.roomNo, undefined, { numeric: true });
+        });
 
         // 3. ฝั่งรับชำระเงิน
         let cashToday = 0;
@@ -1254,6 +1395,7 @@ export default function DailyReport({
           },
           heldDepositRooms: heldRooms,
           receivableBox: { start: arStart, end: arEnd },
+          receivableBreakdown: receivableItems,
           dayShifts: locDayShifts,
           handovers: locHandovers,
           dayExpenses: locExpenses,
@@ -1313,6 +1455,7 @@ export default function DailyReport({
     keyDepositBox,
     heldDepositRooms,
     receivableBox,
+    receivableBreakdown,
     dayShifts,
     handovers,
     dayExpenses,
@@ -2262,10 +2405,178 @@ export default function DailyReport({
             </div>
           </div>
         </div>
-        {Math.abs(receivableChange) >= 0.5 && (
-          <div className="text-xs text-amber-200 bg-slate-800/80 border border-slate-700 rounded-lg px-3 py-2">
-            ℹ️ มียอดค้างชำระ (ลูกหนี้) {receivableChange > 0 ? "เพิ่มขึ้น" : "ลดลง"} {fmt(Math.abs(receivableChange))} วันนี้
-            (คงเหลือค้างชำระ {fmt(receivableBox.end)}) — นำมาปรับในผลรวมแล้ว
+        {(Math.abs(receivableChange) >= 0.5 || receivableBox.end >= 0.5 || receivableBreakdown.length > 0) && (
+          <div className="bg-slate-800/90 border border-amber-500/40 rounded-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowReceivableDetails((prev) => !prev)}
+              className="w-full text-left px-3.5 py-2.5 hover:bg-slate-800 transition-colors flex flex-wrap items-center justify-between gap-2 cursor-pointer"
+            >
+              <div className="text-xs text-amber-200 flex items-center gap-1.5 flex-wrap">
+                <span>ℹ️</span>
+                <span>
+                  {Math.abs(receivableChange) >= 0.5 ? (
+                    <>
+                      มียอดค้างชำระ (ลูกหนี้) {receivableChange > 0 ? "เพิ่มขึ้น" : "ลดลง"}{" "}
+                      <b className="text-amber-300">{fmt(Math.abs(receivableChange))}</b> วันนี้ (คงเหลือค้างชำระรวม{" "}
+                      <b className="text-rose-300">{fmt(receivableBox.end)}</b>) — นำมาปรับในผลรวมแล้ว
+                    </>
+                  ) : (
+                    <>
+                      มียอดลูกหนี้ค้างชำระคงเหลือสะสม <b className="text-rose-300">{fmt(receivableBox.end)}</b>{" "}
+                      (ไม่เปลี่ยนแปลงในวันนี้)
+                    </>
+                  )}
+                </span>
+                {receivableBreakdown.length > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-200 font-black text-[11px]">
+                    {receivableBreakdown
+                      .filter((r) => r.unpaidEnd >= 0.5)
+                      .map((r) => `${r.location} ห้อง ${r.roomNo} (${fmt(r.unpaidEnd)})`)
+                      .join(", ") || `${receivableBreakdown.length} ห้อง`}
+                  </span>
+                )}
+              </div>
+              <span className="text-[11px] font-black px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-200 shrink-0">
+                {showReceivableDetails
+                  ? "▲ ซ่อนรายละเอียดห้องค้างชำระ"
+                  : `🔍 กดดูห้องและรายการค่าใช้จ่ายที่ค้างชำระ (${receivableBreakdown.length} ห้อง)`}
+              </span>
+            </button>
+
+            {showReceivableDetails && (
+              <div className="p-3.5 bg-slate-950/80 border-t border-slate-700 space-y-2.5 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-300 pb-2 border-b border-slate-800">
+                  <span className="font-bold text-amber-300">
+                    📋 รายละเอียดห้องที่มียอดค้างชำระ (ลูกหนี้) — ใช้ตรวจสอบและแจ้งเรียกเก็บเงินจากลูกค้าได้ทันที
+                  </span>
+                  <span>
+                    ค้างยกมาต้นวัน: <b>{fmt(receivableBox.start)}</b> • เปลี่ยนแปลงวันนี้:{" "}
+                    <b className={receivableChange > 0 ? "text-rose-400" : "text-emerald-400"}>
+                      {fmtSigned(receivableChange)}
+                    </b>{" "}
+                    • คงเหลือค้างชำระรวม: <b className="text-rose-300 text-xs">{fmt(receivableBox.end)}</b>
+                  </span>
+                </div>
+
+                {receivableBreakdown.length === 0 ? (
+                  <div className="text-center py-3 text-slate-400">ไม่มีรายการห้องที่ค้างชำระ</div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {receivableBreakdown.map((item) => {
+                      const totalBilledWithDeposit = item.totalCharges + item.depositPlaced;
+                      const statusLabel =
+                        item.status === "checked_in"
+                          ? "🟢 กำลังเข้าพัก"
+                          : item.status === "checked_out"
+                          ? "⚪ เช็คเอาท์แล้ว"
+                          : item.status === "reserved"
+                          ? "🟣 จองล่วงหน้า"
+                          : item.status;
+                      return (
+                        <div
+                          key={item.bookingId}
+                          className="rounded-xl bg-slate-900 border border-slate-700 p-3 space-y-2"
+                        >
+                          <div className="flex items-start justify-between gap-2 border-b border-slate-800 pb-2">
+                            <div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="px-2 py-0.5 rounded-md bg-indigo-600 text-white font-black text-xs">
+                                  📍 {item.location} • ห้อง {item.roomNo}
+                                </span>
+                                <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-200 font-bold text-[11px]">
+                                  {statusLabel}
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-slate-300 mt-1">
+                                ลูกค้า: <b className="text-white">{item.guestName}</b>
+                                {item.guestPhone ? ` (${item.guestPhone})` : ""}
+                                {item.staffName ? ` • พนักงาน: ${item.staffName}` : ""}
+                                {item.checkInDateStr ? ` • เข้าพัก: ${item.checkInDateStr}` : ""}
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <div className="text-[10px] text-slate-400 font-bold">ยอดค้างชำระคงเหลือ</div>
+                              <div
+                                className={`text-base font-black ${
+                                  item.unpaidEnd > 0 ? "text-rose-400" : "text-emerald-400"
+                                }`}
+                              >
+                                {item.unpaidEnd > 0 ? fmt(item.unpaidEnd) : "ชำระครบแล้ว (฿0)"}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* แจกแจงรายการค่าใช้จ่ายที่เรียกเก็บ vs รายการที่ชำระแล้ว */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                            <div className="bg-slate-800/70 border border-slate-700/80 rounded-lg p-2 space-y-1">
+                              <div className="flex justify-between items-center font-black text-amber-300 border-b border-slate-700 pb-1">
+                                <span>🧾 รายการที่เรียกเก็บ</span>
+                                <span>{fmt(totalBilledWithDeposit)}</span>
+                              </div>
+                              {item.chargeItems.length === 0 ? (
+                                <div className="text-slate-400 text-[10px]">ไม่มีรายการเรียกเก็บ</div>
+                              ) : (
+                                item.chargeItems.map((ch, idx) => (
+                                  <div
+                                    key={idx}
+                                    className={`flex justify-between items-center gap-1 ${
+                                      ch.isDeposit ? "text-amber-200" : "text-slate-200"
+                                    }`}
+                                  >
+                                    <span className="truncate">{ch.label}</span>
+                                    <span className="font-bold shrink-0">{fmt(ch.amount)}</span>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+
+                            <div className="bg-slate-800/70 border border-slate-700/80 rounded-lg p-2 space-y-1">
+                              <div className="flex justify-between items-center font-black text-emerald-300 border-b border-slate-700 pb-1">
+                                <span>💵 ชำระมาแล้วรวม</span>
+                                <span>{fmt(item.totalPaid)}</span>
+                              </div>
+                              {item.paymentItems.length === 0 ? (
+                                <div className="text-rose-300 text-[10px] font-semibold">
+                                  ยังไม่มีรายการรับชำระเงิน (฿0)
+                                </div>
+                              ) : (
+                                item.paymentItems.map((pm, idx) => (
+                                  <div key={idx} className="flex justify-between items-center gap-1 text-slate-200">
+                                    <span className="truncate">{pm.label}</span>
+                                    <span className="font-bold text-emerald-300 shrink-0">{fmt(pm.amount)}</span>
+                                  </div>
+                                ))
+                              )}
+                              {item.depositPlaced > 0 && (
+                                <div className="text-[10px] text-amber-300/90 pt-1 border-t border-slate-700/70">
+                                  * หักกันเป็นเงินมัดจำกุญแจ {fmt(item.depositPlaced)} เหลือตัดค่าห้อง/บริการ{" "}
+                                  <b>{fmt(Math.max(0, item.totalPaid - item.depositPlaced))}</b>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* แถบสรุปการเคลื่อนไหววันนี้ */}
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[10px] text-slate-300 border-t border-slate-800">
+                            <span>
+                              ค้างยกมาต้นวัน: <b>{fmt(item.unpaidStart)}</b> • ค้างเพิ่มวันนี้:{" "}
+                              <b className="text-rose-300">+{fmt(item.unpaidAddedToday)}</b> • รับชำระหนี้วันนี้:{" "}
+                              <b className="text-emerald-300">-{fmt(item.unpaidPaidToday)}</b>
+                            </span>
+                            {item.unpaidEnd > 0 && (
+                              <span className="px-2 py-0.5 rounded bg-rose-950/90 border border-rose-700 text-rose-200 font-black">
+                                ⚠️ ต้องเรียกเก็บเพิ่มจากลูกค้า {fmt(item.unpaidEnd)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
