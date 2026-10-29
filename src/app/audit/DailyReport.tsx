@@ -214,10 +214,12 @@ export default function DailyReport({
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
   const [signTarget, setSignTarget] = useState<CashHandover | null>(null);
   const [signPin, setSignPin] = useState("");
+  const [receiverPin, setReceiverPin] = useState("");
   const [signError, setSignError] = useState("");
   const [signSaving, setSignSaving] = useState(false);
   const [showZeroRevenueItems, setShowZeroRevenueItems] = useState(false);
   const managerSigRef = useRef<SignaturePadHandle>(null);
+  const receiverSigRef = useRef<SignaturePadHandle>(null);
 
   useEffect(() => {
     async function fetchDailyData() {
@@ -1334,10 +1336,18 @@ export default function DailyReport({
           0
         );
 
+        const hasAnyLocEod = Object.values(locDayClosedMap).some(Boolean);
+        const activeShiftLocsToday = orderedLocations.filter((l) =>
+          dayShiftList.some((s) => (shiftMetaMap[s.id]?.shift_location || "ซอย1") === l)
+        );
         const isLocDayClosed =
           locFilter === "ALL"
-            ? dayClosed || (orderedLocations.some((l) => locDayClosedMap[l]) && locOpenShifts.length === 0)
-            : Boolean(locDayClosedMap[locFilter] || dayClosed);
+            ? hasAnyLocEod
+              ? activeShiftLocsToday.length > 0 &&
+                activeShiftLocsToday.every((l) => Boolean(locDayClosedMap[l])) &&
+                locOpenShifts.length === 0
+              : dayClosed
+            : Boolean(locDayClosedMap[locFilter] || (!hasAnyLocEod && dayClosed));
 
         const crossLocCollectedForHere =
           locFilter === "ALL"
@@ -1492,7 +1502,19 @@ export default function DailyReport({
   const openShifts = dayShifts.filter((s) => s.status === "open");
   const handoverRequiredTotal = handovers.reduce((s, h) => s + Number(h.required_amount || 0), 0);
   const totalRequiredToSend = handoverRequiredTotal + liveRequiredTotal;
-  const cashReceivedNet = totalRequiredToSend + totalExpense;
+  const latestCarriedByLoc: Record<string, number> = {};
+  handovers.forEach((h) => {
+    if (h.kind === "shift_close") {
+      const locKey = h.shift_location || "ซอย1";
+      latestCarriedByLoc[locKey] = Number(h.carried_to_next_shift || 0);
+    }
+  });
+  openShifts.forEach((s) => {
+    const locKey = s.shift_location || "ซอย1";
+    delete latestCarriedByLoc[locKey];
+  });
+  const unconsumedCarriedOutTotal = Object.values(latestCarriedByLoc).reduce((sum, v) => sum + v, 0);
+  const cashReceivedNet = totalRequiredToSend + totalExpense + unconsumedCarriedOutTotal;
   const cashOverTotal = handovers.reduce(
     (s, h) => s + Math.max(0, Number(h.actual_amount || 0) - Number(h.required_amount || 0)),
     0
@@ -1550,24 +1572,58 @@ export default function DailyReport({
   const handleManagerSign = async () => {
     if (!signTarget) return;
     setSignError("");
+    const isNegSign = (signTarget.kind === "mid_shift" ? signTarget.actual_amount : signTarget.required_amount) < 0;
     const sig = managerSigRef.current?.toDataURL() || null;
     if (!sig) {
-      setSignError("กรุณาเซ็นชื่อก่อนยืนยัน");
+      setSignError("กรุณาให้ผู้จัดการเซ็นชื่อก่อนยืนยัน");
+      return;
+    }
+    const recSig = isNegSign ? receiverSigRef.current?.toDataURL() || null : null;
+    if (isNegSign && !signTarget.staff_signature && !recSig) {
+      setSignError("กรุณาให้พนักงานผู้รับผิดชอบกะเซ็นรับเงินด้วย");
       return;
     }
     setSignSaving(true);
     const manager = await verifyManagerPin(signPin);
     if (!manager) {
       setSignSaving(false);
-      setSignError("รหัส PIN ไม่ถูกต้อง หรือไม่มีสิทธิ์ (ต้องเป็นผู้จัดการ/แอดมิน)");
+      setSignError("รหัส PIN ผู้จัดการไม่ถูกต้อง (ต้องเป็นผู้จัดการ/แอดมิน)");
       return;
     }
+
+    let receiverStaffName = signTarget.staff_name;
+    if (isNegSign && (recSig || receiverPin)) {
+      if (!receiverPin) {
+        setSignSaving(false);
+        setSignError("กรุณากรอกรหัส PIN ของพนักงานผู้รับเงินเพื่อยืนยัน");
+        return;
+      }
+      const { data: recStaff } = await supabase
+        .from("staff")
+        .select("name")
+        .eq("pin", receiverPin)
+        .maybeSingle();
+      if (!recStaff) {
+        setSignSaving(false);
+        setSignError("รหัส PIN ของพนักงานผู้รับเงินไม่ถูกต้อง");
+        return;
+      }
+      receiverStaffName = recStaff.name;
+    }
+
     const nowIso = new Date().toISOString();
     const updated: CashHandover = {
       ...signTarget,
       manager_name: manager.name,
       manager_signature: sig,
       manager_signed_at: nowIso,
+      ...(isNegSign && recSig
+        ? {
+            staff_name: receiverStaffName,
+            staff_signature: recSig,
+            staff_signed_at: nowIso,
+          }
+        : {}),
     };
     const { error } = await saveHandover(updated);
     setSignSaving(false);
@@ -1580,13 +1636,14 @@ export default function DailyReport({
       action: "update",
       staffName: manager.name,
       shiftName: signTarget.shift_staff_name,
-      target: `ผู้จัดการเซ็นรับเงิน กะ ${signTarget.shift_staff_name}`,
-      details: `ผู้จัดการ ${manager.name} เซ็นรับ-ส่งเงินกะ ${signTarget.shift_staff_name} (ต้องส่ง ${fmt(
-        signTarget.required_amount
-      )}, ส่งจริง ${fmt(signTarget.actual_amount)})`,
+      target: `ผู้จัดการเซ็น${isNegSign ? "ส่งเงิน" : "รับเงิน"} กะ ${signTarget.shift_staff_name}`,
+      details: `ผู้จัดการ ${manager.name} เซ็น${isNegSign ? `ส่งเงินเติมเข้าลิ้นชัก (ผู้รับเงิน: ${receiverStaffName})` : "รับเงิน"}กะ ${signTarget.shift_staff_name} (${fmt(
+        Math.abs(signTarget.actual_amount || signTarget.required_amount)
+      )})`,
     });
     setSignTarget(null);
     setSignPin("");
+    setReceiverPin("");
     setRefreshKey((k) => k + 1);
   };
 
@@ -2700,6 +2757,12 @@ export default function DailyReport({
                 </div>
               )}
             </div>
+            {unconsumedCarriedOutTotal > 0 && (
+              <div className="flex justify-between items-center py-1.5 border-b border-slate-100 text-indigo-700 font-bold">
+                <span>🪙 หัก เงินทอนทิ้งไว้ในลิ้นชักส่งต่อกะหน้า</span>
+                <span className="font-black">-{fmt(unconsumedCarriedOutTotal)}</span>
+              </div>
+            )}
             <div className="flex justify-between items-center py-1.5 px-2 rounded-lg bg-slate-100 font-black text-slate-900">
               <span>= ยอดเงินสดที่ต้องส่ง (ตามระบบ)</span>
               <span>{fmt(totalRequiredToSend)}</span>
@@ -2973,52 +3036,88 @@ export default function DailyReport({
       </div>
 
       {/* หน้าต่างผู้จัดการเซ็นรับ/ส่งเงิน */}
-      {signTarget && (
-        <div className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
-            <div className="px-5 py-4 bg-amber-500 text-white">
-              <h3 className="font-black text-lg">✍️ ผู้จัดการเซ็น{(signTarget.kind === "mid_shift" ? signTarget.actual_amount : signTarget.required_amount) < 0 ? "ส่งเงิน" : "รับเงิน"}</h3>
-              <p className="text-xs text-amber-50 mt-0.5">
-                กะ {signTarget.shift_staff_name} • ต้องส่ง {fmtSigned(signTarget.required_amount)} • ส่งจริง{" "}
-                {fmtSigned(signTarget.actual_amount)}
-              </p>
-            </div>
-            <div className="p-5 space-y-3">
-              {signError && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg font-bold">{signError}</div>}
-              <SignaturePad ref={managerSigRef} label="ลายเซ็นผู้จัดการ" />
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">รหัส PIN ผู้จัดการ</label>
-                <input
-                  type="password"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={signPin}
-                  onChange={(e) => setSignPin(e.target.value.replace(/\D/g, ""))}
-                  className="w-full text-center tracking-[0.5em] text-xl p-3 rounded-xl border border-slate-200 focus:border-amber-500 outline-none"
-                  placeholder="••••"
+      {signTarget && (() => {
+        const isNegModal = (signTarget.kind === "mid_shift" ? signTarget.actual_amount : signTarget.required_amount) < 0;
+        return (
+          <div className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3">
+            <div className="bg-white rounded-2xl w-full max-w-md max-h-[95vh] overflow-y-auto shadow-2xl">
+              <div className={`px-5 py-3.5 text-white ${isNegModal ? "bg-rose-600" : "bg-amber-500"}`}>
+                <h3 className="font-black text-base">
+                  ✍️ {isNegModal ? "ผู้จัดการเซ็นส่งเงิน & พนักงานเซ็นรับเงิน" : "ผู้จัดการเซ็นรับเงิน"}
+                </h3>
+                <p className="text-xs opacity-90 mt-0.5">
+                  กะ {signTarget.shift_staff_name} • {isNegModal ? "ยอดเติมเงินเข้าลิ้นชัก" : "ยอดส่งจริง"}{" "}
+                  <b>{fmt(Math.abs(signTarget.actual_amount || signTarget.required_amount))}</b>
+                </p>
+              </div>
+              <div className="p-4 space-y-3">
+                {signError && <div className="bg-red-50 text-red-600 text-xs p-2.5 rounded-lg font-bold">{signError}</div>}
+                <SignaturePad
+                  ref={managerSigRef}
+                  label={isNegModal ? "1. ลายเซ็นผู้จัดการ (ผู้ส่งเงินเติมเข้าลิ้นชัก)" : "ลายเซ็นผู้จัดการ (ผู้รับเงิน)"}
                 />
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">รหัส PIN ผู้จัดการ</label>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={signPin}
+                    onChange={(e) => setSignPin(e.target.value.replace(/\D/g, ""))}
+                    className="w-full text-center tracking-[0.5em] text-lg p-2.5 rounded-xl border border-slate-200 focus:border-amber-500 outline-none"
+                    placeholder="••••"
+                  />
+                </div>
+
+                {isNegModal && (
+                  <div className="pt-2 border-t border-slate-200 space-y-2.5">
+                    <SignaturePad
+                      ref={receiverSigRef}
+                      label={`2. ลายเซ็นพนักงานผู้รับผิดชอบกะ (ผู้รับเงินเข้าลิ้นชัก${signTarget.staff_signature ? " — เซ็นทับเพื่ออัปเดตผู้รับได้" : ""})`}
+                    />
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        รหัส PIN พนักงานผู้รับเงิน {signTarget.staff_signature ? `(เว้นว่างได้หาก ${signTarget.staff_name} เซ็นรับไว้แล้ว)` : ""}
+                      </label>
+                      <input
+                        type="password"
+                        inputMode="numeric"
+                        maxLength={6}
+                        value={receiverPin}
+                        onChange={(e) => setReceiverPin(e.target.value.replace(/\D/g, ""))}
+                        className="w-full text-center tracking-[0.5em] text-lg p-2.5 rounded-xl border border-slate-200 focus:border-rose-500 outline-none"
+                        placeholder="••••"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="bg-slate-50 p-4 border-t border-slate-100 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSignTarget(null);
+                    setReceiverPin("");
+                  }}
+                  className="flex-1 py-3 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  onClick={handleManagerSign}
+                  disabled={signSaving || !signPin}
+                  className={`flex-1 py-3 text-white font-black rounded-xl disabled:opacity-50 ${
+                    isNegModal ? "bg-rose-600 hover:bg-rose-700" : "bg-amber-500 hover:bg-amber-600"
+                  }`}
+                >
+                  {signSaving ? "กำลังบันทึก..." : "ยืนยันลายเซ็น"}
+                </button>
               </div>
             </div>
-            <div className="bg-slate-50 p-4 border-t border-slate-100 flex gap-3">
-              <button
-                type="button"
-                onClick={() => setSignTarget(null)}
-                className="flex-1 py-3 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl"
-              >
-                ยกเลิก
-              </button>
-              <button
-                type="button"
-                onClick={handleManagerSign}
-                disabled={signSaving || !signPin}
-                className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white font-black rounded-xl disabled:opacity-50"
-              >
-                {signSaving ? "กำลังบันทึก..." : "ยืนยันลายเซ็น"}
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {viewPhoto && (
         <div className="fixed inset-0 z-[120] bg-black/80 flex items-center justify-center p-4" onClick={() => setViewPhoto(null)}>

@@ -22,6 +22,7 @@ import {
   saveLastClosedDrawer,
   saveShiftBusinessDate,
   ShiftDrawer,
+  verifyManagerPin,
 } from "@/lib/cashHandover";
 import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
 import SignaturePad, { SignaturePadHandle } from "./SignaturePad";
@@ -66,8 +67,10 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
   const [negCloseMode, setNegCloseMode] = useState<"manager_topup" | "leave_as_is">("manager_topup");
   const [actualSend, setActualSend] = useState<number | "">("");
   const [closePin, setClosePin] = useState("");
+  const [closeManagerPin, setCloseManagerPin] = useState("");
   const [isEndOfDay, setIsEndOfDay] = useState(false);
   const staffSigRef = useRef<SignaturePadHandle>(null);
+  const managerSigRef = useRef<SignaturePadHandle>(null);
 
   const isMgr = !currentUser || currentUser.role === "admin" || currentUser.role === "manager";
   const staffPrimaryLocation =
@@ -379,17 +382,20 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
   const resetCloseState = () => {
     setShowCloseModal(false);
     setClosePin("");
+    setCloseManagerPin("");
     setCarriedToNextShift(0);
     setNegCloseMode("manager_topup");
     setActualSend("");
     setIsEndOfDay(false);
     setErrorMsg("");
     staffSigRef.current?.clear();
+    managerSigRef.current?.clear();
   };
 
   const drawerCash = closeDrawer?.drawer || 0;
   const netCashBeforeCarry = drawerCash - closeReserve;
   const isShortForReserve = netCashBeforeCarry < 0;
+  const isManagerTopupNow = isShortForReserve && negCloseMode === "manager_topup";
   const carriedNum = isShortForReserve
     ? 0
     : carriedToNextShift === ""
@@ -424,7 +430,16 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
     }
     const staffSig = staffSigRef.current?.toDataURL() || null;
     if (!staffSig) {
-      setErrorMsg("กรุณาเซ็นชื่อผู้ส่งกะก่อนยืนยัน");
+      setErrorMsg(
+        isManagerTopupNow
+          ? "กรุณาให้พนักงานเซ็นชื่อรับเงินเข้าลิ้นชักก่อนยืนยัน"
+          : "กรุณาเซ็นชื่อผู้ส่งกะก่อนยืนยัน"
+      );
+      return;
+    }
+    const managerSig = isManagerTopupNow ? managerSigRef.current?.toDataURL() || null : null;
+    if (isManagerTopupNow && !managerSig) {
+      setErrorMsg("กรุณาให้ผู้จัดการเซ็นชื่อผู้ส่งเงิน (เติมเงินเข้าลิ้นชัก) คู่กับพนักงาน หรือเลือก '⏭️ ยังไม่เติม' หากผู้จัดการไม่อยู่");
       return;
     }
     setCloseSaving(true);
@@ -438,8 +453,21 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
 
     if (staffError || !staffData) {
       setCloseSaving(false);
-      setErrorMsg("รหัส PIN ไม่ถูกต้อง (ต้องเป็น PIN ของพนักงานเจ้าของกะ)");
+      setErrorMsg("รหัส PIN พนักงานไม่ถูกต้อง (ต้องเป็น PIN ของเจ้าของกะ)");
       return;
+    }
+
+    let verifiedManager: { name: string; role: string } | null = null;
+    if (isManagerTopupNow) {
+      const mgrPinToUse =
+        closeManagerPin ||
+        (staffData.role === "admin" || staffData.role === "manager" ? closePin : "");
+      verifiedManager = await verifyManagerPin(mgrPinToUse);
+      if (!verifiedManager) {
+        setCloseSaving(false);
+        setErrorMsg("รหัส PIN ผู้จัดการไม่ถูกต้อง (ต้องเป็น PIN ของผู้จัดการหรือแอดมินที่เติมเงิน)");
+        return;
+      }
     }
 
     const nowIso = getNow().toISOString();
@@ -468,7 +496,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
     const handoverNote = isShortForReserve
       ? negCloseMode === "leave_as_is"
         ? `ยังไม่เติมมัดจำที่ขาด ${fmt(Math.abs(netCashBeforeCarry))} (ทิ้งเงินไว้เท่าที่มี ${fmt(nextShiftDrawerTotal)})`
-        : `ผู้จัดการเติมเงินมัดจำที่ขาด ${fmt(Math.abs(netCashBeforeCarry))} (ครบมัดจำ ${fmt(closeReserve)})`
+        : `ผู้จัดการ (${verifiedManager?.name || "-"}) เติมเงินมัดจำที่ขาด ${fmt(Math.abs(netCashBeforeCarry))} ให้ ${activeShift.staff_name} รับเข้าลิ้นชัก (ครบมัดจำ ${fmt(closeReserve)})`
       : carriedNum > 0
       ? `เหลือเงินทอนส่งต่อกะหน้า ${fmt(carriedNum)} (รวมในลิ้นชัก ${fmt(nextShiftDrawerTotal)})`
       : null;
@@ -489,9 +517,9 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       staff_name: activeShift.staff_name,
       staff_signature: staffSig,
       staff_signed_at: nowIso,
-      manager_name: null,
-      manager_signature: null,
-      manager_signed_at: null,
+      manager_name: verifiedManager ? verifiedManager.name : null,
+      manager_signature: verifiedManager ? managerSig : null,
+      manager_signed_at: verifiedManager ? nowIso : null,
       note: handoverNote,
       created_at: nowIso,
     };
@@ -522,13 +550,26 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
             { onConflict: "key" }
           );
       }
-      // ปิดรอบวันให้ "วันธุรกิจของกะนี้" เท่านั้น (แม้จะกดปิดหลัง 06:45 น. ก็ไม่ไปปิดวันใหม่)
-      await supabase
-        .from("system_settings")
-        .upsert(
-          { key: `${EOD_KEY_PREFIX}${businessDate}`, value: { shift_id: activeShift.id, location: shiftLoc, closed_at: nowIso } },
-          { onConflict: "key" }
+      // ตรวจสอบว่ายังมีกะของสาขาอื่นในวันธุรกิจเดียวกันเปิดค้างอยู่หรือไม่ ก่อนจะบันทึก EOD รวมทั้งโรงแรม
+      const { data: remainingOpen } = await supabase
+        .from("shifts")
+        .select("id, start_time, staff_name")
+        .eq("status", "open");
+      let hasOtherOpenInSameBD = false;
+      if (remainingOpen && remainingOpen.length > 0) {
+        const remMeta = await fetchShiftMetadata(remainingOpen);
+        hasOtherOpenInSameBD = remainingOpen.some(
+          (s) => s.id !== activeShift.id && (remMeta[s.id]?.business_date || getShiftBusinessDateStr(s.start_time)) === businessDate
         );
+      }
+      if (!hasOtherOpenInSameBD) {
+        await supabase
+          .from("system_settings")
+          .upsert(
+            { key: `${EOD_KEY_PREFIX}${businessDate}`, value: { shift_id: activeShift.id, location: shiftLoc, closed_at: nowIso } },
+            { onConflict: "key" }
+          );
+      }
     }
 
     await logActivity({
@@ -1027,7 +1068,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
                     <div className="rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs font-bold text-slate-800">
                       {negCloseMode === "manager_topup" ? (
                         <span className="text-emerald-700">
-                          ✅ ผู้จัดการเติมเงิน <b>{fmt(Math.abs(netCashBeforeCarry))}</b> เข้าลิ้นชัก (ผู้จัดการกดเซ็นในหน้ารายงาน) • ทิ้งเงินไว้ <b>{fmt(closeReserve)}</b>
+                          ✅ ผู้จัดการเติมเงิน <b>{fmt(Math.abs(netCashBeforeCarry))}</b> เข้าลิ้นชัก (ผู้จัดการเซ็นส่ง + พนักงานเซ็นรับด้านล่าง) • ทิ้งเงินไว้ <b>{fmt(closeReserve)}</b>
                         </span>
                       ) : (
                         <span className="text-indigo-800">
@@ -1118,19 +1159,50 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
                   </>
                 )}
 
-                <SignaturePad ref={staffSigRef} label="ลายเซ็นพนักงานผู้ส่งกะ" />
-                <p className="text-[11px] text-slate-500 -mt-2">
-                  * ผู้จัดการกดเซ็นในหน้ารายงาน (กล่องเงินสด)
-                </p>
+                {isManagerTopupNow && (
+                  <div className="rounded-xl border border-rose-200 bg-rose-50/40 p-3 space-y-2.5">
+                    <SignaturePad ref={managerSigRef} label="1. ลายเซ็นผู้จัดการ (ผู้ส่งเงินเติมเข้าลิ้นชัก)" />
+                    <div>
+                      <label className="block text-xs font-bold text-rose-900 mb-1">
+                        รหัส PIN ผู้จัดการ (ยืนยันเติมเงิน {fmt(Math.abs(netCashBeforeCarry))})
+                      </label>
+                      <input
+                        type="password"
+                        inputMode="numeric"
+                        maxLength={6}
+                        value={closeManagerPin}
+                        onChange={(e) => setCloseManagerPin(e.target.value.replace(/\D/g, ""))}
+                        className="w-full text-center tracking-[0.5em] text-lg p-2.5 rounded-xl border border-rose-200 bg-white focus:border-rose-500 outline-none"
+                        placeholder="••••"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <SignaturePad
+                  ref={staffSigRef}
+                  label={
+                    isManagerTopupNow
+                      ? "2. ลายเซ็นพนักงาน (ผู้รับเงินเข้าลิ้นชัก & ปิดกะ)"
+                      : "ลายเซ็นพนักงานผู้ส่งกะ"
+                  }
+                />
+                {!isManagerTopupNow && (
+                  <p className="text-[11px] text-slate-500 -mt-2">
+                    * ผู้จัดการกดเซ็นในหน้ารายงาน (กล่องเงินสด)
+                  </p>
+                )}
 
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">รหัส PIN ยืนยัน (เจ้าของกะ)</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    รหัส PIN พนักงานเจ้าของกะ ({activeShift.staff_name})
+                  </label>
                   <input
                     type="password"
                     maxLength={4}
                     value={closePin}
                     onChange={(e) => setClosePin(e.target.value.replace(/\D/g, ""))}
-                    className="w-full text-center tracking-[0.5em] text-xl p-3 rounded-xl border border-slate-200 focus:border-emerald-500 outline-none"
+                    className="w-full text-center tracking-[0.5em] text-lg p-2.5 rounded-xl border border-slate-200 focus:border-emerald-500 outline-none"
                     placeholder="••••"
                   />
                 </div>

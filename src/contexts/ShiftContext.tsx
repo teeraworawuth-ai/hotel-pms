@@ -375,10 +375,14 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
     const clockBD = getBusinessDateStr(now);
     const nextBD = addDaysStr(clockBD, 1);
     if (activeShift?.business_date === nextBD) return nextBD;
+    if (activeShift && activeShift.id !== 'dummy-shift-id' && !activeShift.housekeeper_only && activeShift.business_date === clockBD) {
+      return clockBD;
+    }
     const { eodAllowedFrom } = getShiftCutoffs(clockBD);
     const focusLoc = activeShift?.shift_location || currentUser?.primary_location || currentUser?.locations?.[0] || null;
+    const hasAnyLocEodForClockBD = Array.from(closedLocEodKeys).some((k) => k.endsWith(`_${clockBD}`));
     const isEodClosedForLoc = focusLoc
-      ? closedLocEodKeys.has(`${focusLoc}_${clockBD}`) || closedEodDates.has(clockBD)
+      ? closedLocEodKeys.has(`${focusLoc}_${clockBD}`) || (!hasAnyLocEodForClockBD && closedEodDates.has(clockBD))
       : closedEodDates.has(clockBD);
     if (now.getTime() >= eodAllowedFrom.getTime() && isEodClosedForLoc) {
       return nextBD;
