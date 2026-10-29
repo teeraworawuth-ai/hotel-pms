@@ -790,9 +790,11 @@ export default function DailyReport({
 
           const storedTarget = meta?.targetPrices?.dailyTargets?.[reportDateStr];
           const targetNightPrice =
-            storedTarget !== undefined
+            storedTarget !== undefined && Number(storedTarget) > 0
               ? Number(storedTarget)
-              : Number(room?.price_night || actualNightPrice);
+              : Number(room?.price_night || 0) > 0
+              ? Number(room?.price_night)
+              : actualNightPrice;
 
           const diff = actualNightPrice - targetNightPrice;
           rTarget += targetNightPrice;

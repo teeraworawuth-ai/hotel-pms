@@ -174,6 +174,18 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
         if (activeTab === 'short_stay') {
           setDailyBreakdown([]);
+          const hasRoomTempPrice = Boolean(room.price_temp && Number(room.price_temp) > 0);
+          if (!hasRoomTempPrice) {
+            setShortStayBase3Hr(0);
+            setTotalTargetPrice(0);
+            if (isExistingBooking && room.actual_price !== undefined && room.actual_price !== null) {
+              setActualPrice(Number(room.actual_price));
+            } else {
+              setActualPrice('');
+            }
+            return;
+          }
+
           const { data: todaySetting } = await supabase
             .from('daily_pricing_settings')
             .select('rate_plan_id')
@@ -181,7 +193,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
             .maybeSingle();
 
           const activePlanId = todaySetting?.rate_plan_id || fallbackPlanId;
-          let base3Hr = Number(room.price_temp || 350);
+          let base3Hr = Number(room.price_temp || 0);
 
           if (activePlanId && ratePlanTempPrices?.[activePlanId]?.[room.room_type] && Number(ratePlanTempPrices[activePlanId][room.room_type]) > 0) {
             base3Hr = Number(ratePlanTempPrices[activePlanId][room.room_type]);
@@ -221,6 +233,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           return;
         }
         
+        const hasRoomNightPrice = Boolean(room.price_night && Number(room.price_night) > 0);
         const numNights = Math.max(1, Number(nights) || 0);
         const targetDates: string[] = [];
         for (let i = 0; i < numNights; i++) {
@@ -262,6 +275,25 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           const setting = dailySettings?.find(s => s.target_date === dateStr);
           const activePlanId = setting ? setting.rate_plan_id : fallbackPlanId;
           const activePlanName = ratePlans.find(rp => rp.id === activePlanId)?.name || 'Default';
+
+          // กรณีห้องนี้ยังไม่ได้ตั้งราคาค้างคืนไว้ (price_night เป็นค่าว่าง/0): ไม่แสดงราคาเป้าหมาย และปล่อยให้กรอกราคาเองโดยไม่ติดลบ/ไม่บวกเกิน
+          if (!hasRoomNightPrice) {
+            const savedRate = savedDailyRates.find(r => r.target_date === dateStr);
+            let dayActualPrice: number | '' = '';
+            if (savedRate !== undefined) {
+              dayActualPrice = Number(savedRate.amount);
+            } else if (isExistingBooking && numNights === 1 && room.actual_price !== undefined && room.actual_price !== null) {
+              dayActualPrice = Number(room.actual_price);
+            }
+            breakdown.push({
+              date: dateStr,
+              ratePlanName: activePlanName,
+              targetPrice: 0,
+              actualPrice: dayActualPrice,
+              isOverride: false
+            });
+            continue;
+          }
 
           let targetPrice = room.price_night || 0;
           
@@ -310,7 +342,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
           total += effectiveTargetPrice;
 
           const savedRate = savedDailyRates.find(r => r.target_date === dateStr);
-          let dayActualPrice = effectiveTargetPrice;
+          let dayActualPrice: number | '' = effectiveTargetPrice;
           let isOverride = false;
           if (savedRate !== undefined) {
             dayActualPrice = Number(savedRate.amount);
@@ -336,9 +368,10 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
 
   useEffect(() => {
     if (activeTab === 'overnight') {
+      const allEmpty = dailyBreakdown.length > 0 && dailyBreakdown.every(d => d.actualPrice === '');
       const totalAct = dailyBreakdown.reduce((sum, d) => sum + (d.actualPrice === '' ? 0 : d.actualPrice), 0);
       const totalTgt = dailyBreakdown.reduce((sum, d) => sum + d.targetPrice, 0);
-      setActualPrice(totalAct);
+      setActualPrice(allEmpty ? '' : totalAct);
       setTotalTargetPrice(totalTgt);
     }
   }, [dailyBreakdown, activeTab]);
@@ -410,9 +443,11 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
     const base = totalTargetPrice || 0;
     if (base > 0 && p !== '') {
       setDiscount(base > Number(p) ? base - Number(p) : '');
+    } else {
+      setDiscount('');
     }
-    if (dailyBreakdown.length === 1 && p !== '') {
-      updateDailyActualPrice(dailyBreakdown[0].date, String(p));
+    if (dailyBreakdown.length === 1) {
+      updateDailyActualPrice(dailyBreakdown[0].date, newPriceStr === '' ? '' : String(p));
     }
   };
 
@@ -2974,7 +3009,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                       </p>
                     ) : (
                       <p className="text-[11px] text-slate-400 font-medium">
-                        ออก: {new Date(((isExistingBooking && room.check_in_time) ? new Date(room.check_in_time) : getNow()).getTime() + (Number(hours) || 3) * 3600000).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น. • 3 ชม. แรก ฿{shortStayBase3Hr.toLocaleString()} (+฿{roundUpToEasyChange(shortStayBase3Hr / 3).toLocaleString()}/ชม.)
+                        ออก: {new Date(((isExistingBooking && room.check_in_time) ? new Date(room.check_in_time) : getNow()).getTime() + (Number(hours) || 3) * 3600000).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.{shortStayBase3Hr > 0 ? ` • 3 ชม. แรก ฿${shortStayBase3Hr.toLocaleString()} (+฿${roundUpToEasyChange(shortStayBase3Hr / 3).toLocaleString()}/ชม.)` : ''}
                       </p>
                     )}
                   </div>
@@ -3037,9 +3072,9 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                         onChange={(e) => handleActualPriceChange(e.target.value)}
                         disabled={isBookingLocked || isMultiNight}
                         readOnly={isMultiNight}
-                        placeholder="0"
+                        placeholder="กรอกราคาค่าห้อง..."
                         className={`w-full border rounded-2xl pl-9 pr-3 py-3 text-lg font-black focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 disabled:opacity-80 transition-all shadow-xs ${
-                          targetTotal > 0 && diff < 0 ? 'border-red-300 bg-red-50 text-red-700' : targetTotal > 0 && diff > 0 ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-300/80 bg-white text-slate-900'
+                          targetTotal > 0 && actualPrice !== '' && diff < 0 ? 'border-red-300 bg-red-50 text-red-700' : targetTotal > 0 && actualPrice !== '' && diff > 0 ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-300/80 bg-white text-slate-900'
                         }`}
                       />
                     </div>
@@ -3077,7 +3112,7 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                       {dailyBreakdown.map(day => {
                         let colorClass = "text-slate-800 border-slate-200 bg-white";
                         let icon = "";
-                        if (day.isOverride && day.actualPrice !== '') {
+                        if (Number(day.targetPrice) > 0 && day.isOverride && day.actualPrice !== '') {
                           if (Number(day.actualPrice) < Number(day.targetPrice)) {
                             colorClass = "text-red-600 border-red-300 bg-red-50";
                             icon = "🔻";
@@ -3089,13 +3124,14 @@ export default function RoomCheckinModal({ room, dateOffset, onClose, onUpdate }
                         return (
                           <tr key={day.date} className="border-t border-slate-100">
                             <td className="p-2 font-medium">{new Date(day.date).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}</td>
-                            <td className="p-2 text-right text-slate-400">฿{day.targetPrice}</td>
+                            <td className="p-2 text-right text-slate-400">{Number(day.targetPrice) > 0 ? `฿${day.targetPrice}` : '-'}</td>
                             <td className="p-1 text-right">
                               <div className="relative inline-block">
                                 {icon && <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[10px]">{icon}</span>}
                                 <input 
                                   type="number" min="0"
                                   value={day.actualPrice}
+                                  placeholder="0"
                                   onChange={e => updateDailyActualPrice(day.date, e.target.value)}
                                   disabled={isBookingLocked}
                                   className={`w-24 border rounded pl-6 pr-2 py-1 text-right font-bold transition-colors ${colorClass}`}
