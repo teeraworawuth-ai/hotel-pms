@@ -193,10 +193,12 @@ export default function ShiftExpenseButton({
             rows.length > 0
               ? "bg-orange-100 hover:bg-orange-200 text-orange-800 border-orange-200"
               : "bg-white hover:bg-orange-50 text-orange-700 border-orange-200"
-          } ${compact ? "px-2.5 py-1 rounded-xl text-xs" : "px-4 py-1.5 rounded-full text-sm"}`}
+          } ${compact ? "px-2 py-1 rounded-lg text-[11px]" : "px-4 py-1.5 rounded-full text-sm"}`}
           title="บันทึก/ตรวจสอบรายจ่ายเงินสดของกะนี้"
         >
-          💸 รายจ่ายกะนี้ ({rows.length} รายการ{rows.length > 0 ? ` • ${fmt(total)}` : ""})
+          {compact
+            ? `💸 รายจ่าย (${rows.length}${rows.length > 0 ? `•${fmt(total)}` : ""})`
+            : `💸 รายจ่ายกะนี้ (${rows.length} รายการ${rows.length > 0 ? ` • ${fmt(total)}` : ""})`}
         </button>
       )}
 

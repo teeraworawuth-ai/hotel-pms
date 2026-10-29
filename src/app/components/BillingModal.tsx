@@ -8,7 +8,7 @@ import FolioReceiptModal from './FolioReceiptModal';
 import TransferTimePicker from './TransferTimePicker';
 
 type PosItem = { id: string, name: string, default_price: number };
-type Transaction = { id: string, transaction_type: string, category: string, amount: number, created_at: string, staff_name: string, notes?: string };
+type Transaction = { id: string, shift_id?: string | null, transaction_type: string, category: string, amount: number, created_at: string, staff_name: string, notes?: string };
 type FieldEditEntry = { oldValue: string; newValue: string; by: string; at: string };
 type BookingMeta = {
   history?: Record<string, FieldEditEntry[]>;
@@ -29,7 +29,7 @@ interface BillingModalProps {
 }
 
 export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuccess }: BillingModalProps) {
-  const { activeShift, operatorName, refreshShift, ensureShiftWritable } = useShift();
+  const { activeShift, operatorName, refreshShift, ensureShiftWritable, closeDayBusinessDate } = useShift();
   const effectiveStaffName = operatorName || activeShift?.staff_name || 'Admin';
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -87,13 +87,18 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
   const [activeDepositTx, setActiveDepositTx] = useState<{ id: string; amount: number } | null>(null);
   const [showProjected, setShowProjected] = useState<boolean>(false);
 
-  // Admin/Manager PIN unlock for editing room charges
+  // Admin/Manager PIN unlock for editing room charges & past payments
   const [roomPriceUnlocked, setRoomPriceUnlocked] = useState<boolean>(false);
   const [roomPriceManagerName, setRoomPriceManagerName] = useState<string>('');
   const [showRoomPinPrompt, setShowRoomPinPrompt] = useState<boolean>(false);
   const [roomPin, setRoomPin] = useState<string>('');
   const [roomPinError, setRoomPinError] = useState<string>('');
   const [editingRoomTxAmounts, setEditingRoomTxAmounts] = useState<Record<string, number | ''>>({});
+  const [editingPaymentTxId, setEditingPaymentTxId] = useState<string | null>(null);
+  const [editPayMethod, setEditPayMethod] = useState<'cash' | 'transfer' | 'credit_card'>('cash');
+  const [editPayBank, setEditPayBank] = useState<string>('SCB');
+  const [editPaySlipTime, setEditPaySlipTime] = useState<string>('');
+  const [editPayAmount, setEditPayAmount] = useState<number | ''>('');
 
   // Admin/Manager PIN modal for cancelling future extra charges (with Option A: refund cash today vs keep credit)
   const [cancellingExtra, setCancellingExtra] = useState<any | null>(null);
@@ -962,6 +967,190 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
     setLoading(false);
   };
 
+  // ตรวจสอบว่ารายการอยู่ในวันธุรกิจที่ปิดวัน (Close Day) ไปแล้วหรือไม่ (ตัดรอบ 06:45 น.)
+  const getTxBizDateStr = (iso: string) => {
+    const d = new Date(iso);
+    if (d.getHours() < 6 || (d.getHours() === 6 && d.getMinutes() < 45)) {
+      d.setDate(d.getDate() - 1);
+    }
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const isTxClosedDay = (iso: string) => {
+    if (!closeDayBusinessDate) return false;
+    return getTxBizDateStr(iso) < closeDayBusinessDate;
+  };
+
+  const formatPaymentTxLabel = (tx: { category?: string | null; notes?: string | null }) => {
+    const cat = String(tx.category || '').replace(' (Voided)', '').trim();
+    const isVoid = String(tx.category || '').includes('Voided');
+    const bankMatch = String(tx.notes || '').match(/\[BANK:([^\]]+)\]/);
+    const bankName = bankMatch ? bankMatch[1].trim() : '';
+    let base = cat;
+    if (cat === 'cash' || cat.includes('เงินสด')) {
+      base = '💵 ชำระเงิน (เงินสด)';
+    } else if (cat === 'transfer' || cat.includes('โอนเงิน')) {
+      base = `📱 ชำระเงิน (โอนเงิน${bankName ? ` - ${bankName}` : ''})`;
+    } else if (cat === 'credit_card' || cat.includes('บัตรเครดิต')) {
+      base = '💳 ชำระเงิน (บัตรเครดิต)';
+    }
+    return isVoid ? `${base} (ยกเลิก)` : base;
+  };
+
+  const startEditPaymentTx = (tx: Transaction) => {
+    if (isTxClosedDay(tx.created_at)) {
+      alert('🔒 รายการนี้อยู่ในรอบวันที่ปิดวัน (Close Day) ไปแล้ว ไม่สามารถแก้ไขย้อนหลังได้');
+      return;
+    }
+    const cat = String(tx.category || '').replace(' (Voided)', '').trim();
+    const notesStr = String(tx.notes || '');
+    let method: 'cash' | 'transfer' | 'credit_card' = 'cash';
+    let bank = bankAccounts[0] || 'SCB';
+    if (cat === 'transfer' || cat.includes('โอนเงิน')) {
+      method = 'transfer';
+      const mBank = notesStr.match(/\[BANK:([^\]]+)\]/);
+      const mCat = cat.match(/โอนเงิน\s*-\s*([^)]+)/);
+      if (mBank && mBank[1]) bank = mBank[1].trim();
+      else if (mCat && mCat[1]) bank = mCat[1].trim();
+    } else if (cat === 'credit_card' || cat.includes('บัตรเครดิต')) {
+      method = 'credit_card';
+    }
+    const txTimeMatch = notesStr.match(/\[TXTIME:([^\]]+)\]/);
+    setEditingPaymentTxId(tx.id);
+    setEditPayMethod(method);
+    setEditPayBank(bank);
+    setEditPaySlipTime(txTimeMatch ? txTimeMatch[1] : '');
+    setEditPayAmount(Math.abs(Number(tx.amount || 0)));
+  };
+
+  const handleSaveEditedPayment = async (tx: Transaction, voidIt = false) => {
+    if (!ensureShiftWritable()) return;
+    if (isTxClosedDay(tx.created_at)) {
+      alert('🔒 รายการนี้อยู่ในรอบวันที่ปิดวัน (Close Day) ไปแล้ว ไม่สามารถแก้ไขย้อนหลังได้');
+      return;
+    }
+    const newAbsAmt = voidIt ? 0 : Number(editPayAmount);
+    if (!voidIt && (isNaN(newAbsAmt) || newAbsAmt <= 0)) {
+      alert('กรุณาระบุจำนวนเงินที่ถูกต้อง');
+      return;
+    }
+
+    const oldCat = String(tx.category || '');
+    const oldBaseCat = oldCat.replace(' (Voided)', '').trim();
+    const oldAbsAmt = Math.abs(Number(tx.amount || 0));
+    const oldLabel = formatPaymentTxLabel(tx);
+    const editor = roomPriceManagerName || activeShift?.staff_name || 'Admin';
+    const nowIso = getNow().toISOString();
+
+    const newCat = voidIt
+      ? `${oldBaseCat} (Voided)`
+      : editPayMethod;
+
+    const newLabel = voidIt
+      ? 'ยกเลิก (Voided)'
+      : editPayMethod === 'cash'
+      ? '💵 ชำระเงิน (เงินสด)'
+      : editPayMethod === 'transfer'
+      ? `📱 ชำระเงิน (โอนเงิน - ${editPayBank})`
+      : '💳 ชำระเงิน (บัตรเครดิต)';
+
+    const oldBankMatch = String(tx.notes || '').match(/\[BANK:([^\]]+)\]/);
+    const oldBank = oldBankMatch ? oldBankMatch[1].trim() : '';
+    const oldTxTime = (String(tx.notes || '').match(/\[TXTIME:([^\]]+)\]/) || [])[1] || '';
+
+    if (
+      !voidIt &&
+      newCat === oldBaseCat &&
+      newAbsAmt === oldAbsAmt &&
+      (editPayMethod !== 'transfer' || (oldBank === editPayBank && oldTxTime === editPaySlipTime))
+    ) {
+      setEditingPaymentTxId(null);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Preserve tags like [SHIFT_LOC:...] [ROOM_LOC:...]
+      const shiftLocMatch = String(tx.notes || '').match(/\[SHIFT_LOC:[^\]]+\]/);
+      const roomLocMatch = String(tx.notes || '').match(/\[ROOM_LOC:[^\]]+\]/);
+      const tags = [
+        !voidIt && editPayMethod === 'transfer' ? `[BANK:${editPayBank || 'SCB'}]` : '',
+        !voidIt && editPayMethod === 'transfer' && editPaySlipTime ? `โอนเวลา: ${editPaySlipTime.replace('T', ' ')} [TXTIME:${editPaySlipTime}]` : '',
+        shiftLocMatch ? shiftLocMatch[0] : (shiftLocation ? `[SHIFT_LOC:${shiftLocation}]` : ''),
+        roomLocMatch ? roomLocMatch[0] : (roomLocation ? `[ROOM_LOC:${roomLocation}]` : '')
+      ].filter(Boolean).join(' ');
+
+      const newNotes = voidIt
+        ? `ยกเลิกการชำระเงินโดย ${editor} (เดิม ${oldLabel} ฿${oldAbsAmt.toLocaleString()})${tags ? ' ' + tags : ''}`
+        : `แก้ไขจาก ${oldLabel} ฿${oldAbsAmt.toLocaleString()} โดย ${editor}${tags ? ' ' + tags : ''}`;
+
+      const { error: upErr } = await supabase
+        .from('ledger_transactions')
+        .update({
+          category: newCat,
+          amount: voidIt ? -oldAbsAmt : -newAbsAmt,
+          notes: newNotes
+        })
+        .eq('id', tx.id);
+
+      if (upErr) {
+        alert('แก้ไขประวัติชำระเงินไม่สำเร็จ: ' + upErr.message);
+        setLoading(false);
+        return;
+      }
+
+      // ปรับปรุงยอดเงินสดในลิ้นชัก (shifts.expected_cash) หากมีการเปลี่ยนประเภทเงินสด <-> โอน/บัตร หรือเปลี่ยนยอดเงินสด
+      const oldWasCash = !oldCat.includes('(Voided)') && (oldBaseCat === 'cash' || oldBaseCat.includes('เงินสด'));
+      const oldCashContribution = oldWasCash ? oldAbsAmt : 0;
+      const newCashContribution = !voidIt && editPayMethod === 'cash' ? newAbsAmt : 0;
+      const cashDelta = newCashContribution - oldCashContribution;
+      const targetShiftId = tx.shift_id || (activeShift?.id !== 'dummy-shift-id' ? activeShift?.id : null);
+      if (cashDelta !== 0 && targetShiftId) {
+        const { data: shRow } = await supabase.from('shifts').select('expected_cash, status').eq('id', targetShiftId).maybeSingle();
+        if (shRow && shRow.status === 'open') {
+          await supabase
+            .from('shifts')
+            .update({ expected_cash: Number(shRow.expected_cash || 0) + cashDelta })
+            .eq('id', targetShiftId);
+        }
+      }
+
+      // บันทึกประวัติขีดฆ่า (Strikethrough History) ใน booking_meta
+      const nextHistory: Record<string, FieldEditEntry[]> = { ...(bookingMeta.history || {}) };
+      const histKey = `tx_${tx.id}`;
+      nextHistory[histKey] = [
+        ...(nextHistory[histKey] || []),
+        {
+          oldValue: `${oldLabel} ฿${oldAbsAmt.toLocaleString()}`,
+          newValue: voidIt ? `ยกเลิก (Voided) ฿0` : `${newLabel} ฿${newAbsAmt.toLocaleString()}`,
+          by: editor,
+          at: nowIso
+        }
+      ];
+      const updatedMeta: BookingMeta = { ...bookingMeta, history: nextHistory };
+      await supabase.from('system_settings').upsert({ key: `booking_meta_${bookingId}`, value: updatedMeta }, { onConflict: 'key' });
+      setBookingMeta(updatedMeta);
+
+      await logActivity({
+        category: 'billing',
+        action: voidIt ? 'cancel' : 'update',
+        staffName: editor,
+        shiftName: activeShift?.staff_name || null,
+        roomNo,
+        target: `ห้อง ${roomNo} • แก้ไขประวัติชำระเงิน`,
+        details: voidIt
+          ? `ยกเลิกรายการรับชำระเงินห้อง ${roomNo}: เดิม ${oldLabel} ฿${oldAbsAmt.toLocaleString()} (โดย ${editor})`
+          : `แก้ไขประวัติชำระเงินห้อง ${roomNo}: จาก "${oldLabel} ฿${oldAbsAmt.toLocaleString()}" เป็น "${newLabel} ฿${newAbsAmt.toLocaleString()}" (โดย ${editor})`
+      });
+
+      setEditingPaymentTxId(null);
+      await refreshShift();
+      await fetchData();
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const extraAmtToCancel = Number(cancellingExtra?.amount || 0);
   const totalObligationsBeforeCancel = totalPostedCharges + futureRates + futureExtras + dep.held;
   const chargesAfterCancellingExtra = Math.max(0, totalObligationsBeforeCancel - extraAmtToCancel);
@@ -1216,10 +1405,10 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
               {roomPriceUnlocked ? (
                 <button
                   type="button"
-                  onClick={() => setRoomPriceUnlocked(false)}
+                  onClick={() => { setRoomPriceUnlocked(false); setEditingPaymentTxId(null); }}
                   className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-800 border border-amber-300"
                 >
-                  🔓 แก้ค่าห้องโดย {roomPriceManagerName} (คลิกเพื่อล็อก)
+                  🔓 ปลดล็อกแก้ไขโดย {roomPriceManagerName} (คลิกเพื่อล็อก)
                 </button>
               ) : (
                 <button
@@ -1227,7 +1416,7 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                   onClick={() => { setRoomPin(''); setRoomPinError(''); setShowRoomPinPrompt(true); }}
                   className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 transition-colors"
                 >
-                  🔑 ปลดล็อกแก้ค่าห้อง (Admin)
+                  🔑 ปลดล็อกแก้ไขราคา/การชำระเงิน (Admin)
                 </button>
               )}
             </div>
@@ -1301,13 +1490,17 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                               {dailyTxs.filter(tx => !tx.category.includes('ค่ามัดจำกุญแจ') && !tx.category.includes('คืนมัดจำกุญแจ')).map(tx => {
                                 const isVoid = tx.category.includes('Voided');
                                 const isRoomCharge = !isVoid && (tx.category === 'room_charge' || tx.category.includes('ค่าห้องพัก'));
+                                const isPaymentTx = !isVoid && (tx.transaction_type === 'payment' || (tx.amount < 0 && tx.category.startsWith('ชำระเงิน')));
+                                const closedDay = isTxClosedDay(tx.created_at);
+                                const isEditingThisPay = isPaymentTx && roomPriceUnlocked && !closedDay && editingPaymentTxId === tx.id;
                                 return (
-                                  <div key={tx.id} className="flex justify-between items-start p-2 hover:bg-slate-50 rounded-lg text-sm border-b border-slate-50 last:border-0 group">
+                                  <div key={tx.id} className="p-2 hover:bg-slate-50 rounded-lg text-sm border-b border-slate-50 last:border-0 group space-y-2">
+                                    <div className="flex justify-between items-start gap-2">
                                       <div className={isVoid ? 'line-through text-slate-400 opacity-60' : ''}>
-                                        <p className="font-bold text-slate-700">{tx.category === 'room_charge' ? 'ค่าห้องพัก' : tx.category}</p>
-                                        {tx.notes && tx.notes.replace('[POST_CHECKIN]', '').replace(/\[SHIFT_LOC:[^\]]+\]/g, '').replace(/\[ROOM_LOC:[^\]]+\]/g, '').replace(/\[TXTIME:[^\]]+\]/g, '').trim() && (
+                                        <p className="font-bold text-slate-700">{tx.category === 'room_charge' ? 'ค่าห้องพัก' : tx.transaction_type === 'payment' || isPaymentTx ? formatPaymentTxLabel(tx) : tx.category}</p>
+                                        {tx.notes && tx.notes.replace('[POST_CHECKIN]', '').replace(/\[BANK:[^\]]+\]/g, '').replace(/\[SHIFT_LOC:[^\]]+\]/g, '').replace(/\[ROOM_LOC:[^\]]+\]/g, '').replace(/\[TXTIME:[^\]]+\]/g, '').trim() && (
                                           <p className="text-xs text-slate-500 italic mt-0.5">
-                                            {tx.notes.replace('[POST_CHECKIN]', '').replace(/\[SHIFT_LOC:[^\]]+\]/g, '').replace(/\[ROOM_LOC:[^\]]+\]/g, '').replace(/\[TXTIME:[^\]]+\]/g, '').trim()}
+                                            {tx.notes.replace('[POST_CHECKIN]', '').replace(/\[BANK:[^\]]+\]/g, '').replace(/\[SHIFT_LOC:[^\]]+\]/g, '').replace(/\[ROOM_LOC:[^\]]+\]/g, '').replace(/\[TXTIME:[^\]]+\]/g, '').trim()}
                                           </p>
                                         )}
                                         <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1 flex-wrap">
@@ -1326,31 +1519,170 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
                                         {renderFieldHistory(`tx_${tx.id}`)}
                                         {isRoomCharge && !bookingMeta?.history?.[`tx_${tx.id}`] && renderFieldHistory('actual_price')}
                                       </div>
-                                    <div className="text-right">
-                                      {isRoomCharge && roomPriceUnlocked ? (
-                                        <div className="flex items-center gap-1.5">
-                                          <input
-                                            type="number"
-                                            min={0}
-                                            value={editingRoomTxAmounts[tx.id] ?? tx.amount}
-                                            onChange={e => setEditingRoomTxAmounts(prev => ({ ...prev, [tx.id]: e.target.value === '' ? '' : Number(e.target.value) }))}
-                                            className="w-24 border border-amber-300 rounded-lg px-2 py-1 text-right font-black text-slate-900 bg-amber-50/40"
-                                          />
+                                      <div className="text-right shrink-0">
+                                        {roomPriceUnlocked && closedDay && !isVoid && (isRoomCharge || isPaymentTx) ? (
+                                          <div className="flex flex-col items-end gap-0.5">
+                                            <div className={`font-black ${tx.amount < 0 ? 'text-emerald-600' : 'text-slate-800'}`}>
+                                              {tx.amount < 0 ? '' : '+'}{Number(tx.amount).toLocaleString()}
+                                            </div>
+                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600" title="รายการนี้อยู่ในรอบวันที่ปิดวัน (Close Day) ไปแล้ว ไม่สามารถแก้ไขย้อนหลังได้">
+                                              🔒 ปิดวันแล้ว
+                                            </span>
+                                          </div>
+                                        ) : isRoomCharge && roomPriceUnlocked && !closedDay ? (
+                                          <div className="flex items-center gap-1.5">
+                                            <input
+                                              type="number"
+                                              min={0}
+                                              value={editingRoomTxAmounts[tx.id] ?? tx.amount}
+                                              onChange={e => setEditingRoomTxAmounts(prev => ({ ...prev, [tx.id]: e.target.value === '' ? '' : Number(e.target.value) }))}
+                                              className="w-24 border border-amber-300 rounded-lg px-2 py-1 text-right font-black text-slate-900 bg-amber-50/40"
+                                            />
+                                            <button
+                                              type="button"
+                                              onClick={() => handleSaveRoomCharge(tx)}
+                                              disabled={loading || Number(editingRoomTxAmounts[tx.id]) === Number(tx.amount)}
+                                              className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-200 text-white text-xs font-bold rounded-lg transition-colors"
+                                            >
+                                              บันทึก
+                                            </button>
+                                          </div>
+                                        ) : isPaymentTx && roomPriceUnlocked && !closedDay ? (
+                                          <div className="flex items-center gap-1.5">
+                                            <div className="font-black text-emerald-600">
+                                              {Number(tx.amount).toLocaleString()}
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => isEditingThisPay ? setEditingPaymentTxId(null) : startEditPaymentTx(tx)}
+                                              className="px-2 py-0.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-[11px] font-bold transition-colors"
+                                            >
+                                              {isEditingThisPay ? '✕ ปิด' : '✏️ แก้ไข'}
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <div className={`font-black ${isVoid ? 'line-through text-slate-400 opacity-60' : tx.amount < 0 ? 'text-emerald-600' : 'text-slate-800'}`}>
+                                            {tx.amount < 0 ? '' : '+'}{Number(tx.amount).toLocaleString()}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {isEditingThisPay && (
+                                      <div className="p-2.5 rounded-xl bg-amber-50/80 border border-amber-300 space-y-2 text-xs">
+                                        <div className="font-black text-amber-900 flex items-center justify-between">
+                                          <span>✏️ แก้ไขรายการรับชำระเงิน (โดย {roomPriceManagerName})</span>
                                           <button
                                             type="button"
-                                            onClick={() => handleSaveRoomCharge(tx)}
-                                            disabled={loading || Number(editingRoomTxAmounts[tx.id]) === Number(tx.amount)}
-                                            className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-200 text-white text-xs font-bold rounded-lg transition-colors"
+                                            onClick={() => {
+                                              if (window.confirm(`ยืนยันยกเลิกรายการชำระเงิน "${tx.category} ฿${Math.abs(Number(tx.amount)).toLocaleString()}" หรือไม่?`)) {
+                                                handleSaveEditedPayment(tx, true);
+                                              }
+                                            }}
+                                            className="px-2 py-0.5 rounded bg-rose-100 hover:bg-rose-200 text-rose-700 border border-rose-300 text-[10.5px] font-bold"
                                           >
-                                            บันทึก
+                                            🗑️ ยกเลิกรายการนี้ (Void)
                                           </button>
                                         </div>
-                                      ) : (
-                                        <div className={`font-black ${isVoid ? 'line-through text-slate-400 opacity-60' : tx.amount < 0 ? 'text-emerald-600' : 'text-slate-800'}`}>
-                                          {tx.amount < 0 ? '' : '+'}{Number(tx.amount).toLocaleString()}
+
+                                        <div className="grid grid-cols-3 gap-1.5">
+                                          <button
+                                            type="button"
+                                            onClick={() => setEditPayMethod('cash')}
+                                            className={`py-1.5 px-2 rounded-lg font-bold border text-[11px] ${
+                                              editPayMethod === 'cash'
+                                                ? 'bg-emerald-600 text-white border-emerald-600'
+                                                : 'bg-white text-slate-700 border-slate-300'
+                                            }`}
+                                          >
+                                            💵 เงินสด
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setEditPayMethod('transfer')}
+                                            className={`py-1.5 px-2 rounded-lg font-bold border text-[11px] ${
+                                              editPayMethod === 'transfer'
+                                                ? 'bg-indigo-600 text-white border-indigo-600'
+                                                : 'bg-white text-slate-700 border-slate-300'
+                                            }`}
+                                          >
+                                            📱 โอนเงิน
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setEditPayMethod('credit_card')}
+                                            className={`py-1.5 px-2 rounded-lg font-bold border text-[11px] ${
+                                              editPayMethod === 'credit_card'
+                                                ? 'bg-blue-600 text-white border-blue-600'
+                                                : 'bg-white text-slate-700 border-slate-300'
+                                            }`}
+                                          >
+                                            💳 บัตรเครดิต
+                                          </button>
                                         </div>
-                                      )}
-                                    </div>
+
+                                        {editPayMethod === 'transfer' && (
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <div className="flex items-center gap-1">
+                                              <span className="font-bold text-slate-600">ธนาคาร:</span>
+                                              {bankAccounts.map(b => (
+                                                <button
+                                                  key={b}
+                                                  type="button"
+                                                  onClick={() => setEditPayBank(b)}
+                                                  className={`px-2 py-0.5 rounded font-bold border text-[11px] ${
+                                                    editPayBank === b
+                                                      ? 'bg-indigo-600 text-white border-indigo-600'
+                                                      : 'bg-white text-slate-700 border-slate-300'
+                                                  }`}
+                                                >
+                                                  {b}
+                                                </button>
+                                              ))}
+                                            </div>
+                                            <div className="flex items-center gap-1 flex-1 min-w-[180px]">
+                                              <span className="font-bold text-slate-600 whitespace-nowrap">เวลาสลิป:</span>
+                                              <input
+                                                type="datetime-local"
+                                                value={editPaySlipTime}
+                                                onChange={e => setEditPaySlipTime(e.target.value)}
+                                                className="border border-slate-300 rounded px-1.5 py-0.5 text-[11px] bg-white text-slate-800 flex-1"
+                                              />
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        <div className="flex items-center justify-between gap-2 pt-1">
+                                          <div className="flex items-center gap-1.5">
+                                            <span className="font-bold text-slate-700">จำนวนเงิน (฿):</span>
+                                            <input
+                                              type="number"
+                                              min={1}
+                                              value={editPayAmount}
+                                              onChange={e => setEditPayAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                                              className="w-28 border border-amber-400 rounded-lg px-2 py-1 text-right font-black text-slate-900 bg-white"
+                                            />
+                                          </div>
+                                          <div className="flex items-center gap-1.5">
+                                            <button
+                                              type="button"
+                                              onClick={() => setEditingPaymentTxId(null)}
+                                              className="px-2.5 py-1 rounded-lg bg-white border border-slate-300 text-slate-600 font-bold"
+                                            >
+                                              ยกเลิก
+                                            </button>
+                                            <button
+                                              type="button"
+                                              disabled={loading}
+                                              onClick={() => handleSaveEditedPayment(tx, false)}
+                                              className="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-black shadow-2xs"
+                                            >
+                                              💾 บันทึกการแก้ไข
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 );
                               })}

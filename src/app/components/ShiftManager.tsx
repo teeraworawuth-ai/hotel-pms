@@ -406,13 +406,12 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
           </span>
         </button>
       ) : compact ? (
-        <div className="flex items-center gap-1.5 sm:gap-2 text-xs flex-wrap">
-          <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 px-2 sm:px-2.5 py-1 rounded-xl">
-            <span className="text-emerald-500 text-[10px]">🟢</span>
-            <span className="text-slate-500 font-medium">กะ:</span>
+        <div className="flex items-center gap-1 text-[11px] flex-wrap">
+          <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg">
+            <span className="text-emerald-500 text-[9px]">🟢</span>
             <span className="font-bold text-slate-800">{activeShift.staff_name}</span>
             {activeShift.shift_location && (
-              <span className="px-1.5 py-0.5 rounded-md bg-indigo-100 text-indigo-800 font-black text-[10px]">
+              <span className="px-1 py-0.2 rounded bg-indigo-100 text-indigo-800 font-black text-[9.5px]">
                 📍{activeShift.shift_location}
               </span>
             )}
@@ -432,7 +431,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
             <select
               value={activeShift.id}
               onChange={(e) => switchActiveShift(e.target.value)}
-              className="border border-indigo-200 bg-indigo-50 text-indigo-800 rounded-xl px-2 py-1 text-[11px] font-bold outline-none"
+              className="border border-indigo-200 bg-indigo-50 text-indigo-800 rounded-lg px-1.5 py-1 text-[10.5px] font-bold outline-none"
               title="สลับกะที่กำลังเปิดอยู่"
             >
               {openShifts.map((s) => (
@@ -446,17 +445,17 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
             <button
               type="button"
               onClick={() => setShowOpenModal(true)}
-              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-2 py-1 rounded-xl text-[11px] font-bold"
+              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-1.5 py-1 rounded-lg text-[10.5px] font-bold"
               title="เปิดกะเพิ่มสำหรับสถานที่อื่น"
             >
-              + เปิดกะซอยอื่น
+              +กะอื่น
             </button>
           )}
           {!hideExpense && isRealShift && <ShiftExpenseButton compact />}
           {isRealShift && (
             <button
               onClick={() => setShowHandoverModal(true)}
-              className="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 px-2 sm:px-2.5 py-1 rounded-xl text-xs font-bold transition-colors active:scale-95"
+              className="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 px-2 py-1 rounded-lg text-[11px] font-bold transition-colors active:scale-95"
               title="ส่งเงินระหว่างกะ (ยังไม่ปิดกะ)"
             >
               💵 ส่งเงิน
@@ -464,7 +463,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
           )}
           <button
             onClick={() => setShowCloseModal(true)}
-            className="bg-slate-800 hover:bg-slate-900 text-white px-2.5 sm:px-3 py-1 rounded-xl text-xs font-bold transition-colors active:scale-95"
+            className="bg-slate-800 hover:bg-slate-900 text-white px-2 py-1 rounded-lg text-[11px] font-bold transition-colors active:scale-95"
           >
             ปิดกะ
           </button>

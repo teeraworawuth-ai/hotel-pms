@@ -21,6 +21,23 @@ import {
   SHIFT_BD_KEY_PREFIX,
 } from "@/lib/cashHandover";
 
+export type GroupBookingRoomItem = {
+  bookingId: string;
+  roomId: string;
+  roomNo: string;
+  location?: string | null;
+  price?: number;
+  isMaster?: boolean;
+};
+
+export type GroupBookingInfo = {
+  groupId: string;
+  masterBookingId: string;
+  masterRoomId: string;
+  masterRoomNo: string;
+  rooms: GroupBookingRoomItem[];
+};
+
 export type RoomStatus = {
   id: string;
   room_no: string;
@@ -51,6 +68,9 @@ export type RoomStatus = {
   c_today?: number;
   has_key_deposit?: boolean;
   held_key_deposit?: number;
+  booking_note?: string | null;
+  group_info?: GroupBookingInfo | null;
+  is_group_master?: boolean;
   map_x?: number;
   map_y?: number;
   map_width?: number;
@@ -87,6 +107,7 @@ export default function CheckinPage() {
   const [adminPin, setAdminPin] = useState("");
   const [adminPinError, setAdminPinError] = useState("");
   const [adminActionLoading, setAdminActionLoading] = useState(false);
+  const [showAdminTools, setShowAdminTools] = useState(false);
 
   // สำหรับจับเวลา Double Tap ของแม่บ้านบนหน้ากระดานหลัก
   const lastTapRef = useRef<{ [key: string]: number }>({});
@@ -282,6 +303,7 @@ export default function CheckinPage() {
     const financialSummary: Record<string, { charges: number, payments: number, balance: number, c_all: number, c_today: number, has_key_deposit?: boolean }> = {};
     const ledgersByBooking: Record<string, { booking_id: string; amount: number; category: string; transaction_type: string }[]> = {};
     const heldDepositByBooking: Record<string, number> = {};
+    const bookingMetaMap: Record<string, { bookingNote?: string; groupInfo?: GroupBookingInfo }> = {};
       
     const dailyRatesMap: Record<string, number> = {};
     const targetDateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth()+1).padStart(2,'0')}-${String(targetDate.getDate()).padStart(2,'0')}`;
@@ -315,7 +337,8 @@ export default function CheckinPage() {
     }
     
     if (activeBookingIds.length > 0) {
-      const [{ data: allDailyRates }, { data: allDailyExtras }] = await Promise.all([
+      const metaKeys = activeBookingIds.map(id => `booking_meta_${id}`);
+      const [{ data: allDailyRates }, { data: allDailyExtras }, { data: metaRows }] = await Promise.all([
         supabase
           .from('booking_daily_rates')
           .select('booking_id, amount, target_date')
@@ -323,8 +346,24 @@ export default function CheckinPage() {
         supabase
           .from('booking_daily_extras')
           .select('booking_id, amount, target_date, category')
-          .in('booking_id', activeBookingIds)
+          .in('booking_id', activeBookingIds),
+        supabase
+          .from('system_settings')
+          .select('key, value')
+          .in('key', metaKeys)
       ]);
+
+      if (metaRows) {
+        metaRows.forEach((row: any) => {
+          const bid = String(row.key || '').replace('booking_meta_', '');
+          if (bid && row.value && typeof row.value === 'object') {
+            bookingMetaMap[bid] = {
+              bookingNote: row.value.bookingNote || undefined,
+              groupInfo: row.value.groupInfo || undefined,
+            };
+          }
+        });
+      }
 
       const futureUnpostedByBooking: Record<string, number> = {};
 
@@ -409,6 +448,52 @@ export default function CheckinPage() {
           }
         });
       }
+
+      // หากมีการเข้าพักเป็นกลุ่ม (groupInfo: มาด้วยกัน จ่ายรวมบิลที่ห้องหลัก) ให้รวมยอดค่าใช้จ่ายและยอดชำระเงินทั้งกลุ่มเข้าด้วยกัน
+      // เพื่อให้ทั้งห้องหลักและห้องลูกแสดงสถานะชำระเงิน (สีเลขห้อง และดุลกลุ่ม) ถูกต้องตรงกัน
+      const groupMembersByGroupId: Record<string, Set<string>> = {};
+      Object.entries(bookingMetaMap).forEach(([bid, meta]) => {
+        if (meta?.groupInfo?.groupId) {
+          const gid = meta.groupInfo.groupId;
+          if (!groupMembersByGroupId[gid]) groupMembersByGroupId[gid] = new Set();
+          groupMembersByGroupId[gid].add(bid);
+          (meta.groupInfo.rooms || []).forEach(r => {
+            if (r.bookingId) groupMembersByGroupId[gid].add(r.bookingId);
+          });
+        }
+      });
+
+      Object.entries(groupMembersByGroupId).forEach(([_gid, bidSet]) => {
+        const memberBids = Array.from(bidSet);
+        if (memberBids.length <= 1) return;
+        let grpCharges = 0;
+        let grpPayments = 0;
+        let grpBalance = 0;
+        let grpCAll = 0;
+        let grpCToday = 0;
+        let grpHasKey = false;
+        memberBids.forEach(bid => {
+          const fs = financialSummary[bid];
+          if (fs) {
+            grpCharges += fs.charges || 0;
+            grpPayments += fs.payments || 0;
+            grpBalance += fs.balance || 0;
+            grpCAll += fs.c_all || 0;
+            grpCToday += fs.c_today || 0;
+            if (fs.has_key_deposit) grpHasKey = true;
+          }
+        });
+        memberBids.forEach(bid => {
+          financialSummary[bid] = {
+            charges: grpCharges,
+            payments: grpPayments,
+            balance: grpBalance,
+            c_all: grpCAll,
+            c_today: grpCToday,
+            has_key_deposit: grpHasKey,
+          };
+        });
+      });
     }
 
     // คำนวณยอดรายได้สุทธิวันนี้ (แยกตามสถานที่) สำหรับแสดงบนปุ่มกองและหัวข้อกอง
@@ -597,8 +682,6 @@ export default function CheckinPage() {
             finalRoom.actual_price = getDailyPrice(activeBooking);
           }
         }
-        
-        return finalRoom;
       } else {
         if (targetDayBooking) {
           finalRoom = {
@@ -627,8 +710,18 @@ export default function CheckinPage() {
             guest_count: 0
           };
         }
-        return finalRoom;
       }
+
+      if (finalRoom.booking_id && bookingMetaMap[finalRoom.booking_id]) {
+        const bMeta = bookingMetaMap[finalRoom.booking_id];
+        finalRoom.booking_note = bMeta.bookingNote || null;
+        finalRoom.group_info = bMeta.groupInfo || null;
+        finalRoom.is_group_master = bMeta.groupInfo
+          ? bMeta.groupInfo.masterBookingId === finalRoom.booking_id
+          : false;
+      }
+
+      return finalRoom;
     });
 
     setRooms(mergedRooms);
@@ -969,38 +1062,38 @@ export default function CheckinPage() {
   const tomorrowDayNum = tomorrowDate.getDate();
 
   return (
-    <div className="space-y-3 sm:space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-2 sm:space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       
-      {/* 1. แถบด้านบน: วันที่ปัจจุบัน (เปลี่ยน 06:45 น.) + สถานะวัน Close Day + รายละเอียดกะการทำงาน */}
+      {/* แถบควบคุมด้านบนแบบประหยัดพื้นที่สูงสุด (รวมวันที่ + Close Day + กะทำงาน + ตัวกรองสถานที่ไว้ในกล่องเดียว) */}
       {isHousekeeper ? (
-        <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
-            <span className="text-sm sm:text-base font-black text-slate-800">
-              วันนี้ {displayDate.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}
+        <div className="bg-white p-2 sm:p-2.5 rounded-xl shadow-xs border border-slate-200 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+            <span className="text-xs sm:text-sm font-black text-slate-800">
+              วันนี้ {displayDate.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <span className="text-xs text-slate-500 font-medium hidden sm:inline">({effectiveUser?.name})</span>
             <button
               onClick={handleLogout}
-              className="text-red-500 hover:text-red-700 font-bold text-xs px-3 py-1.5 rounded-xl border border-red-200 hover:bg-red-50 transition-colors"
+              className="text-rose-600 bg-rose-50 hover:bg-rose-100 font-bold text-[11px] px-2.5 py-1 rounded-lg border border-rose-200 transition-colors"
             >
-              ออกจากระบบ
+              🚪 ออกจากระบบ
             </button>
           </div>
         </div>
       ) : (
-        <div className="bg-white p-2.5 sm:p-3.5 rounded-2xl shadow-sm border border-slate-200 space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            {/* ซ้าย: ตัวเลือกวันที่ + วันที่ปัจจุบัน (06:45 น.) + ป้ายเปรียบเทียบวัน Close Day */}
-            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+        <div className="bg-white p-2 sm:p-2.5 rounded-xl shadow-xs border border-slate-200 space-y-1.5">
+          {/* บรรทัดที่ 1: วันที่ + Close Day + กะการทำงาน + ปุ่มเครื่องมือ/Logout */}
+          <div className="flex flex-wrap items-center justify-between gap-1.5">
+            <div className="flex flex-wrap items-center gap-1">
               <button 
                 onClick={() => setDateOffset(prev => Math.max(-10, prev - 1))}
-                className="p-1.5 sm:p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 flex-shrink-0"
+                className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 flex items-center justify-center flex-shrink-0"
                 title="ย้อนหลัง 1 วัน"
               >
-                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7"></path></svg>
               </button>
 
               <input 
@@ -1017,105 +1110,113 @@ export default function CheckinPage() {
                     setDateOffset(diffDays);
                   }
                 }}
-                className="border-slate-200 rounded-xl px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm font-bold focus:ring-blue-500 focus:border-blue-500 bg-slate-50 text-slate-800 h-9 sm:h-10 outline-none border"
+                className="border-slate-200 rounded-lg px-1.5 py-0.5 text-[11px] sm:text-xs font-bold focus:ring-blue-500 focus:border-blue-500 bg-slate-50 text-slate-800 h-7 outline-none border w-[112px] sm:w-auto"
               />
 
               <button 
                 onClick={() => setDateOffset(prev => Math.min(7, prev + 1))}
-                className="p-1.5 sm:p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 flex-shrink-0"
+                className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 flex items-center justify-center flex-shrink-0"
                 title="ล่วงหน้า 1 วัน"
               >
-                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path></svg>
               </button>
 
               {dateOffset !== 0 ? (
                 <button 
                   onClick={() => setDateOffset(0)}
-                  className="px-2.5 py-1 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 transition-colors h-9 flex items-center shadow-xs"
+                  className="px-2 py-0.5 bg-blue-600 text-white text-[11px] font-bold rounded-lg hover:bg-blue-700 transition-colors h-7 flex items-center shadow-2xs"
                 >
-                  กลับวันนี้
+                  วันนี้
                 </button>
               ) : (
-                <span className="text-xs sm:text-sm font-black text-slate-800">
-                  วันนี้ {displayDate.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}
-                  <span className="text-[10px] font-semibold text-slate-400 ml-1">(ตัดวัน 06:45 น.)</span>
+                <span className="text-[11px] font-black text-slate-700 hidden sm:inline">
+                  {displayDate.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}
                 </span>
               )}
 
-              {/* ป้ายแสดงวันที่ของส่วน Close Day (รอบวันของกะ) เทียบกับวันปัจจุบัน */}
+              {/* ป้าย Close Day แบบกระชับ */}
               <div
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] sm:text-xs font-bold border ${
+                className={`inline-flex items-center gap-1 px-2 py-0.5 h-7 rounded-lg text-[10.5px] font-bold border ${
                   isCloseDayMatched
                     ? "bg-emerald-50 text-emerald-800 border-emerald-200"
                     : "bg-amber-50 text-amber-900 border-amber-300 animate-pulse"
                 }`}
                 title={
                   isCloseDayMatched
-                    ? "วันของรอบกะ (Close Day) ตรงกับวันปัจจุบันเรียบร้อย"
+                    ? "วันของรอบกะ (Close Day) ตรงกับวันปัจจุบันเรียบร้อย (ตัดวัน 06:45 น.)"
                     : closeDayMismatchReason || "วันของรอบกะ (Close Day) ไม่ตรงกับวันปัจจุบัน"
                 }
               >
                 <span>{isCloseDayMatched ? "✅" : "⚠️"}</span>
                 <span>
-                  Close Day: <strong>{formatShortThaiDate(closeDayBusinessDate)}</strong>
-                </span>
-                <span className="hidden sm:inline text-[10px] font-semibold opacity-90">
-                  {isCloseDayMatched
-                    ? "(ตรงกับวันปัจจุบัน)"
-                    : `(${closeDayMismatchReason || "ยังไม่เปลี่ยนวัน"})`}
+                  Close: <strong>{formatShortThaiDate(closeDayBusinessDate)}</strong>
                 </span>
               </div>
             </div>
 
-            {/* ขวา: รายละเอียดกะการทำงาน (ซ่อนยอดเงินในลิ้นชักสำหรับ Staff อัตโนมัติใน ShiftManager) + ปุ่มผู้จัดการ */}
-            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 ml-auto">
+            {/* ขวา: กะการทำงาน + ปุ่มเครื่องมือ Admin (พับเก็บได้) + ปุ่มออก */}
+            <div className="flex flex-wrap items-center gap-1 ml-auto">
               <ShiftManager compact={true} hideExpense={false} />
 
               {isManagerOrAdmin && (
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAdminPin("");
-                      setAdminPinError("");
-                      setAdminActionModal("force_close_day");
-                    }}
-                    className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors"
-                    title="บังคับตัดรอบข้ามวัน (Close Day) ให้ตรงกับวันปัจจุบันทันทีโดยไม่ต้องรอเวลา 05:30 น."
-                  >
-                    ⏭️ ตัดรอบข้ามวัน
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAdminPin("");
-                      setAdminPinError("");
-                      setAdminActionModal("reset_all_zero");
-                    }}
-                    className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors"
-                    title="รีเซ็ตห้องพัก การจอง ยอดยกมา และลิ้นชักเงินสดทุกสถานที่ให้เริ่มต้นจาก 0 (สำหรับทดสอบ)"
-                  >
-                    🧹 รีเซ็ตเป็น 0 ทุกสถานที่
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAdminTools(prev => !prev)}
+                  className={`px-2 py-1 rounded-lg text-[10.5px] font-bold border transition-colors ${
+                    showAdminTools
+                      ? "bg-slate-800 text-white border-slate-800"
+                      : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200"
+                  }`}
+                  title="เครื่องมือผู้จัดการ (ตัดรอบข้ามวัน / รีเซ็ตระบบสำหรับทดสอบ)"
+                >
+                  ⚙️ จัดการ{showAdminTools ? "▲" : "▼"}
+                </button>
               )}
 
               {isStaff && (
                 <button
                   onClick={handleLogout}
-                  className="text-red-500 hover:text-red-700 font-bold text-xs px-2.5 py-1.5 rounded-xl border border-red-200 hover:bg-red-50 transition-colors"
+                  className="text-rose-600 bg-rose-50 hover:bg-rose-100 font-bold text-[11px] px-2 py-1 rounded-lg border border-rose-200 transition-colors"
                   title="ออกจากระบบ"
                 >
-                  Logout
+                  🚪 ออก
                 </button>
               )}
             </div>
           </div>
 
-          {/* หากวัน Close Day ไม่ตรงกับวันปัจจุบัน ให้แสดงแถบอธิบายสาเหตุชัดเจนบนหน้าจอมือถือด้วย */}
+          {/* แถบเครื่องมือ Admin (แสดงเฉพาะเมื่อกด ⚙️ จัดการ หรือเมื่อวัน Close Day ไม่ตรงกัน) */}
+          {isManagerOrAdmin && showAdminTools && (
+            <div className="flex flex-wrap items-center justify-end gap-1.5 pt-1 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setAdminPin("");
+                  setAdminPinError("");
+                  setAdminActionModal("force_close_day");
+                }}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors"
+              >
+                ⏭️ ตัดรอบข้ามวัน (Close Day)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAdminPin("");
+                  setAdminPinError("");
+                  setAdminActionModal("reset_all_zero");
+                }}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors"
+              >
+                🧹 รีเซ็ตเป็น 0 ทุกสถานที่
+              </button>
+            </div>
+          )}
+
+          {/* แจ้งเตือนสั้นๆ เมื่อวัน Close Day ไม่ตรงกับวันปัจจุบัน */}
           {!isCloseDayMatched && closeDayMismatchReason && (
-            <div className="text-[11px] font-bold text-amber-800 bg-amber-50/80 border border-amber-200 rounded-xl px-3 py-1.5 flex items-center justify-between gap-2">
-              <span>⚠️ สาเหตุที่วันไม่ตรงกัน: {closeDayMismatchReason}</span>
+            <div className="text-[10.5px] font-bold text-amber-800 bg-amber-50/80 border border-amber-200 rounded-lg px-2.5 py-1 flex items-center justify-between gap-2">
+              <span className="truncate">⚠️ {closeDayMismatchReason}</span>
               {isManagerOrAdmin && (
                 <button
                   type="button"
@@ -1124,132 +1225,114 @@ export default function CheckinPage() {
                     setAdminPinError("");
                     setAdminActionModal("force_close_day");
                   }}
-                  className="underline text-indigo-700 font-black whitespace-nowrap"
+                  className="underline text-indigo-700 font-black whitespace-nowrap shrink-0"
                 >
-                  กดตัดรอบข้ามวันทันที →
+                  ตัดรอบข้ามวัน →
                 </button>
               )}
             </div>
           )}
-        </div>
-      )}
 
-      {/* 2. แถบปุ่มเลือกสถานที่ (ปุ่มกอง): แสดงสถานที่หลักเด่น-ใหญ่พิเศษ + แสดงจำนวนห้องว่าง / มีแขกพัก / รายได้สุทธิวันนี้ */}
-      {!loading && (isManagerOrAdmin ? sortedLocations.length > 0 : userVisibleLocations.length > 0) && (
-        <div className="bg-white p-2.5 sm:p-3 rounded-2xl shadow-xs border border-slate-200 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            {/* ปุ่มสถานที่แต่ละกอง (เรียงสถานที่หลักขึ้นก่อนเสมอ) */}
-            {(isManagerOrAdmin ? sortedLocations : userVisibleLocations).map(loc => {
-              const isPrimary = userPrimaryLocation === loc;
-              const isSelected = selectedLocationFilter === loc;
-              const st = locationStatsMap[loc] || { available: 0, occupied: 0, dirty: 0, reserved: 0, netRevenue: 0 };
+          {/* บรรทัดที่ 2: ปุ่มเลือกสถานที่ (ปุ่มกอง) + สลับตาราง/แผนผัง ในแถวเดียวกัน */}
+          {!loading && (isManagerOrAdmin ? sortedLocations.length > 0 : userVisibleLocations.length > 0) && (
+            <div className="pt-1.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-1.5">
+              <div className="flex flex-wrap items-center gap-1">
+                {(isManagerOrAdmin ? sortedLocations : userVisibleLocations).map(loc => {
+                  const isPrimary = userPrimaryLocation === loc;
+                  const isSelected = selectedLocationFilter === loc;
+                  const st = locationStatsMap[loc] || { available: 0, occupied: 0, dirty: 0, reserved: 0, netRevenue: 0 };
 
-              if (isPrimary) {
-                // ปุ่มสถานที่หลัก: ขนาดใหญ่พิเศษ มีดาว ⭐ และป้าย "สถานที่หลัก" ชัดเจน ป้องกันการกดผิดสถานที่
-                return (
+                  if (isPrimary) {
+                    return (
+                      <button
+                        key={loc}
+                        type="button"
+                        onClick={() => setSelectedLocationFilter(loc)}
+                        className={`px-2.5 py-1 rounded-xl text-[11px] sm:text-xs font-black transition-all flex items-center gap-1 border-2 ${
+                          isSelected
+                            ? "bg-indigo-600 text-white border-amber-300 shadow-xs"
+                            : "bg-indigo-50 text-indigo-900 border-indigo-300 hover:bg-indigo-100"
+                        }`}
+                      >
+                        <span>⭐{loc}</span>
+                        <span
+                          className={`text-[9.5px] px-1 py-0.2 rounded font-bold ${
+                            isSelected ? "bg-indigo-700 text-indigo-50" : "bg-white text-slate-700 border border-indigo-200"
+                          }`}
+                        >
+                          ว่าง{st.available}•พัก{st.occupied}
+                          {!isHousekeeper && `•฿${st.netRevenue.toLocaleString()}`}
+                        </span>
+                      </button>
+                    );
+                  }
+
+                  return (
+                    <button
+                      key={loc}
+                      type="button"
+                      onClick={() => setSelectedLocationFilter(loc)}
+                      className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 border ${
+                        isSelected
+                          ? "bg-blue-600 text-white border-blue-600 shadow-2xs"
+                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      <span>📍{loc}</span>
+                      <span
+                        className={`text-[9.5px] font-semibold px-1 py-0.2 rounded ${
+                          isSelected ? "bg-blue-700 text-blue-50" : "bg-white text-slate-500 border border-slate-200/70"
+                        }`}
+                      >
+                        {st.available}/{st.occupied}
+                        {!isHousekeeper && st.netRevenue > 0 ? `•฿${st.netRevenue.toLocaleString()}` : ""}
+                      </span>
+                    </button>
+                  );
+                })}
+
+                {(isManagerOrAdmin ? sortedLocations.length > 1 : userVisibleLocations.length > 1) && (
                   <button
-                    key={loc}
                     type="button"
-                    onClick={() => setSelectedLocationFilter(loc)}
-                    className={`px-3.5 sm:px-4 py-2 rounded-2xl text-xs sm:text-sm font-black transition-all flex flex-wrap items-center gap-1.5 sm:gap-2 border-2 ${
-                      isSelected
-                        ? "bg-indigo-600 text-white border-amber-300 shadow-md ring-2 ring-indigo-300 scale-[1.02]"
-                        : "bg-indigo-50 text-indigo-900 border-indigo-300 hover:bg-indigo-100"
+                    onClick={() => setSelectedLocationFilter(null)}
+                    className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-colors border ${
+                      selectedLocationFilter === null
+                        ? "bg-slate-800 text-white border-slate-800"
+                        : "bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100"
                     }`}
                   >
-                    <span className="text-base leading-none">⭐</span>
-                    <span>{loc}</span>
-                    <span
-                      className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${
-                        isSelected ? "bg-amber-300 text-slate-900" : "bg-indigo-200 text-indigo-900"
-                      }`}
-                    >
-                      สถานที่หลัก
-                    </span>
-                    <span
-                      className={`text-[11px] font-bold px-2 py-0.5 rounded-lg ${
-                        isSelected ? "bg-indigo-700/80 text-indigo-50" : "bg-white text-slate-700 border border-indigo-200"
-                      }`}
-                    >
-                      ว่าง {st.available} • พัก {st.occupied}
-                      {!isHousekeeper && ` • สุทธิ ฿${st.netRevenue.toLocaleString()}`}
-                    </span>
+                    ทั้งหมด
                   </button>
-                );
-              }
+                )}
+              </div>
 
-              // ปุ่มสถานที่รอง (หรือปุ่มสถานที่ทั่วไปสำหรับ Admin)
-              return (
-                <button
-                  key={loc}
-                  type="button"
-                  onClick={() => setSelectedLocationFilter(loc)}
-                  className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
-                    isSelected
-                      ? "bg-blue-600 text-white border-blue-600 shadow-xs"
-                      : "bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200"
-                  }`}
-                >
-                  <span>📍 {loc}</span>
-                  {isStaff && (
-                    <span className={`text-[9px] px-1 rounded ${isSelected ? "bg-blue-700 text-blue-100" : "bg-slate-200 text-slate-600"}`}>
-                      รอง
-                    </span>
-                  )}
-                  <span
-                    className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${
-                      isSelected ? "bg-blue-700 text-blue-50" : "bg-white text-slate-600"
-                    }`}
+              <div className="flex items-center gap-1 ml-auto">
+                {isManagerOrAdmin && dateOffset === 0 && rooms.some(r => r.status === 'dirty') && (
+                  <button 
+                    onClick={handleCleanAllDirtyRooms}
+                    disabled={loading}
+                    className="flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 text-[10.5px] font-bold rounded-lg transition-colors"
                   >
-                    ว่าง {st.available} • พัก {st.occupied}
-                    {!isHousekeeper && ` • ฿${st.netRevenue.toLocaleString()}`}
-                  </span>
-                </button>
-              );
-            })}
-
-            {/* ปุ่ม "ทั้งหมด" (ขนาดเล็กกว่าสถานที่หลัก เพื่อไม่ให้เผลอกดผิด) */}
-            {(isManagerOrAdmin ? sortedLocations.length > 1 : userVisibleLocations.length > 1) && (
-              <button
-                type="button"
-                onClick={() => setSelectedLocationFilter(null)}
-                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors border ${
-                  selectedLocationFilter === null
-                    ? "bg-slate-800 text-white border-slate-800 shadow-xs"
-                    : "bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100"
-                }`}
-              >
-                ดูทั้งหมด
-              </button>
-            )}
-          </div>
-
-          {/* ขวา: ปุ่มทำความสะอาดทุกห้อง (ถ้ามีห้องรอทำ) + สลับตาราง/แผนผัง */}
-          <div className="flex items-center gap-2 ml-auto">
-            {isManagerOrAdmin && dateOffset === 0 && rooms.some(r => r.status === 'dirty') && (
-              <button 
-                onClick={handleCleanAllDirtyRooms}
-                disabled={loading}
-                className="flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 text-xs font-bold rounded-xl transition-colors"
-              >
-                🧹 ทำความสะอาดทุกห้อง
-              </button>
-            )}
-            <div className="flex bg-slate-100 p-0.5 rounded-xl">
-              <button 
-                onClick={() => setViewMode('grid')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${viewMode === 'grid' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                ตาราง
-              </button>
-              <button 
-                onClick={() => setViewMode('map')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${viewMode === 'map' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                แผนผัง
-              </button>
+                    🧹ล้างทุกห้อง
+                  </button>
+                )}
+                <div className="flex bg-slate-100 p-0.5 rounded-lg text-[10.5px]">
+                  <button 
+                    onClick={() => setViewMode('grid')}
+                    className={`px-2 py-0.5 rounded-md font-bold transition-all ${viewMode === 'grid' ? 'bg-white text-slate-800 shadow-2xs' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    ตาราง
+                  </button>
+                  <button 
+                    onClick={() => setViewMode('map')}
+                    className={`px-2 py-0.5 rounded-md font-bold transition-all ${viewMode === 'map' ? 'bg-white text-slate-800 shadow-2xs' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    ผัง
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -1262,7 +1345,7 @@ export default function CheckinPage() {
           <div className="text-xs text-slate-400 mt-1">โปรดติดต่อผู้ดูแลระบบ (Admin) เพื่อกำหนดสถานที่หลักในหน้า Settings</div>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {(isManagerOrAdmin ? sortedLocations : userVisibleLocations).filter(loc => {
             if (!isManagerOrAdmin && !userVisibleLocations.includes(loc)) {
               return false;
@@ -1289,52 +1372,52 @@ export default function CheckinPage() {
             return (
               <div
                 key={loc}
-                className={`p-2.5 sm:p-5 rounded-2xl border ${
+                className={`p-2 sm:p-4 rounded-2xl border ${
                   isPrimary
-                    ? "bg-indigo-50/30 border-indigo-200 shadow-xs"
+                    ? "bg-indigo-50/30 border-indigo-200 shadow-2xs"
                     : "bg-slate-50/50 border-slate-200"
                 }`}
               >
-                {/* หัวข้อกอง (ชื่อกอง): แสดงห้องว่าง • มีผู้เข้าพัก • ยอดรายได้สุทธิวันนี้ และ 🔑 มัดจำกุญแจคงเหลือ ในบรรทัดเดียวกัน */}
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                    <span className={`w-2 h-6 rounded-full ${isPrimary ? "bg-indigo-600" : "bg-slate-400"}`}></span>
-                    <h2 className="text-base sm:text-lg font-black text-slate-800 flex items-center gap-1.5">
+                {/* หัวข้อกอง (ชื่อกอง): บรรทัดเดียวกระชับ รวมชื่อกอง + ว่าง/พัก/สุทธิ + 🔑มัดจำกุญแจ */}
+                <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2">
+                  <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
+                    <span className={`w-1.5 h-4 sm:h-5 rounded-full ${isPrimary ? "bg-indigo-600" : "bg-slate-400"}`}></span>
+                    <h2 className="text-sm sm:text-base font-black text-slate-800 flex items-center gap-1">
                       {isPrimary && <span>⭐</span>}
                       <span>{loc}</span>
                     </h2>
                     {isPrimary && (
-                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-600 text-white">
-                        สถานที่หลัก
+                      <span className="text-[9.5px] font-black px-1.5 py-0.2 rounded-full bg-indigo-600 text-white">
+                        หลัก
                       </span>
                     )}
                     {isStaff && !isPrimary && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-                        สถานที่รอง (จองข้ามสถานที่ได้เฉพาะโอน/บัตร/ยังไม่ชำระ)
+                      <span className="text-[9.5px] font-bold px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                        สถานที่รอง (โอน/บัตร/ค้างชำระ)
                       </span>
                     )}
 
                     {/* สถิติประจำกองในบรรทัดเดียวกับชื่อกอง */}
-                    <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold">
-                      <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <div className="flex flex-wrap items-center gap-1 text-[10.5px] sm:text-xs font-bold">
+                      <span className="px-1.5 py-0.2 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
                         ว่าง {st.available}
                       </span>
-                      <span className="px-2 py-0.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+                      <span className="px-1.5 py-0.2 rounded-md bg-blue-50 text-blue-700 border border-blue-200">
                         พัก {st.occupied}
                       </span>
                       {st.dirty > 0 && (
-                        <span className="px-2 py-0.5 rounded-lg bg-orange-50 text-orange-700 border border-orange-200">
+                        <span className="px-1.5 py-0.2 rounded-md bg-orange-50 text-orange-700 border border-orange-200">
                           รอทำ {st.dirty}
                         </span>
                       )}
                       {st.reserved > 0 && (
-                        <span className="px-2 py-0.5 rounded-lg bg-purple-50 text-purple-700 border border-purple-200">
+                        <span className="px-1.5 py-0.2 rounded-md bg-purple-50 text-purple-700 border border-purple-200">
                           จอง {st.reserved}
                         </span>
                       )}
                       {!isHousekeeper && (
-                        <span className="px-2.5 py-0.5 rounded-lg bg-slate-800 text-white font-black">
-                          รายได้สุทธิวันนี้ ฿{st.netRevenue.toLocaleString()}
+                        <span className="px-2 py-0.2 rounded-md bg-slate-800 text-white font-black">
+                          สุทธิ ฿{st.netRevenue.toLocaleString()}
                         </span>
                       )}
                     </div>
@@ -1345,16 +1428,15 @@ export default function CheckinPage() {
                     <button
                       type="button"
                       onClick={() => setExpandedKeyLocs(prev => ({ ...prev, [loc]: !prev[loc] }))}
-                      className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-2.5 py-1 rounded-xl text-xs font-bold text-amber-900 transition-colors shadow-2xs"
+                      className="flex items-center gap-1 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-lg text-[10.5px] sm:text-xs font-bold text-amber-900 transition-colors shadow-2xs"
                       title="คลิกเพื่อดูรายชื่อห้องที่ถือเงินมัดจำกุญแจของสถานที่นี้"
                     >
-                      <span>🔑</span>
-                      <span>มัดจำกุญแจ ({loc}):</span>
-                      <span className="font-black text-amber-800 text-xs sm:text-sm">
+                      <span>🔑มัดจำ:</span>
+                      <span className="font-black text-amber-800">
                         ฿{st.keyTotal.toLocaleString()}
                       </span>
-                      <span className="text-[10px] bg-white border border-amber-200 rounded-full px-1.5 py-0.5 text-amber-700 font-bold">
-                        {st.keyRooms.length} ห้อง {isKeyExpanded ? "▲" : "▼"}
+                      <span className="text-[9.5px] bg-white border border-amber-200 rounded-full px-1 text-amber-700 font-bold">
+                        {st.keyRooms.length}▼
                       </span>
                     </button>
                   )}
@@ -1614,26 +1696,56 @@ export default function CheckinPage() {
                           </div>
                         )}
 
-                        {/* Key Deposit Indicator (Bottom-Right above White Financial Bar) */}
-                        {room.status === 'occupied' && (room.held_key_deposit || 0) > 0 && (
+                        {/* Booking Note / Group Master / Key Deposit Indicators (Bottom-Right above White Financial Bar) */}
+                        {(room.booking_note || (room.group_info && room.is_group_master) || (room.status === 'occupied' && (room.held_key_deposit || 0) > 0)) && (
                           <div
-                            className="absolute bottom-[15px] sm:bottom-[19px] right-1 z-30 flex items-center leading-none text-[7.5px] sm:text-[9px] font-black text-amber-700 pointer-events-none"
-                            title="มัดจำกุญแจที่ต้องคืนลูกค้าเป็นเงินสดตอนเช็คเอาท์"
+                            className="absolute bottom-[15px] sm:bottom-[19px] right-1 z-30 flex items-center gap-0.5 leading-none text-[7.5px] sm:text-[9px] font-black pointer-events-none"
                           >
-                            🔑{room.held_key_deposit}
+                            {room.booking_note && (
+                              <span
+                                className="bg-amber-200/90 text-amber-950 px-0.5 rounded-xs"
+                                title={`หมายเหตุ: ${room.booking_note}`}
+                              >
+                                📝
+                              </span>
+                            )}
+                            {room.group_info && room.is_group_master && (
+                              <span
+                                className="bg-indigo-600 text-white px-0.5 rounded-xs"
+                                title={`ห้องหลักกลุ่ม (${room.group_info.rooms.map(r => r.roomNo).join(', ')})`}
+                              >
+                                👑{room.group_info.rooms.length}
+                              </span>
+                            )}
+                            {room.status === 'occupied' && (room.held_key_deposit || 0) > 0 && (
+                              <span
+                                className="text-amber-700"
+                                title="มัดจำกุญแจที่ต้องคืนลูกค้าเป็นเงินสดตอนเช็คเอาท์"
+                              >
+                                🔑{room.held_key_deposit}
+                              </span>
+                            )}
                           </div>
                         )}
 
-                        {/* Financial Summary for Occupied Rooms */}
-                        {room.status === 'occupied' && (
+                        {/* Financial Summary for Occupied / Group-Linked Rooms */}
+                        {(room.status === 'occupied' || (room.status === 'reserved' && room.group_info)) && (
                           <div className="absolute bottom-0 left-0 right-0 w-full h-[14px] sm:h-[18px] flex items-center justify-center gap-0.5 sm:gap-1 text-[7px] sm:text-[9.5px] font-bold z-30 whitespace-nowrap bg-white/60 backdrop-blur-[1px] border-t border-slate-300/40 text-slate-500 tracking-tight overflow-hidden px-0.5">
-                            <span>{room.total_charges || 0}</span>
-                            <span className="text-slate-300 font-bold">-</span>
-                            <span>{room.total_payments || 0}</span>
-                            <span className="text-slate-300 font-bold">=</span>
-                            <span className={((room.unpaid_balance || 0) < 0) ? 'text-blue-400' : (room.unpaid_balance || 0) > 0 ? 'text-rose-400' : 'text-emerald-400'}>
-                              {room.unpaid_balance || 0}
-                            </span>
+                            {room.group_info && !room.is_group_master ? (
+                              <span className={((room.unpaid_balance || 0) > 0) ? 'text-rose-500 font-black' : 'text-indigo-700 font-black'}>
+                                🔗รวมห้อง {room.group_info.masterRoomNo}
+                              </span>
+                            ) : (
+                              <>
+                                <span>{room.total_charges || 0}</span>
+                                <span className="text-slate-300 font-bold">-</span>
+                                <span>{room.total_payments || 0}</span>
+                                <span className="text-slate-300 font-bold">=</span>
+                                <span className={((room.unpaid_balance || 0) < 0) ? 'text-blue-400' : (room.unpaid_balance || 0) > 0 ? 'text-rose-400' : 'text-emerald-400'}>
+                                  {room.unpaid_balance || 0}
+                                </span>
+                              </>
+                            )}
                           </div>
                         )}
                       </button>
@@ -1656,6 +1768,7 @@ export default function CheckinPage() {
       {selectedRoom && (
         <RoomCheckinModal
           room={selectedRoom}
+          allRooms={rooms}
           dateOffset={dateOffset}
           onClose={() => setSelectedRoom(null)}
           onUpdate={() => {

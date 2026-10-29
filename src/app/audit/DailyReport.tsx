@@ -181,6 +181,7 @@ export default function DailyReport({
   const [signPin, setSignPin] = useState("");
   const [signError, setSignError] = useState("");
   const [signSaving, setSignSaving] = useState(false);
+  const [showZeroRevenueItems, setShowZeroRevenueItems] = useState(false);
   const managerSigRef = useRef<SignaturePadHandle>(null);
 
   useEffect(() => {
@@ -1771,11 +1772,20 @@ export default function DailyReport({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
         {/* ==================== คอลัมน์ซ้าย: ฝั่งรายได้ (5 ส่วน) ==================== */}
         <div className="lg:col-span-5 bg-white rounded-2xl border-2 border-slate-200 shadow-sm flex flex-col overflow-hidden">
-          <div className="px-5 py-3.5 bg-slate-800 text-white flex justify-between items-center">
+          <div className="px-5 py-3.5 bg-slate-800 text-white flex flex-wrap justify-between items-center gap-2">
             <h3 className="font-black text-base tracking-wide">ฝั่งรายได้ (Revenue)</h3>
-            <span className="text-[11px] bg-slate-700 text-slate-200 px-2.5 py-0.5 rounded-full font-bold">
-              ไม่รวมมัดจำกุญแจ
-            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setShowZeroRevenueItems((v) => !v)}
+                className="text-[11px] bg-slate-700 hover:bg-slate-600 text-slate-200 px-2.5 py-0.5 rounded-full font-bold transition-colors cursor-pointer"
+              >
+                {showZeroRevenueItems ? "🙈 ซ่อนรายการ ฿0" : "👁️ แสดงรายการ ฿0"}
+              </button>
+              <span className="text-[11px] bg-slate-700 text-slate-200 px-2.5 py-0.5 rounded-full font-bold">
+                ไม่รวมมัดจำกุญแจ
+              </span>
+            </div>
           </div>
 
           <div className="p-5 flex-1 space-y-3 text-sm">
@@ -1792,74 +1802,100 @@ export default function DailyReport({
                   <span>1.1 รายได้ค่าห้อง (ตามราคาเป้าหมาย)</span>
                   <span className="font-bold text-slate-900">{fmt(roomTargetTotal)}</span>
                 </div>
-                <div className="flex justify-between items-center pl-4 text-xs text-slate-600">
-                  <span>1.1.1 ค้างคืน</span>
-                  <span className="font-bold text-slate-700">{fmt(roomTargetOvernight)}</span>
-                </div>
-                <div className="flex justify-between items-center pl-4 text-xs text-slate-600">
-                  <span>1.1.2 ชั่วคราว</span>
-                  <span className="font-bold text-slate-700">{fmt(roomTargetShortStay)}</span>
-                </div>
+                {(showZeroRevenueItems || roomTargetOvernight > 0 || (roomTargetOvernight === 0 && roomTargetShortStay === 0)) && (
+                  <div className="flex justify-between items-center pl-4 text-xs text-slate-600">
+                    <span>1.1.1 ค้างคืน</span>
+                    <span className="font-bold text-slate-700">{fmt(roomTargetOvernight)}</span>
+                  </div>
+                )}
+                {(showZeroRevenueItems || roomTargetShortStay > 0) && (
+                  <div className="flex justify-between items-center pl-4 text-xs text-slate-600">
+                    <span>1.1.2 ชั่วคราว</span>
+                    <span className="font-bold text-slate-700">{fmt(roomTargetShortStay)}</span>
+                  </div>
+                )}
               </div>
 
               {/* 1.2 รายได้ส่วนเพิ่ม */}
-              <div className="pl-3 space-y-1">
-                <div className="flex justify-between items-center text-slate-700 font-semibold">
-                  <span>1.2 รายได้ส่วนเพิ่ม</span>
-                  <span className="font-bold text-emerald-700">+{fmt(roomExtraTotal)}</span>
+              {(showZeroRevenueItems || roomExtraTotal > 0 || earlyLateTotal > 0 || upsellTotal > 0) && (
+                <div className="pl-3 space-y-1">
+                  <div className="flex justify-between items-center text-slate-700 font-semibold">
+                    <span>1.2 รายได้ส่วนเพิ่ม</span>
+                    <span className="font-bold text-emerald-700">+{fmt(roomExtraTotal)}</span>
+                  </div>
+                  {(showZeroRevenueItems || earlyLateTotal > 0) && (
+                    <div className="flex justify-between items-center pl-4 text-xs text-slate-600">
+                      <span>1.2.1 เข้าก่อน/ออกช้า (Early-Late)</span>
+                      <span className="font-bold text-slate-700">{fmt(earlyLateTotal)}</span>
+                    </div>
+                  )}
+                  {(showZeroRevenueItems || upsellTotal > 0) && (
+                    <div className="flex justify-between items-center pl-4 text-xs text-slate-600">
+                      <span>1.2.2 ส่วนเพิ่มค่าห้อง</span>
+                      <span className="font-bold text-slate-700">{fmt(upsellTotal)}</span>
+                    </div>
+                  )}
                 </div>
-                <div className="flex justify-between items-center pl-4 text-xs text-slate-600">
-                  <span>1.2.1 เข้าก่อน/ออกช้า (Early-Late)</span>
-                  <span className="font-bold text-slate-700">{fmt(earlyLateTotal)}</span>
-                </div>
-                <div className="flex justify-between items-center pl-4 text-xs text-slate-600">
-                  <span>1.2.2 ส่วนเพิ่มค่าห้อง</span>
-                  <span className="font-bold text-slate-700">{fmt(upsellTotal)}</span>
-                </div>
-              </div>
+              )}
 
               {/* 1.3 ส่วนลด */}
-              <div className="flex justify-between items-center pl-3 text-rose-600 font-semibold pt-1 border-t border-slate-200/60">
-                <span>1.3 ส่วนลด (ต่ำกว่าราคาเป้าหมาย)</span>
-                <span className="font-bold">-{fmt(roomDiscountTotal)}</span>
-              </div>
+              {(showZeroRevenueItems || roomDiscountTotal > 0) && (
+                <div className="flex justify-between items-center pl-3 text-rose-600 font-semibold pt-1 border-t border-slate-200/60">
+                  <span>1.3 ส่วนลด (ต่ำกว่าราคาเป้าหมาย)</span>
+                  <span className="font-bold">-{fmt(roomDiscountTotal)}</span>
+                </div>
+              )}
             </div>
 
             {/* 2 - 6 หมวดรายได้อื่นๆ */}
             <div className="space-y-2.5 pt-1 px-1">
-              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                <span className="font-bold text-slate-700">2. ค่าส่วนเสริม (เตียงเสริม/ผ้าห่ม/หมอน)</span>
-                <span className="font-black text-slate-900">{fmt(addonRevenue)}</span>
-              </div>
-              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                <span className="font-bold text-slate-700">3. ค่ามินิบาร์ (อาหาร/เครื่องดื่ม)</span>
-                <span className="font-black text-slate-900">{fmt(minibarRevenue)}</span>
-              </div>
-              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                <span className="font-bold text-slate-700">4. ค่าปรับ (เสียหาย/สูบบุหรี่/ริบมัดจำ)</span>
-                <span className="font-black text-slate-900">{fmt(fineRevenue)}</span>
-              </div>
-              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                <span className="font-bold text-slate-700">5. ค่าบริการอื่นๆ</span>
-                <span className="font-black text-slate-900">{fmt(otherRevenue)}</span>
-              </div>
-              <div className="flex justify-between items-center py-1.5 text-slate-400">
-                <span className="font-semibold">6. ยกเลิก (Voided)</span>
-                <span className="font-bold">{fmt(voidedRevenue)}</span>
-              </div>
+              {(showZeroRevenueItems || addonRevenue > 0) && (
+                <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
+                  <span className="font-bold text-slate-700">2. ค่าส่วนเสริม (เตียงเสริม/ผ้าห่ม/หมอน)</span>
+                  <span className="font-black text-slate-900">{fmt(addonRevenue)}</span>
+                </div>
+              )}
+              {(showZeroRevenueItems || minibarRevenue > 0) && (
+                <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
+                  <span className="font-bold text-slate-700">3. ค่ามินิบาร์ (อาหาร/เครื่องดื่ม)</span>
+                  <span className="font-black text-slate-900">{fmt(minibarRevenue)}</span>
+                </div>
+              )}
+              {(showZeroRevenueItems || fineRevenue > 0) && (
+                <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
+                  <span className="font-bold text-slate-700">4. ค่าปรับ (เสียหาย/สูบบุหรี่/ริบมัดจำ)</span>
+                  <span className="font-black text-slate-900">{fmt(fineRevenue)}</span>
+                </div>
+              )}
+              {(showZeroRevenueItems || otherRevenue > 0) && (
+                <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
+                  <span className="font-bold text-slate-700">5. ค่าบริการอื่นๆ</span>
+                  <span className="font-black text-slate-900">{fmt(otherRevenue)}</span>
+                </div>
+              )}
+              {(showZeroRevenueItems || voidedRevenue > 0) && (
+                <div className="flex justify-between items-center py-1.5 text-slate-400">
+                  <span className="font-semibold">6. ยกเลิก (Voided)</span>
+                  <span className="font-bold">{fmt(voidedRevenue)}</span>
+                </div>
+              )}
             </div>
           </div>
 
           {/* สรุปท้ายคอลัมน์ซ้าย */}
           <div className="p-4 bg-slate-50 border-t-2 border-slate-200 space-y-1.5 text-sm">
-            <div className="flex justify-between text-slate-600 font-semibold">
-              <span>รวมรายได้ทั้งหมด (ก่อนหักส่วนลด)</span>
-              <span>{fmt(grossTotalRevenue)}</span>
-            </div>
-            <div className="flex justify-between text-rose-600 font-semibold">
-              <span>หัก ส่วนลดค่าห้อง</span>
-              <span>-{fmt(roomDiscountTotal)}</span>
-            </div>
+            {(showZeroRevenueItems || roomDiscountTotal > 0) && (
+              <>
+                <div className="flex justify-between text-slate-600 font-semibold">
+                  <span>รวมรายได้ทั้งหมด (ก่อนหักส่วนลด)</span>
+                  <span>{fmt(grossTotalRevenue)}</span>
+                </div>
+                <div className="flex justify-between text-rose-600 font-semibold">
+                  <span>หัก ส่วนลดค่าห้อง</span>
+                  <span>-{fmt(roomDiscountTotal)}</span>
+                </div>
+              </>
+            )}
             <div className="flex justify-between items-center pt-2 border-t border-slate-200 font-black text-base text-slate-900">
               <span>รวมรายได้สุทธิ</span>
               <span className="text-xl text-indigo-700">{fmt(netTotalRevenue)}</span>
