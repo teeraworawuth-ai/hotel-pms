@@ -63,6 +63,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
   const [closeReserve, setCloseReserve] = useState(0);
   const [closeReserveRooms, setCloseReserveRooms] = useState<HeldKeyDepositRoom[]>([]);
   const [carriedToNextShift, setCarriedToNextShift] = useState<number | "">(0);
+  const [negCloseMode, setNegCloseMode] = useState<"manager_topup" | "leave_as_is">("manager_topup");
   const [actualSend, setActualSend] = useState<number | "">("");
   const [closePin, setClosePin] = useState("");
   const [isEndOfDay, setIsEndOfDay] = useState(false);
@@ -143,7 +144,10 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       setLastClosedDrawer(lastDrawer);
       const unconsumedCarry =
         lastDrawer && !lastDrawer.consumed_by_shift_id ? Math.max(0, Number(lastDrawer.carried_cash || 0)) : 0;
-      const expectedTotal = r.total + unconsumedCarry;
+      const expectedTotal =
+        lastDrawer && !lastDrawer.consumed_by_shift_id && Number.isFinite(Number(lastDrawer.total_in_drawer))
+          ? Math.max(0, Number(lastDrawer.total_in_drawer))
+          : r.total + unconsumedCarry;
       setInitialCash(expectedTotal);
       setOpenCashMode("matched");
       // หากยอดคาดหมายเป็น 0 ให้ถือว่ายืนยันได้ทันที แต่ถ้ามีเงินส่งต่อหรือมัดจำในลิ้นชัก ให้พนักงานกดปุ่มยืนยันตรวจนับเงินก่อน
@@ -192,6 +196,9 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       setCloseReserve(keyDep.total);
       setCloseReserveRooms(keyDep.rooms);
       setCarriedToNextShift(0);
+      const initNet = (d?.drawer || 0) - keyDep.total;
+      setNegCloseMode("manager_topup");
+      setActualSend(initNet);
       setCloseLoading(false);
     })();
   }, [showCloseModal, activeShift?.id, activeShift?.shift_location]);
@@ -200,7 +207,11 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
     lastClosedDrawer && !lastClosedDrawer.consumed_by_shift_id
       ? Math.max(0, Number(lastClosedDrawer.carried_cash || 0))
       : 0;
-  const expectedOpenDrawerTotal = (suggestedReserve || 0) + unconsumedCarryFromPrev;
+  const expectedOpenDrawerTotal =
+    lastClosedDrawer && !lastClosedDrawer.consumed_by_shift_id && Number.isFinite(Number(lastClosedDrawer.total_in_drawer))
+      ? Math.max(0, Number(lastClosedDrawer.total_in_drawer))
+      : (suggestedReserve || 0) + unconsumedCarryFromPrev;
+  const prevDrawerShortfall = Math.max(0, (suggestedReserve || 0) - expectedOpenDrawerTotal);
   const openCashDiff = (initialCash === "" ? 0 : Number(initialCash)) - expectedOpenDrawerTotal;
 
   const handleOpenShift = async () => {
@@ -369,6 +380,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
     setShowCloseModal(false);
     setClosePin("");
     setCarriedToNextShift(0);
+    setNegCloseMode("manager_topup");
     setActualSend("");
     setIsEndOfDay(false);
     setErrorMsg("");
@@ -377,9 +389,22 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
 
   const drawerCash = closeDrawer?.drawer || 0;
   const netCashBeforeCarry = drawerCash - closeReserve;
-  const carriedNum = carriedToNextShift === "" ? 0 : Math.max(0, Number(carriedToNextShift || 0));
-  const requiredSend = netCashBeforeCarry - carriedNum;
-  const nextShiftDrawerTotal = closeReserve + carriedNum;
+  const isShortForReserve = netCashBeforeCarry < 0;
+  const carriedNum = isShortForReserve
+    ? 0
+    : carriedToNextShift === ""
+    ? 0
+    : Math.max(0, Number(carriedToNextShift || 0));
+  const requiredSend = isShortForReserve
+    ? negCloseMode === "leave_as_is"
+      ? 0
+      : netCashBeforeCarry
+    : netCashBeforeCarry - carriedNum;
+  const nextShiftDrawerTotal = isShortForReserve
+    ? negCloseMode === "leave_as_is"
+      ? Math.max(0, drawerCash)
+      : closeReserve
+    : closeReserve + carriedNum;
   const actualSendNum = actualSend === "" ? 0 : Number(actualSend);
   const sendDiff = actualSendNum - requiredSend; // + เกิน / - ขาด
   // กติกาปิดรอบวัน: ติ๊กได้ตั้งแต่ 05:30 น. ของวันถัดไป / ตั้งแต่ 06:30 น. บังคับเป็นกะสุดท้ายของวันอัตโนมัติ
@@ -418,7 +443,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
     }
 
     const nowIso = getNow().toISOString();
-    const countedDrawer = actualSendNum + closeReserve + carriedNum;
+    const countedDrawer = drawerCash + sendDiff;
 
     const { error: shiftError } = await supabase
       .from("shifts")
@@ -440,6 +465,13 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
 
     const businessDate = activeShift.business_date || getShiftBusinessDateStr(activeShift.start_time);
     const shiftLoc = activeShift.shift_location || inferShiftLocation(activeShift.staff_name, null);
+    const handoverNote = isShortForReserve
+      ? negCloseMode === "leave_as_is"
+        ? `ยังไม่เติมมัดจำที่ขาด ${fmt(Math.abs(netCashBeforeCarry))} (ทิ้งเงินไว้เท่าที่มี ${fmt(nextShiftDrawerTotal)})`
+        : `ผู้จัดการเติมเงินมัดจำที่ขาด ${fmt(Math.abs(netCashBeforeCarry))} (ครบมัดจำ ${fmt(closeReserve)})`
+      : carriedNum > 0
+      ? `เหลือเงินทอนส่งต่อกะหน้า ${fmt(carriedNum)} (รวมในลิ้นชัก ${fmt(nextShiftDrawerTotal)})`
+      : null;
     const record: CashHandover = {
       id: newHandoverId(),
       business_date: businessDate,
@@ -460,10 +492,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       manager_name: null,
       manager_signature: null,
       manager_signed_at: null,
-      note:
-        carriedNum > 0
-          ? `เหลือเงินสด/เงินทอนติดลิ้นชักส่งต่อให้กะถัดไป ${fmt(carriedNum)} (รวมในลิ้นชัก ${fmt(nextShiftDrawerTotal)})`
-          : null,
+      note: handoverNote,
       created_at: nowIso,
     };
     await saveHandover(record);
@@ -755,40 +784,42 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
                   )}
                 </div>
                 {/* กล่องตรวจสอบและยืนยันเงินสดในลิ้นชักจากกะก่อนหน้า */}
-                <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/70 p-3.5 space-y-2.5">
+                <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/70 p-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-black text-emerald-950">
-                      📦 เงินสดในลิ้นชักส่งต่อ {shiftLocation ? `(${shiftLocation})` : ""}
+                      📦 เงินในลิ้นชักจากกะก่อน {shiftLocation ? `(${shiftLocation})` : ""}
                     </span>
                     {lastClosedDrawer && !lastClosedDrawer.consumed_by_shift_id && (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-700 text-white">
-                        ส่งต่อจากกะ {lastClosedDrawer.staff_name}
+                        จากกะ {lastClosedDrawer.staff_name}
                       </span>
                     )}
                   </div>
 
                   <div className="bg-white rounded-lg border border-emerald-200/80 p-2.5 space-y-1 text-xs">
                     <div className="flex justify-between text-amber-800 font-semibold">
-                      <span>🔑 เงินสำรองมัดจำกุญแจ ({suggestedReserveRoomsCount} ห้อง)</span>
+                      <span>🔑 มัดจำกุญแจ ({suggestedReserveRoomsCount} ห้อง)</span>
                       <span className="font-bold">{fmt(suggestedReserve || 0)}</span>
                     </div>
-                    <div className="flex justify-between text-indigo-800 font-semibold">
-                      <span>
-                        🪙 เงินทอน/เงินสดส่งต่อจากกะก่อนหน้า
-                        {lastClosedDrawer && !lastClosedDrawer.consumed_by_shift_id
-                          ? ` (${lastClosedDrawer.staff_name})`
-                          : ""}
-                      </span>
-                      <span className="font-bold">+{fmt(unconsumedCarryFromPrev)}</span>
-                    </div>
+                    {prevDrawerShortfall > 0 ? (
+                      <div className="flex justify-between text-rose-600 font-semibold">
+                        <span>⚠️ กะก่อนยังไม่เติมเงินมัดจำ</span>
+                        <span className="font-bold">-{fmt(prevDrawerShortfall)}</span>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between text-indigo-800 font-semibold">
+                        <span>🪙 เงินทอนส่งต่อ</span>
+                        <span className="font-bold">+{fmt(unconsumedCarryFromPrev)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center pt-1.5 border-t border-slate-200 font-black text-slate-900 text-sm">
-                      <span>= รวมเงินที่ต้องมีในลิ้นชัก</span>
+                      <span>= เงินที่ต้องมีในลิ้นชัก</span>
                       <span className="text-emerald-700 text-base">{fmt(expectedOpenDrawerTotal)}</span>
                     </div>
                   </div>
 
                   {/* ปุ่มยืนยันการตรวจนับเงินตอนเปิดกะ */}
-                  <div className="grid grid-cols-1 gap-1.5">
+                  <div className="grid grid-cols-2 gap-1.5">
                     <button
                       type="button"
                       onClick={() => {
@@ -796,18 +827,13 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
                         setOpenCashMode("matched");
                         setOpenCashConfirmed(true);
                       }}
-                      className={`w-full py-2.5 px-3 rounded-xl text-xs font-black border-2 transition-all flex items-center justify-between ${
+                      className={`py-2 px-2.5 rounded-xl text-xs font-black border-2 transition-all flex items-center justify-center gap-1 ${
                         openCashConfirmed && openCashMode === "matched" && Number(initialCash || 0) === expectedOpenDrawerTotal
                           ? "bg-emerald-600 text-white border-emerald-700 shadow-xs"
                           : "bg-white hover:bg-emerald-100 text-emerald-900 border-emerald-300"
                       }`}
                     >
-                      <span>✅ นับเงินในลิ้นชักครบตรงกัน ({fmt(expectedOpenDrawerTotal)})</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/20">
-                        {openCashConfirmed && openCashMode === "matched" && Number(initialCash || 0) === expectedOpenDrawerTotal
-                          ? "ยืนยันแล้ว ✓"
-                          : "กดยืนยัน"}
-                      </span>
+                      <span>✅ นับเงินตรง ({fmt(expectedOpenDrawerTotal)})</span>
                     </button>
 
                     <button
@@ -816,21 +842,20 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
                         setOpenCashMode("custom");
                         setOpenCashConfirmed(true);
                       }}
-                      className={`w-full py-2 px-3 rounded-xl text-[11px] font-bold border transition-all text-left flex items-center justify-between ${
+                      className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1 ${
                         openCashMode === "custom"
                           ? "bg-amber-600 text-white border-amber-700"
                           : "bg-white hover:bg-amber-50 text-slate-600 border-slate-200"
                       }`}
                     >
-                      <span>⚠️ นับเงินจริงในลิ้นชักไม่ตรง / ต้องการระบุยอดเอง</span>
-                      <span>{openCashMode === "custom" ? "กำลังระบุ ▾" : "แก้ไข"}</span>
+                      <span>⚠️ ยอดไม่ตรง (ระบุเอง)</span>
                     </button>
                   </div>
 
                   {openCashMode === "custom" && (
                     <div className="pt-1 space-y-1">
                       <label className="block text-xs font-bold text-slate-700">
-                        ระบุเงินสดที่นับได้จริงในลิ้นชักตอนเปิดกะ {shiftLocation ? `(${shiftLocation})` : ""}
+                        ระบุเงินสดที่นับได้จริงในลิ้นชัก {shiftLocation ? `(${shiftLocation})` : ""}
                       </label>
                       <input
                         type="number"
@@ -839,12 +864,11 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
                           setInitialCash(e.target.value === "" ? "" : Number(e.target.value));
                           setOpenCashConfirmed(true);
                         }}
-                        className="w-full p-2.5 rounded-xl border border-amber-300 bg-white font-black text-base text-slate-900 focus:border-amber-500 outline-none"
+                        className="w-full p-2 rounded-xl border border-amber-300 bg-white font-black text-base text-slate-900 focus:border-amber-500 outline-none"
                       />
                       {initialCash !== "" && openCashDiff !== 0 && (
                         <p className={`text-[11px] font-bold ${openCashDiff > 0 ? "text-emerald-700" : "text-rose-600"}`}>
-                          {openCashDiff > 0 ? "เงินในลิ้นชักเกินจากยอดส่งต่อ (+)" : "เงินในลิ้นชักขาดจากยอดส่งต่อ (-)"}:{" "}
-                          {fmt(Math.abs(openCashDiff))} (ระบบจะบันทึกแจ้งไว้ในประวัติการเปิดกะ)
+                          {openCashDiff > 0 ? "เกินจากยอดส่งต่อ (+)" : "ขาดจากยอดส่งต่อ (-)"}: {fmt(Math.abs(openCashDiff))}
                         </p>
                       )}
                     </div>
@@ -872,159 +896,231 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       {showCloseModal && activeShift && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-3">
           <div className="bg-white rounded-2xl w-full max-w-md max-h-[95vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="px-5 py-4 bg-slate-800 text-white">
-              <h3 className="text-lg font-black">🔒 ปิดกะและส่งเงิน (Close Shift)</h3>
+            <div className="px-5 py-3.5 bg-slate-800 text-white">
+              <h3 className="text-base font-black">🔒 ปิดกะและส่งเงิน (Close Shift)</h3>
               <p className="text-xs text-slate-300 mt-0.5">
-                พนักงาน: {activeShift.staff_name} {activeShift.shift_location ? `• 📍${activeShift.shift_location}` : ""} • ยืนยันแล้วระบบจะออกจากระบบให้ทันที
+                พนักงาน: {activeShift.staff_name} {activeShift.shift_location ? `• 📍${activeShift.shift_location}` : ""}
               </p>
             </div>
 
             {closeLoading ? (
               <div className="p-8 text-center text-slate-500 animate-pulse font-bold">กำลังคำนวณเงินสดในลิ้นชัก...</div>
             ) : (
-              <div className="p-5 space-y-4">
-                {errorMsg && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg font-bold">{errorMsg}</div>}
+              <div className="p-4 space-y-3">
+                {errorMsg && <div className="bg-red-50 text-red-600 text-xs p-2.5 rounded-lg font-bold">{errorMsg}</div>}
 
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-1.5 text-sm">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1 text-xs">
                   <div className="flex justify-between text-slate-600">
-                    <span>เงินสดตั้งต้นในลิ้นชัก</span>
+                    <span>เงินตั้งต้น</span>
                     <span className="font-bold">{fmt(closeDrawer?.initialCash || 0)}</span>
                   </div>
                   <div className="flex justify-between text-emerald-700">
-                    <span>+ รับเงินสดในกะนี้</span>
+                    <span>+ รับเงินสด</span>
                     <span className="font-bold">+{fmt(closeDrawer?.cashIn || 0)}</span>
                   </div>
-                  <div className="flex justify-between text-rose-600">
-                    <span>- ค่าใช้จ่ายเงินสด</span>
-                    <span className="font-bold">-{fmt(closeDrawer?.expenses || 0)}</span>
-                  </div>
-                  <div className="flex justify-between text-rose-600">
-                    <span>- คืนเงินสด (มัดจำกุญแจ/เงินทอน)</span>
-                    <span className="font-bold">-{fmt(closeDrawer?.refunds || 0)}</span>
-                  </div>
+                  {(closeDrawer?.expenses || 0) > 0 || (closeDrawer?.refunds || 0) > 0 ? (
+                    <>
+                      {(closeDrawer?.expenses || 0) > 0 && (
+                        <div className="flex justify-between text-rose-600">
+                          <span>- ค่าใช้จ่ายเงินสด</span>
+                          <span className="font-bold">-{fmt(closeDrawer?.expenses || 0)}</span>
+                        </div>
+                      )}
+                      {(closeDrawer?.refunds || 0) > 0 && (
+                        <div className="flex justify-between text-rose-600">
+                          <span>- คืนเงินสด/มัดจำ</span>
+                          <span className="font-bold">-{fmt(closeDrawer?.refunds || 0)}</span>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="flex justify-between text-rose-600">
+                      <span>- รายจ่าย / คืนเงินสด</span>
+                      <span className="font-bold">-฿0</span>
+                    </div>
+                  )}
                   {(closeDrawer?.handedOut || 0) !== 0 && (
                     <div className="flex justify-between text-slate-600">
-                      <span>- ส่งเงินระหว่างกะไปแล้ว</span>
+                      <span>- ส่งเงินระหว่างกะแล้ว</span>
                       <span className="font-bold">-{fmt(closeDrawer?.handedOut || 0)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between font-black text-slate-900 pt-1.5 border-t border-slate-200">
-                    <span>= เงินสดในลิ้นชักตามระบบ</span>
+                  <div className="flex justify-between font-black text-slate-900 text-sm pt-1 border-t border-slate-200">
+                    <span>= เงินสดในลิ้นชัก</span>
                     <span>{fmt(drawerCash)}</span>
                   </div>
                   <div className="flex justify-between text-amber-800 font-bold">
-                    <span>- กันเงินมัดจำกุญแจคงเหลือ ({closeReserveRooms.length} ห้อง) ทิ้งไว้ให้กะถัดไป</span>
+                    <span>- หักมัดจำกุญแจ ({closeReserveRooms.length} ห้อง)</span>
                     <span>-{fmt(closeReserve)}</span>
                   </div>
                   {carriedNum > 0 && (
                     <div className="flex justify-between text-indigo-700 font-bold">
-                      <span>- เหลือเงินสด/เงินทอนติดลิ้นชักส่งต่อให้กะถัดไป</span>
+                      <span>- เงินทอนทิ้งไว้กะหน้า</span>
                       <span>-{fmt(carriedNum)}</span>
                     </div>
                   )}
                   <div
-                    className={`flex justify-between font-black text-base pt-1.5 border-t border-slate-200 ${
-                      requiredSend >= 0 ? "text-emerald-700" : "text-rose-700"
+                    className={`flex justify-between font-black text-sm pt-1 border-t border-slate-200 ${
+                      isShortForReserve ? "text-rose-700" : "text-emerald-700"
                     }`}
                   >
                     <span>
-                      {requiredSend >= 0
-                        ? "👉 ยอดเงินสดที่ต้องนำส่งเข้ากล่องผู้จัดการ"
-                        : "⚠️ เงินสดขาด (ผู้จัดการต้องเติม)"}
+                      {isShortForReserve
+                        ? "⚠️ ขาดเงินมัดจำ (ต้องเติม)"
+                        : "👉 ยอดต้องส่งผู้จัดการ"}
                     </span>
-                    <span>{fmt(Math.abs(requiredSend))}</span>
+                    <span>{fmt(Math.abs(isShortForReserve ? netCashBeforeCarry : requiredSend))}</span>
                   </div>
                   <div className="mt-1 pt-1.5 border-t border-dashed border-slate-200 flex justify-between items-center text-xs font-black text-indigo-900 bg-indigo-50/80 px-2.5 py-1.5 rounded-lg">
-                    <span>📌 รวมเงินที่ต้องคงเหลือไว้ในลิ้นชักให้กะถัดไป</span>
+                    <span>📌 เงินทิ้งไว้ในลิ้นชักให้กะหน้า</span>
                     <span>
-                      {fmt(nextShiftDrawerTotal)} (มัดจำ {fmt(closeReserve)} + ส่งต่อ {fmt(carriedNum)})
+                      {fmt(nextShiftDrawerTotal)}
+                      {carriedNum > 0 ? ` (มัดจำ ${fmt(closeReserve)} + ทอน ${fmt(carriedNum)})` : ""}
                     </span>
                   </div>
                 </div>
 
-                {/* ส่วนเลือกเหลือเงินทอนติดลิ้นชัก หรือส่งต่อเงินสดทั้งหมดให้กะถัดไป */}
-                <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="text-xs font-black text-indigo-950">
-                      🪙 เงินสดเหลือติดลิ้นชักส่งต่อให้กะถัดไป (เผื่อทอน / ยกยอดไปกะหน้า)
-                    </label>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCarriedToNextShift(0);
-                        setActualSend(Math.max(0, netCashBeforeCarry));
-                      }}
-                      className={`py-2 px-2 rounded-lg text-[11px] font-bold border transition-all ${
-                        carriedNum === 0
-                          ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
-                          : "bg-white hover:bg-indigo-50 text-slate-700 border-slate-200"
-                      }`}
-                    >
-                      💵 ส่งผู้จัดการทั้งหมด (เหลือเฉพาะมัดจำ)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const allCarry = Math.max(0, netCashBeforeCarry);
-                        setCarriedToNextShift(allCarry);
-                        setActualSend(0);
-                      }}
-                      className={`py-2 px-2 rounded-lg text-[11px] font-bold border transition-all ${
-                        netCashBeforeCarry > 0 && carriedNum === Math.max(0, netCashBeforeCarry)
-                          ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
-                          : "bg-white hover:bg-indigo-50 text-indigo-900 border-indigo-200"
-                      }`}
-                    >
-                      🔄 ส่งต่อให้กะถัดไปทั้งจำนวน ({fmt(Math.max(0, netCashBeforeCarry))})
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-bold text-slate-600 shrink-0">หรือระบุเงินทอนที่เหลือไว้:</span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={carriedToNextShift}
-                      onChange={(e) => {
-                        const val = e.target.value === "" ? "" : Math.max(0, Number(e.target.value));
-                        setCarriedToNextShift(val);
-                        const numVal = val === "" ? 0 : val;
-                        setActualSend(Math.max(0, netCashBeforeCarry - numVal));
-                      }}
-                      className="flex-1 text-right font-black text-sm p-2 rounded-lg border border-indigo-200 bg-white text-indigo-900 focus:ring-1 focus:ring-indigo-500 outline-none"
-                      placeholder="0"
-                    />
-                    <span className="text-xs font-bold text-slate-600">บาท</span>
-                  </div>
-                </div>
+                {isShortForReserve ? (
+                  /* กรณีเงินสดในลิ้นชักน้อยกว่ามัดจำกุญแจ (ติดลบ): ให้เลือก 2 ปุ่มสั้นๆ เข้าใจง่าย */
+                  <div className="rounded-xl border-2 border-rose-200 bg-rose-50/60 p-3 space-y-2">
+                    <div className="text-xs font-black text-rose-950">
+                      🛠️ มีเงินในลิ้นชัก {fmt(drawerCash)} (ขาดค่ามัดจำ {fmt(Math.abs(netCashBeforeCarry))}) เลือกวิธีปิดกะ:
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNegCloseMode("manager_topup");
+                          setActualSend(netCashBeforeCarry);
+                        }}
+                        className={`p-2.5 rounded-xl border-2 text-left transition-all ${
+                          negCloseMode === "manager_topup"
+                            ? "bg-rose-600 text-white border-rose-700 shadow-xs"
+                            : "bg-white hover:bg-rose-50 text-slate-800 border-slate-200"
+                        }`}
+                      >
+                        <div className="text-xs font-black">➕ ผู้จัดการเติม {fmt(Math.abs(netCashBeforeCarry))}</div>
+                        <div className={`text-[10px] mt-0.5 ${negCloseMode === "manager_topup" ? "text-rose-100" : "text-slate-500"}`}>
+                          ลิ้นชักครบมัดจำ {fmt(closeReserve)}
+                        </div>
+                      </button>
 
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">
-                    ยอดเงินสดที่นำส่งเข้ากล่องผู้จัดการจริง (หลังกันมัดจำกุญแจ + เงินส่งต่อกะถัดไป)
-                  </label>
-                  <input
-                    type="number"
-                    value={actualSend}
-                    onChange={(e) => setActualSend(e.target.value === "" ? "" : Number(e.target.value))}
-                    className="w-full text-2xl text-center font-black p-3 rounded-xl border border-blue-200 bg-blue-50 focus:ring-2 focus:ring-blue-500 outline-none text-blue-700"
-                    placeholder={String(Math.max(0, requiredSend))}
-                  />
-                  {actualSend !== "" && sendDiff !== 0 && (
-                    <p className={`text-xs mt-1 font-bold ${sendDiff > 0 ? "text-emerald-600" : "text-red-500"}`}>
-                      {sendDiff > 0 ? "เงินสดเกิน (+)" : "เงินสดขาด (-)"}: {fmt(Math.abs(sendDiff))}
-                    </p>
-                  )}
-                  {actualSend !== "" && sendDiff === 0 && (
-                    <p className="text-xs mt-1 font-bold text-emerald-600">
-                      ✅ ยอดส่งเงินตรงตามระบบ (คงเหลือไว้ในลิ้นชักให้กะถัดไปรวม {fmt(nextShiftDrawerTotal)})
-                    </p>
-                  )}
-                </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNegCloseMode("leave_as_is");
+                          setActualSend(0);
+                        }}
+                        className={`p-2.5 rounded-xl border-2 text-left transition-all ${
+                          negCloseMode === "leave_as_is"
+                            ? "bg-indigo-600 text-white border-indigo-700 shadow-xs"
+                            : "bg-white hover:bg-indigo-50 text-slate-800 border-slate-200"
+                        }`}
+                      >
+                        <div className="text-xs font-black">⏭️ ยังไม่เติม (ส่ง ฿0)</div>
+                        <div className={`text-[10px] mt-0.5 ${negCloseMode === "leave_as_is" ? "text-indigo-100" : "text-slate-500"}`}>
+                          ทิ้งเงินไว้เท่าที่มี {fmt(Math.max(0, drawerCash))}
+                        </div>
+                      </button>
+                    </div>
+
+                    <div className="rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs font-bold text-slate-800">
+                      {negCloseMode === "manager_topup" ? (
+                        <span className="text-emerald-700">
+                          ✅ ผู้จัดการเติมเงิน <b>{fmt(Math.abs(netCashBeforeCarry))}</b> เข้าลิ้นชัก (ผู้จัดการกดเซ็นในหน้ารายงาน) • ทิ้งเงินไว้ <b>{fmt(closeReserve)}</b>
+                        </span>
+                      ) : (
+                        <span className="text-indigo-800">
+                          ✅ ยังไม่เติมเงิน • ทิ้งเงินที่มีในลิ้นชัก <b>{fmt(Math.max(0, drawerCash))}</b> ไว้ให้กะหน้า
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  /* กรณีปกติ (มีเงินสดเท่ากับหรือมากกว่ามัดจำกุญแจ) */
+                  <>
+                    <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 space-y-2">
+                      <label className="block text-xs font-black text-indigo-950">
+                        🪙 เงินทอนทิ้งไว้ให้กะหน้า
+                      </label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCarriedToNextShift(0);
+                            setActualSend(Math.max(0, netCashBeforeCarry));
+                          }}
+                          className={`py-2 px-2 rounded-lg text-[11px] font-bold border transition-all ${
+                            carriedNum === 0
+                              ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
+                              : "bg-white hover:bg-indigo-50 text-slate-700 border-slate-200"
+                          }`}
+                        >
+                          💵 ส่งผู้จัดการทั้งหมด
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const allCarry = Math.max(0, netCashBeforeCarry);
+                            setCarriedToNextShift(allCarry);
+                            setActualSend(0);
+                          }}
+                          className={`py-2 px-2 rounded-lg text-[11px] font-bold border transition-all ${
+                            netCashBeforeCarry > 0 && carriedNum === Math.max(0, netCashBeforeCarry)
+                              ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
+                              : "bg-white hover:bg-indigo-50 text-indigo-900 border-indigo-200"
+                          }`}
+                        >
+                          🔄 ทิ้งไว้กะหน้าทั้งหมด ({fmt(Math.max(0, netCashBeforeCarry))})
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold text-slate-600 shrink-0">ระบุเงินทอน:</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={carriedToNextShift}
+                          onChange={(e) => {
+                            const val = e.target.value === "" ? "" : Math.max(0, Number(e.target.value));
+                            setCarriedToNextShift(val);
+                            const numVal = val === "" ? 0 : val;
+                            setActualSend(Math.max(0, netCashBeforeCarry - numVal));
+                          }}
+                          className="flex-1 text-right font-black text-sm p-1.5 rounded-lg border border-indigo-200 bg-white text-indigo-900 focus:ring-1 focus:ring-indigo-500 outline-none"
+                          placeholder="0"
+                        />
+                        <span className="text-xs font-bold text-slate-600">บาท</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-black text-slate-700 mb-1">
+                        💵 ยอดส่งผู้จัดการจริง
+                      </label>
+                      <input
+                        type="number"
+                        value={actualSend}
+                        onChange={(e) => setActualSend(e.target.value === "" ? "" : Number(e.target.value))}
+                        className="w-full text-2xl text-center font-black p-2.5 rounded-xl border border-blue-200 bg-blue-50 focus:ring-2 focus:ring-blue-500 outline-none text-blue-700"
+                        placeholder={String(Math.max(0, requiredSend))}
+                      />
+                      {actualSend !== "" && sendDiff !== 0 && (
+                        <p className={`text-xs mt-1 font-bold ${sendDiff > 0 ? "text-emerald-600" : "text-red-500"}`}>
+                          {sendDiff > 0 ? "เงินเกิน (+)" : "เงินขาด (-)"}: {fmt(Math.abs(sendDiff))}
+                        </p>
+                      )}
+                      {actualSend !== "" && sendDiff === 0 && (
+                        <p className="text-xs mt-1 font-bold text-emerald-600">
+                          ✅ ยอดตรงตามระบบ (ทิ้งไว้ในลิ้นชัก {fmt(nextShiftDrawerTotal)})
+                        </p>
+                      )}
+                    </div>
+                  </>
+                )}
 
                 <SignaturePad ref={staffSigRef} label="ลายเซ็นพนักงานผู้ส่งกะ" />
                 <p className="text-[11px] text-slate-500 -mt-2">
-                  * ผู้จัดการจะเซ็นรับภายหลังในหน้ารายงาน (กล่องเงินสด) เมื่อเปิดตู้/ซองรับเงิน
+                  * ผู้จัดการกดเซ็นในหน้ารายงาน (กล่องเงินสด)
                 </p>
 
                 <div>

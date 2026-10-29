@@ -1505,11 +1505,7 @@ export default function DailyReport({
   const pendingManagerSign = handovers.filter(
     (h) =>
       !h.manager_signature &&
-      !(
-        Number(h.actual_amount || 0) === 0 &&
-        Number(h.required_amount || 0) === 0 &&
-        Number(h.carried_to_next_shift || 0) > 0
-      )
+      !(Number(h.actual_amount || 0) === 0 && Number(h.required_amount || 0) === 0)
   );
   const closedShiftsWithoutHandover = dayShifts.filter(
     (s) => s.status === "closed" && !handovers.some((h) => h.shift_id === s.id && h.kind === "shift_close")
@@ -2828,12 +2824,14 @@ export default function DailyReport({
                       </div>
                       <div className="grid grid-cols-3 gap-2 text-xs">
                         <div className="bg-slate-50 rounded-lg p-2">
-                          <div className="text-slate-500 font-bold">ต้องส่ง</div>
-                          <div className="font-black text-slate-900">{fmtSigned(h.required_amount)}</div>
+                          <div className="text-slate-500 font-bold">{neg ? "ผู้จัดการต้องเติม" : "ต้องส่ง"}</div>
+                          <div className="font-black text-slate-900">{neg ? fmt(Math.abs(Number(h.required_amount || 0))) : fmtSigned(h.required_amount)}</div>
                         </div>
                         <div className="bg-slate-50 rounded-lg p-2">
-                          <div className="text-slate-500 font-bold">ส่งจริง</div>
-                          <div className="font-black text-emerald-700">{fmtSigned(h.actual_amount)}</div>
+                          <div className="text-slate-500 font-bold">{neg ? "เติมจริง" : "ส่งจริง"}</div>
+                          <div className={`font-black ${neg ? "text-rose-700" : "text-emerald-700"}`}>
+                            {neg ? fmt(Math.abs(Number(h.actual_amount || 0))) : fmtSigned(h.actual_amount)}
+                          </div>
                         </div>
                         <div className="bg-slate-50 rounded-lg p-2">
                           <div className="text-slate-500 font-bold">เกิน/ขาด</div>
@@ -2843,12 +2841,12 @@ export default function DailyReport({
                         </div>
                       </div>
                       <div className="text-[10px] text-slate-500">
-                        เงินในลิ้นชักตามระบบ {fmt(h.drawer_cash)} • กันมัดจำกุญแจ {fmt(h.key_reserve)}
+                        เงินในลิ้นชัก {fmt(h.drawer_cash)} • มัดจำกุญแจ {fmt(h.key_reserve)}
                         {h.key_reserve_rooms !== undefined ? ` (${h.key_reserve_rooms} ห้อง)` : ""}
                         {Number(h.carried_to_next_shift || 0) > 0 && (
                           <span className="text-indigo-700 font-bold">
                             {" "}
-                            • 🪙 เหลือเงินสดส่งต่อกะถัดไป {fmt(Number(h.carried_to_next_shift || 0))} (รวมในลิ้นชัก{" "}
+                            • 🪙 เงินทอนส่งต่อกะหน้า {fmt(Number(h.carried_to_next_shift || 0))} (รวมในลิ้นชัก{" "}
                             {fmt(
                               Number(
                                 h.next_shift_drawer_total ??
@@ -2857,6 +2855,9 @@ export default function DailyReport({
                             )}
                             )
                           </span>
+                        )}
+                        {h.note && Number(h.carried_to_next_shift || 0) === 0 && (
+                          <span className="text-rose-700 font-bold"> • {h.note}</span>
                         )}
                       </div>
                       <div className="flex flex-wrap gap-2">
