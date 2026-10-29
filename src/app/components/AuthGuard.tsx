@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { inferShiftLocation } from '@/lib/cashHandover';
 
 export interface AuthUser {
   id: string;
@@ -9,6 +10,7 @@ export interface AuthUser {
   role: string;
   pin: string;
   locations?: string[];
+  primary_location?: string | null;
   can_clean?: boolean;
 }
 
@@ -103,15 +105,20 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       } else {
         const normalizedRole = String(data.role || 'staff').toLowerCase();
         let locations: string[] = [];
+        let primary_location: string | null = null;
         if (normalizedRole === 'staff' || normalizedRole === 'housekeeper') {
-          const { data: settings } = await supabase
-            .from('system_settings')
-            .select('value')
-            .eq('key', 'staff_locations')
-            .maybeSingle();
+          const [{ data: settings }, { data: primSettings }] = await Promise.all([
+            supabase.from('system_settings').select('value').eq('key', 'staff_locations').maybeSingle(),
+            supabase.from('system_settings').select('value').eq('key', 'staff_primary_locations').maybeSingle(),
+          ]);
           if (settings && settings.value && settings.value[data.id]) {
             locations = settings.value[data.id];
           }
+          const savedPrim = primSettings?.value?.[data.id];
+          primary_location =
+            (savedPrim && locations.includes(savedPrim) ? savedPrim : null) ||
+            locations[0] ||
+            inferShiftLocation(data.name, null, locations);
         }
 
         let can_clean = false;
@@ -124,7 +131,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           can_clean = !!(hk && hk.value && hk.value[data.id]);
         }
 
-        const authUser: AuthUser = { ...data, role: normalizedRole, locations, can_clean };
+        const authUser: AuthUser = { ...data, role: normalizedRole, locations, primary_location, can_clean };
         localStorage.setItem('auth_user', JSON.stringify(authUser));
         setUser(authUser);
         setLoading(false);

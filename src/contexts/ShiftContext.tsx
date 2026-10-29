@@ -6,6 +6,7 @@ import {
   addDaysStr,
   computeShiftDrawer,
   EOD_KEY_PREFIX,
+  EOD_LOC_KEY_PREFIX,
   fetchShiftMetadata,
   getBusinessDateStr,
   getShiftCutoffs,
@@ -22,6 +23,7 @@ export interface Shift {
   housekeeper_only?: boolean;
   can_clean?: boolean;
   locations?: string[];
+  primary_location?: string | null;
   shift_location?: string | null; // สถานที่ประจำกะ เช่น ซอย1, ซอย2, ซามีญ่า
   start_time: string;
   end_time: string | null;
@@ -49,6 +51,7 @@ export interface LoggedInUser {
   name: string;
   role: string;
   locations?: string[];
+  primary_location?: string | null;
   can_clean?: boolean;
 }
 
@@ -63,6 +66,9 @@ type ShiftContextType = {
   shiftLock: ShiftLockState;
   ensureShiftWritable: () => boolean;
   currentBusinessDate: string;
+  realClockBusinessDate: string;
+  closeDayBusinessDate: string;
+  closeDayMismatchReason: string | null;
   getActiveBusinessDate: () => Date;
 };
 
@@ -79,6 +85,9 @@ const ShiftContext = createContext<ShiftContextType>({
   shiftLock: DEFAULT_LOCK,
   ensureShiftWritable: () => true,
   currentBusinessDate: getBusinessDateStr(new Date()),
+  realClockBusinessDate: getBusinessDateStr(new Date()),
+  closeDayBusinessDate: getBusinessDateStr(new Date()),
+  closeDayMismatchReason: null,
   getActiveBusinessDate: () => new Date(),
 });
 
@@ -91,6 +100,7 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<LoggedInUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [closedEodDates, setClosedEodDates] = useState<Set<string>>(new Set());
+  const [closedLocEodKeys, setClosedLocEodKeys] = useState<Set<string>>(new Set());
 
   const refreshShift = async () => {
     setLoading(true);
@@ -103,39 +113,17 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
       try {
         const user = JSON.parse(saved);
         parsedUser = user;
-        setCurrentUser(user);
-        if (user.role === 'housekeeper') {
-          // Dummy shift for housekeeper so cleaning is never blocked
-          setActiveShift({
-            id: 'dummy-shift-id',
-            staff_id: user.id,
-            staff_name: user.name,
-            operator_name: user.name,
-            staff_role: 'housekeeper',
-            housekeeper_only: true,
-            can_clean: true,
-            locations: user.locations || [],
-            shift_location: user.locations?.[0] || null,
-            start_time: new Date().toISOString(),
-            end_time: null,
-            initial_cash: 0,
-            expected_cash: 0,
-            final_cash: null,
-            discrepancy: null,
-            status: 'open',
-            signature_data: null
-          });
-          setOpenShifts([]);
-          setLoading(false);
-          return;
-        }
       } catch (e) {}
-    } else {
-      setCurrentUser(null);
     }
 
-    // ดึงกะที่กำลังเปิดอยู่ทั้งหมด (รองรับเปิดหลายสถานที่พร้อมกัน) + ดึงรายการวันธุรกิจที่ปิดรอบวัน (EOD)
-    const [{ data: openRows, error }, { data: eodRows }] = await Promise.all([
+    // ดึงกะที่กำลังเปิดอยู่ทั้งหมด + ดึงรายการวันธุรกิจที่ปิดรอบวัน (EOD) + สิทธิ์สถานที่ล่าสุด
+    const [
+      { data: openRows, error },
+      { data: eodRows },
+      { data: locEodRows },
+      { data: staffLocRow },
+      { data: staffPrimRow },
+    ] = await Promise.all([
       supabase
         .from('shifts')
         .select('*')
@@ -145,9 +133,76 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
         .from('system_settings')
         .select('key')
         .like('key', `${EOD_KEY_PREFIX}%`),
+      supabase
+        .from('system_settings')
+        .select('key')
+        .like('key', `${EOD_LOC_KEY_PREFIX}%`),
+      supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'staff_locations')
+        .maybeSingle(),
+      supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'staff_primary_locations')
+        .maybeSingle(),
     ]);
+
     if (eodRows) {
       setClosedEodDates(new Set(eodRows.map((r: any) => String(r.key).slice(EOD_KEY_PREFIX.length))));
+    }
+    if (locEodRows) {
+      setClosedLocEodKeys(new Set(locEodRows.map((r: any) => String(r.key).slice(EOD_LOC_KEY_PREFIX.length))));
+    }
+
+    if (parsedUser) {
+      if (parsedUser.role === 'staff' || parsedUser.role === 'housekeeper') {
+        const latestLocs: string[] = staffLocRow?.value?.[parsedUser.id] || parsedUser.locations || [];
+        const savedPrim: string | undefined = staffPrimRow?.value?.[parsedUser.id];
+        const effectivePrim =
+          (savedPrim && latestLocs.includes(savedPrim) ? savedPrim : null) ||
+          latestLocs[0] ||
+          parsedUser.primary_location ||
+          inferShiftLocation(parsedUser.name, null, latestLocs);
+        parsedUser = {
+          ...parsedUser,
+          locations: latestLocs,
+          primary_location: effectivePrim,
+        };
+        try {
+          localStorage.setItem('auth_user', JSON.stringify(parsedUser));
+        } catch (e) {}
+      }
+      setCurrentUser(parsedUser);
+
+      if (parsedUser.role === 'housekeeper') {
+        setActiveShift({
+          id: 'dummy-shift-id',
+          staff_id: parsedUser.id,
+          staff_name: parsedUser.name,
+          operator_name: parsedUser.name,
+          staff_role: 'housekeeper',
+          housekeeper_only: true,
+          can_clean: true,
+          locations: parsedUser.locations || [],
+          primary_location: parsedUser.primary_location || parsedUser.locations?.[0] || null,
+          shift_location: parsedUser.primary_location || parsedUser.locations?.[0] || null,
+          start_time: new Date().toISOString(),
+          end_time: null,
+          initial_cash: 0,
+          expected_cash: 0,
+          final_cash: null,
+          discrepancy: null,
+          status: 'open',
+          signature_data: null,
+        });
+        setOpenShifts([]);
+        setLoading(false);
+        return;
+      }
+    } else {
+      setCurrentUser(null);
     }
 
     const list = ((openRows as Shift[]) || []);
@@ -165,10 +220,19 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
       // กรองกะที่ผู้ใช้งานคนนี้มีสิทธิ์เข้าถึง
       const isMgr = parsedUser?.role === 'admin' || parsedUser?.role === 'manager';
       const userLocs = parsedUser?.locations || [];
+      const userPrimaryLoc =
+        parsedUser?.primary_location ||
+        userLocs[0] ||
+        inferShiftLocation(parsedUser?.name, null, userLocs);
+
       const accessibleShifts = isMgr
         ? enrichedList
         : enrichedList.filter((s) => {
             if (parsedUser && (s.staff_id === parsedUser.id || s.staff_name === parsedUser.name)) return true;
+            // สำหรับ staff: ให้ผูกกับกะของสถานที่หลักของตนเองเป็นหลัก
+            if (userPrimaryLoc && s.shift_location) {
+              return s.shift_location === userPrimaryLoc;
+            }
             if (!s.shift_location) return true;
             return userLocs.length === 0 || userLocs.includes(s.shift_location);
           });
@@ -176,17 +240,17 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
       setOpenShifts(accessibleShifts);
 
       // เลือกกะหลักสำหรับหน้าจอปัจจุบัน:
-      // 1) กะที่เลือกค้างไว้ในเครื่องนี้ (preferredShiftId)
-      // 2) กะที่พนักงานคนนี้เป็นคนเปิดเอง
-      // 3) กะที่ตรงกับสถานที่เริ่มต้นของพนักงานคนนี้
+      // 1) สำหรับ staff ที่มีสถานที่หลัก: เลือกกะของสถานที่หลักก่อนเสมอ
+      // 2) กะที่เลือกค้างไว้ในเครื่องนี้ (preferredShiftId)
+      // 3) กะที่พนักงานคนนี้เป็นคนเปิดเอง
       // 4) กะล่าสุดที่เข้าถึงได้
-      const userDefaultLoc = inferShiftLocation(parsedUser?.name, null, userLocs);
       let chosen: Shift | undefined =
+        (!isMgr && userPrimaryLoc ? accessibleShifts.find((s) => s.shift_location === userPrimaryLoc) : undefined) ||
         accessibleShifts.find((s) => preferredShiftId && s.id === preferredShiftId) ||
         (parsedUser
           ? accessibleShifts.find((s) => s.staff_id === parsedUser.id || s.staff_name === parsedUser.name)
           : undefined) ||
-        (userDefaultLoc ? accessibleShifts.find((s) => s.shift_location === userDefaultLoc) : undefined) ||
+        (userPrimaryLoc ? accessibleShifts.find((s) => s.shift_location === userPrimaryLoc) : undefined) ||
         accessibleShifts[0];
 
       if (!chosen) {
@@ -210,6 +274,7 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
           shiftData.operator_name = parsedUser.name;
           if (parsedUser.role) shiftData.staff_role = parsedUser.role;
           if (parsedUser.locations) shiftData.locations = parsedUser.locations;
+          shiftData.primary_location = parsedUser.primary_location || parsedUser.locations?.[0] || null;
           if (parsedUser.can_clean !== undefined) shiftData.can_clean = parsedUser.can_clean;
         } else {
           shiftData.operator_name = shiftData.staff_name;
@@ -239,7 +304,7 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
 
   const operatorName = currentUser?.name || activeShift?.operator_name || activeShift?.staff_name || "";
 
-  // นาฬิกาสำหรับตรวจล็อกกะข้ามวัน (อัปเดตทุก 20 วินาที รองรับเวลาจำลอง)
+  // นาฬิกาสำหรับตรวจล็อกกะข้ามวัน (อัปเดตทุก 20 วินาที)
   const [clockTick, setClockTick] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setClockTick((x) => x + 1), 20000);
@@ -282,6 +347,12 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
     return true;
   };
 
+  // วันธุรกิจตามนาฬิกาจริง (เปลี่ยนวันที่เวลา 06:45 น. อัตโนมัติ)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const realClockBusinessDate = React.useMemo(() => {
+    return getBusinessDateStr(getNow());
+  }, [clockTick, getNow]);
+
   // คำนวณวันธุรกิจปัจจุบันของโรงแรม:
   // - ปกติเปลี่ยนวันที่ 06:45 น.
   // - แต่ถ้าตั้งแต่ 05:30 น. เป็นต้นไป มีการปิดกะสุดท้ายของเมื่อวานแล้ว (หรือเปิดกะใหม่ของวันใหม่แล้ว) ให้ถือเป็นวันใหม่ทันทีโดยไม่ต้องรอถึง 06:45 น.
@@ -292,11 +363,59 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
     const nextBD = addDaysStr(clockBD, 1);
     if (activeShift?.business_date === nextBD) return nextBD;
     const { eodAllowedFrom } = getShiftCutoffs(clockBD);
-    if (now.getTime() >= eodAllowedFrom.getTime() && closedEodDates.has(clockBD)) {
+    const focusLoc = activeShift?.shift_location || currentUser?.primary_location || currentUser?.locations?.[0] || null;
+    const isEodClosedForLoc = focusLoc
+      ? closedLocEodKeys.has(`${focusLoc}_${clockBD}`) || closedEodDates.has(clockBD)
+      : closedEodDates.has(clockBD);
+    if (now.getTime() >= eodAllowedFrom.getTime() && isEodClosedForLoc) {
       return nextBD;
     }
     return clockBD;
-  }, [activeShift, closedEodDates, clockTick, getNow]);
+  }, [activeShift, currentUser, closedEodDates, closedLocEodKeys, clockTick, getNow]);
+
+  // วันของส่วน Close Day (รอบวันของกะที่เปิดอยู่ หรือสถานะการตัดรอบวัน)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const { closeDayBusinessDate, closeDayMismatchReason } = React.useMemo(() => {
+    const isReal = !!activeShift && activeShift.id !== 'dummy-shift-id' && !activeShift.housekeeper_only;
+    if (isReal && activeShift?.business_date) {
+      const shiftBD = activeShift.business_date;
+      if (shiftBD < realClockBusinessDate) {
+        const label = new Date(`${shiftBD}T00:00:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+        return {
+          closeDayBusinessDate: shiftBD,
+          closeDayMismatchReason: `ยังไม่ได้ปิดกะสุดท้าย (Close Day) ของวันที่ ${label}${activeShift.shift_location ? ` (${activeShift.shift_location})` : ''} เพื่อเริ่มวันใหม่`,
+        };
+      }
+      if (shiftBD > realClockBusinessDate) {
+        return {
+          closeDayBusinessDate: shiftBD,
+          closeDayMismatchReason: `ปิดกะสุดท้าย (Close Day) ล่วงหน้าและเริ่มกะวันใหม่แล้ว (รอเวลา 06:45 น. นาฬิกาหลักจะตรงกัน)`,
+        };
+      }
+      return {
+        closeDayBusinessDate: shiftBD,
+        closeDayMismatchReason: null,
+      };
+    }
+
+    // กรณีไม่มีกะเปิดอยู่: ตรวจว่ามีกะของวันก่อนหน้าที่ยังเปิดค้างอยู่ในระบบหรือไม่
+    const oldOpenShift = openShifts.find(s => s.business_date && s.business_date < realClockBusinessDate);
+    if (oldOpenShift && oldOpenShift.business_date) {
+      const label = new Date(`${oldOpenShift.business_date}T00:00:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+      return {
+        closeDayBusinessDate: oldOpenShift.business_date,
+        closeDayMismatchReason: `กะของวันที่ ${label}${oldOpenShift.shift_location ? ` (${oldOpenShift.shift_location})` : ''} ยังเปิดค้างอยู่ ยังไม่ได้ปิดกะสุดท้าย (Close Day)`,
+      };
+    }
+
+    return {
+      closeDayBusinessDate: currentBusinessDate,
+      closeDayMismatchReason:
+        currentBusinessDate !== realClockBusinessDate
+          ? `ปิดกะสุดท้าย (Close Day) เริ่มวันใหม่ล่วงหน้าแล้ว (ก่อน 06:45 น.)`
+          : null,
+    };
+  }, [activeShift, openShifts, realClockBusinessDate, currentBusinessDate]);
 
   const getActiveBusinessDate = React.useCallback(() => {
     const [y, m, d] = currentBusinessDate.split("-").map(Number);
@@ -305,7 +424,24 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
   }, [currentBusinessDate, getNow]);
 
   return (
-    <ShiftContext.Provider value={{ activeShift, openShifts, switchActiveShift, currentUser, operatorName, loading, refreshShift, shiftLock, ensureShiftWritable, currentBusinessDate, getActiveBusinessDate }}>
+    <ShiftContext.Provider
+      value={{
+        activeShift,
+        openShifts,
+        switchActiveShift,
+        currentUser,
+        operatorName,
+        loading,
+        refreshShift,
+        shiftLock,
+        ensureShiftWritable,
+        currentBusinessDate,
+        realClockBusinessDate,
+        closeDayBusinessDate,
+        closeDayMismatchReason,
+        getActiveBusinessDate,
+      }}
+    >
       {children}
     </ShiftContext.Provider>
   );

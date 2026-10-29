@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { renderIcon } from "../components/RoomIcons";
 import RoomCheckinModal from "@/app/components/RoomCheckinModal";
@@ -8,9 +8,18 @@ import CleaningNoteModal from "@/app/components/CleaningNoteModal";
 import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
 import { useShift } from "@/contexts/ShiftContext";
 import ShiftManager from "@/app/components/ShiftManager";
-import ShiftExpenseButton from "@/app/components/ShiftExpenseModal";
 import { logActivity } from "@/lib/activityLog";
 import { computeActiveHeldDeposit } from "@/lib/keyDeposit";
+import {
+  addDaysStr,
+  atLocalTime,
+  EOD_KEY_PREFIX,
+  EOD_LOC_KEY_PREFIX,
+  HANDOVER_KEY_PREFIX,
+  inferShiftLocation,
+  saveShiftBusinessDate,
+  SHIFT_BD_KEY_PREFIX,
+} from "@/lib/cashHandover";
 
 export type RoomStatus = {
   id: string;
@@ -23,10 +32,10 @@ export type RoomStatus = {
   check_in_time: string | null;
   check_out_time: string | null;
   guest_count: number | null;
-  guest_name?: string | null; // For future bookings
-  has_upcoming?: boolean; // True if there's any booking in the next 5 days
-  upcoming_days?: number[]; // Stores dates that are booked in the next 7 days
-  incoming_today?: boolean; // True if there is a new booking arriving today
+  guest_name?: string | null;
+  has_upcoming?: boolean;
+  upcoming_days?: number[];
+  incoming_today?: boolean;
   price_night?: number;
   price_temp?: number;
   key_deposit?: number;
@@ -34,14 +43,14 @@ export type RoomStatus = {
   staff_name?: string | null;
   guest_phone?: string | null;
   booking_id?: string;
-  booking_created_at?: string; // Time the booking was made
+  booking_created_at?: string;
   unpaid_balance?: number;
   total_charges?: number;
   total_payments?: number;
-    c_all?: number;
-    c_today?: number;
+  c_all?: number;
+  c_today?: number;
   has_key_deposit?: boolean;
-  held_key_deposit?: number; // มัดจำกุญแจที่ถืออยู่จริง (เฉพาะห้องที่เช็คอินแล้ว)
+  held_key_deposit?: number;
   map_x?: number;
   map_y?: number;
   map_width?: number;
@@ -50,24 +59,39 @@ export type RoomStatus = {
 
 export default function CheckinPage() {
   const { getNow, simulatedTime } = useSimulatedTime();
-  const { activeShift, getActiveBusinessDate } = useShift();
+  const {
+    activeShift,
+    openShifts,
+    currentUser,
+    refreshShift,
+    getActiveBusinessDate,
+    realClockBusinessDate,
+    closeDayBusinessDate,
+    closeDayMismatchReason,
+  } = useShift();
+
   const [rooms, setRooms] = useState<RoomStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [locationsOrder, setLocationsOrder] = useState<string[]>([]);
   const [selectedLocationFilter, setSelectedLocationFilter] = useState<string | null>(null);
   const [selectedRoom, setSelectedRoom] = useState<RoomStatus | null>(null);
   const [noteRoom, setNoteRoom] = useState<{ id: string; room_no: string } | null>(null);
-  
+
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
-  const [showKeyRooms, setShowKeyRooms] = useState(false);
+  const [expandedKeyLocs, setExpandedKeyLocs] = useState<Record<string, boolean>>({});
   const [floorPlans, setFloorPlans] = useState<Record<string, string>>({});
-  const [showClearRoomsPinModal, setShowClearRoomsPinModal] = useState(false);
-  const [clearRoomsPin, setClearRoomsPin] = useState("");
-  const [clearRoomsPinError, setClearRoomsPinError] = useState("");
+  const [netRevenueByLoc, setNetRevenueByLoc] = useState<Record<string, number>>({});
+
+  // Modal สำหรับ Admin/Manager: บังคับตัดรอบข้ามวัน (Close Day) และ รีเซ็ตระบบเป็น 0 ทุกสถานที่
+  const [adminActionModal, setAdminActionModal] = useState<'force_close_day' | 'reset_all_zero' | null>(null);
+  const [adminPin, setAdminPin] = useState("");
+  const [adminPinError, setAdminPinError] = useState("");
+  const [adminActionLoading, setAdminActionLoading] = useState(false);
 
   // สำหรับจับเวลา Double Tap ของแม่บ้านบนหน้ากระดานหลัก
   const lastTapRef = useRef<{ [key: string]: number }>({});
   const tapTimeoutRef = useRef<{ [key: string]: NodeJS.Timeout }>({});
+  const didAutoSelectPrimaryRef = useRef(false);
 
   // บันทึกประวัติแม่บ้าน (ไม่บล็อกการเปลี่ยนสถานะห้องหากล้มเหลว)
   const logHousekeeping = async (room: RoomStatus, action: 'start' | 'done' | 'cancel') => {
@@ -96,20 +120,17 @@ export default function CheckinPage() {
       lastTapRef.current[room.id] = now;
 
       if (timeSinceLastTap < 400 && timeSinceLastTap > 0) {
-        // DOUBLE TAP
         if (tapTimeoutRef.current[room.id]) {
           clearTimeout(tapTimeoutRef.current[room.id]);
         }
         
         if (room.status === 'cleaning') {
-          // อัปเดต UI ชั่วคราวให้เร็วขึ้น
           logHousekeeping(room, 'done');
           setRooms(prev => prev.map(r => r.id === room.id ? { ...r, status: 'available', current_status: 'ว่าง' } : r));
           await supabase.from('rooms').update({ status: 'available', current_status: 'ว่าง' }).eq('id', room.id);
         }
         lastTapRef.current[room.id] = 0;
       } else {
-        // SINGLE TAP
         if (tapTimeoutRef.current[room.id]) {
           clearTimeout(tapTimeoutRef.current[room.id]);
         }
@@ -129,13 +150,12 @@ export default function CheckinPage() {
           } else if (room.status === 'cleaning') {
             setRooms(prev => prev.map(r => r.id === room.id ? { ...r, status: 'dirty', current_status: 'รอทำความสะอาด' } : r));
             logHousekeeping(room, 'cancel');
-            await supabase.from('rooms').update({ status: 'dirty', current_status: 'รอทำความสะอาด' }).eq('id', room.id);
+            await supabase.from('rooms').update({ status: 'dirty', current_status: 'กำลังทำความสะอาด' }).eq('id', room.id);
           }
         }, 400);
       }
     } else {
-      // สำหรับห้องสถานะอื่นๆ ให้เปิด Modal ปกติ
-      if (isHousekeeper || activeShift?.housekeeper_only) return; // แม่บ้านเปิดได้เฉพาะห้องรอทำ/กำลังทำความสะอาด
+      if (isHousekeeper || activeShift?.housekeeper_only) return;
       setSelectedRoom(room);
     }
   };
@@ -143,7 +163,14 @@ export default function CheckinPage() {
   // 0 = Today, -1 = Yesterday, 1 = Tomorrow
   const [dateOffset, setDateOffset] = useState<number>(0);
 
-  const [authUser, setAuthUser] = useState<{ id: string; name: string; role: string; locations?: string[]; can_clean?: boolean } | null>(null);
+  const [authUser, setAuthUser] = useState<{
+    id: string;
+    name: string;
+    role: string;
+    locations?: string[];
+    primary_location?: string | null;
+    can_clean?: boolean;
+  } | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('auth_user');
@@ -155,11 +182,27 @@ export default function CheckinPage() {
         }
       } catch (e) {}
     }
-  }, []);
+  }, [currentUser]);
 
-  const isManagerOrAdmin = !authUser || authUser.role === 'admin' || authUser.role === 'manager';
-  const isHousekeeper = authUser?.role === 'housekeeper' || activeShift?.housekeeper_only === true;
+  const effectiveUser = currentUser || authUser;
+  const isManagerOrAdmin = !effectiveUser || effectiveUser.role === 'admin' || effectiveUser.role === 'manager';
+  const isHousekeeper = effectiveUser?.role === 'housekeeper' || activeShift?.housekeeper_only === true;
   const isStaff = !isManagerOrAdmin && !isHousekeeper;
+
+  // สถานที่หลักของพนักงาน (1 แห่งเท่านั้น)
+  const userPrimaryLocation =
+    effectiveUser?.primary_location ||
+    effectiveUser?.locations?.[0] ||
+    inferShiftLocation(effectiveUser?.name, null, effectiveUser?.locations) ||
+    null;
+
+  // เมื่อพนักงาน (Staff) เข้าหน้านี้ครั้งแรก ให้เลือกตัวกรองเป็น "สถานที่หลัก" อัตโนมัติทันที เพื่อป้องกันการกดจอง/เช็คอินผิดสถานที่
+  useEffect(() => {
+    if (!didAutoSelectPrimaryRef.current && isStaff && userPrimaryLocation) {
+      didAutoSelectPrimaryRef.current = true;
+      setSelectedLocationFilter(userPrimaryLocation);
+    }
+  }, [isStaff, userPrimaryLocation]);
 
   useEffect(() => {
     if (isHousekeeper && dateOffset !== 0) {
@@ -171,37 +214,39 @@ export default function CheckinPage() {
     localStorage.removeItem('auth_user');
     window.location.href = '/';
   };
+
   const [smartPricesMap, setSmartPricesMap] = useState<Record<string, number>>({});
   const [roomIconsMap, setRoomIconsMap] = useState<Record<string, string[]>>({});
 
+  const getBusinessDate = (_date?: Date) => {
+    return getActiveBusinessDate();
+  };
+
   const fetchData = async (silentRefresh = false) => {
     if (!silentRefresh) setLoading(true);
-    // ดึง Location Order
     const { data: settingsData } = await supabase
       .from("system_settings")
       .select("value")
       .eq("key", "locations_order")
-      .single();
+      .maybeSingle();
     
     if (settingsData && settingsData.value) {
       setLocationsOrder(settingsData.value as string[]);
     }
 
-    // ดึงแผนผัง
     const { data: planData } = await supabase
       .from("system_settings")
       .select("value")
       .eq("key", "floor_plans")
-      .single();
+      .maybeSingle();
       
     if (planData && planData.value) {
       setFloorPlans(planData.value as Record<string, string>);
     }
 
-    // ดึงโครงสร้างห้องทั้งหมด
-      const { data: roomsData, error } = await supabase
-        .from("rooms")
-        .select("id, room_no, room_type, location, sort_order, status, stay_type, check_in_time, check_out_time, guest_count, price_night, price_temp, actual_price, staff_name, key_deposit");
+    const { data: roomsData, error } = await supabase
+      .from("rooms")
+      .select("id, room_no, room_type, location, sort_order, status, stay_type, check_in_time, check_out_time, guest_count, price_night, price_temp, actual_price, staff_name, key_deposit");
     
     if (error) {
       console.error("Error fetching rooms:", error);
@@ -210,23 +255,22 @@ export default function CheckinPage() {
     }
 
     const allRooms = roomsData as RoomStatus[];
+    const roomLocById: Record<string, string> = {};
+    allRooms.forEach(r => {
+      roomLocById[r.id] = r.location || "ทั่วไป";
+    });
 
-    // Business Day Logic: ก่อน 06:45 ถือเป็นของเมื่อวาน
     const targetDate = getBusinessDate(getNow());
     targetDate.setDate(targetDate.getDate() + dateOffset);
     
     const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 0, 0, 0);
-    const endOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59);
-    
-    const startOfNext7Days = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1, 0, 0, 0);
     const endOfNext7Days = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 7, 23, 59, 59);
 
-    // ดึง Bookings ที่ครอบคลุมตั้งแต่วันนี้ (Target Date) จนถึง 7 วันข้างหน้า
     const { data: allTargetBookings, error: bookingsError } = await supabase
       .from("bookings")
       .select("*")
       .neq("status", "cancelled")
-      .neq("status", "checked_out") // สำคัญ! ข้าม booking ที่เช็คเอาท์ไปแล้ว เพื่อไม่ให้ห้องกลับไปเป็น reserved
+      .neq("status", "checked_out")
       .lte("check_in_time", endOfNext7Days.toISOString())
       .gt("check_out_time", startOfDay.toISOString());
 
@@ -234,148 +278,213 @@ export default function CheckinPage() {
       console.error("Error fetching bookings:", bookingsError);
     }
 
-    // [NEW] Fetch ledger transactions for active bookings to calculate unpaid balances
     const activeBookingIds = allTargetBookings?.map(b => b.id) || [];
     const financialSummary: Record<string, { charges: number, payments: number, balance: number, c_all: number, c_today: number, has_key_deposit?: boolean }> = {};
     const ledgersByBooking: Record<string, { booking_id: string; amount: number; category: string; transaction_type: string }[]> = {};
     const heldDepositByBooking: Record<string, number> = {};
       
-      const dailyRatesMap: Record<string, number> = {};
-      const targetDateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth()+1).padStart(2,'0')}-${String(targetDate.getDate()).padStart(2,'0')}`;
+    const dailyRatesMap: Record<string, number> = {};
+    const targetDateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth()+1).padStart(2,'0')}-${String(targetDate.getDate()).padStart(2,'0')}`;
+    
+    const { data: dailySetting } = await supabase.from('daily_pricing_settings').select('rate_plan_id').eq('target_date', targetDateStr).maybeSingle();
+    if (dailySetting?.rate_plan_id) {
+      const { data: basePrices } = await supabase.from('rate_plan_room_types').select('room_type, base_price').eq('rate_plan_id', dailySetting.rate_plan_id);
+      const { data: calPrices } = await supabase.from('rate_plan_calendar').select('room_type, price').eq('rate_plan_id', dailySetting.rate_plan_id).eq('target_date', targetDateStr);
       
-      // --- [NEW] Fetch Smart Pricing for targetDateStr ---
-      const { data: dailySetting } = await supabase.from('daily_pricing_settings').select('rate_plan_id').eq('target_date', targetDateStr).single();
-      if (dailySetting?.rate_plan_id) {
-        const { data: basePrices } = await supabase.from('rate_plan_room_types').select('room_type, base_price').eq('rate_plan_id', dailySetting.rate_plan_id);
-        const { data: calPrices } = await supabase.from('rate_plan_calendar').select('room_type, price').eq('rate_plan_id', dailySetting.rate_plan_id).eq('target_date', targetDateStr);
+      const pricesMap: Record<string, number> = {};
+      if (basePrices) {
+        basePrices.forEach(b => pricesMap[b.room_type] = b.base_price);
+      }
+      if (calPrices) {
+        calPrices.forEach(c => pricesMap[c.room_type] = c.price);
+      }
+      setSmartPricesMap(pricesMap);
+    } else {
+      setSmartPricesMap({});
+    }
+    
+    const { data: iconData } = await supabase.from('system_settings').select('value').eq('key', 'room_icons_map').maybeSingle();
+    if (iconData && iconData.value) {
+      const parsedIcons = typeof iconData.value === 'object' ? iconData.value : {};
+      for (const k in parsedIcons) {
+        if (typeof parsedIcons[k] === 'string') parsedIcons[k] = [parsedIcons[k]];
+      }
+      setRoomIconsMap(parsedIcons);
+    } else {
+      setRoomIconsMap({});
+    }
+    
+    if (activeBookingIds.length > 0) {
+      const [{ data: allDailyRates }, { data: allDailyExtras }] = await Promise.all([
+        supabase
+          .from('booking_daily_rates')
+          .select('booking_id, amount, target_date')
+          .in('booking_id', activeBookingIds),
+        supabase
+          .from('booking_daily_extras')
+          .select('booking_id, amount, target_date, category')
+          .in('booking_id', activeBookingIds)
+      ]);
+
+      const futureUnpostedByBooking: Record<string, number> = {};
+
+      if (allDailyRates) {
+        allDailyRates.forEach(dr => {
+          if (!financialSummary[dr.booking_id]) {
+            financialSummary[dr.booking_id] = { charges: 0, payments: 0, balance: 0, c_all: 0, c_today: 0 };
+          }
+          financialSummary[dr.booking_id].c_all += Number(dr.amount);
+          if (String(dr.target_date || '') > targetDateStr) {
+            futureUnpostedByBooking[dr.booking_id] = (futureUnpostedByBooking[dr.booking_id] || 0) + Number(dr.amount || 0);
+          }
+          if (dr.target_date === targetDateStr) {
+            dailyRatesMap[dr.booking_id] = Number(dr.amount);
+          }
+        });
+      }
+
+      if (allDailyExtras) {
+        allDailyExtras.forEach(de => {
+          if (String(de.category || '').includes('(Voided)')) return;
+          if (!financialSummary[de.booking_id]) {
+            financialSummary[de.booking_id] = { charges: 0, payments: 0, balance: 0, c_all: 0, c_today: 0 };
+          }
+          if (String(de.target_date || '') > targetDateStr) {
+            financialSummary[de.booking_id].c_all += Number(de.amount);
+            futureUnpostedByBooking[de.booking_id] = (futureUnpostedByBooking[de.booking_id] || 0) + Number(de.amount || 0);
+          }
+        });
+      }
+
+      const { data: ledgers, error: ledgerError } = await supabase
+        .from('ledger_transactions')
+        .select('booking_id, amount, category, transaction_type')
+        .in('booking_id', activeBookingIds);
         
-        const pricesMap: Record<string, number> = {};
-        if (basePrices) {
-          basePrices.forEach(b => pricesMap[b.room_type] = b.base_price);
-        }
-        if (calPrices) {
-          calPrices.forEach(c => pricesMap[c.room_type] = c.price);
-        }
-        setSmartPricesMap(pricesMap);
-      } else {
-        setSmartPricesMap({});
-      }
-      
-      // --- [NEW] Fetch Room Type Icons ---
-      const { data: iconData } = await supabase.from('system_settings').select('value').eq('key', 'room_icons_map').single();
-      if (iconData && iconData.value) {
-        const parsedIcons = typeof iconData.value === 'object' ? iconData.value : {};
-        for (const k in parsedIcons) {
-          if (typeof parsedIcons[k] === 'string') parsedIcons[k] = [parsedIcons[k]];
-        }
-        setRoomIconsMap(parsedIcons);
-      } else {
-        setRoomIconsMap({});
-      }
-      
-      if (activeBookingIds.length > 0) {
-        // 1. Fetch all daily rates and daily extras to calculate C_all (total expected charge)
-        const [{ data: allDailyRates }, { data: allDailyExtras }] = await Promise.all([
-          supabase
-            .from('booking_daily_rates')
-            .select('booking_id, amount, target_date')
-            .in('booking_id', activeBookingIds),
-          supabase
-            .from('booking_daily_extras')
-            .select('booking_id, amount, target_date, category')
-            .in('booking_id', activeBookingIds)
-        ]);
-
-        const futureUnpostedByBooking: Record<string, number> = {};
-
-        if (allDailyRates) {
-          allDailyRates.forEach(dr => {
-            if (!financialSummary[dr.booking_id]) {
-              financialSummary[dr.booking_id] = { charges: 0, payments: 0, balance: 0, c_all: 0, c_today: 0 };
+      if (!ledgerError && ledgers) {
+        ledgers.forEach(tx => {
+          if (tx.booking_id) {
+            if (!ledgersByBooking[tx.booking_id]) ledgersByBooking[tx.booking_id] = [];
+            ledgersByBooking[tx.booking_id].push(tx);
+          }
+        });
+        Object.entries(ledgersByBooking).forEach(([bid, txs]) => {
+          heldDepositByBooking[bid] = computeActiveHeldDeposit(txs, futureUnpostedByBooking[bid] || 0);
+        });
+        ledgers.forEach(tx => {
+          if (tx.booking_id) {
+            const cat = String(tx.category || '');
+            if (cat.includes('(Voided)')) return;
+            if (!financialSummary[tx.booking_id]) {
+              financialSummary[tx.booking_id] = { charges: 0, payments: 0, balance: 0, c_all: 0, c_today: 0, has_key_deposit: false };
             }
-            financialSummary[dr.booking_id].c_all += Number(dr.amount);
-            if (String(dr.target_date || '') > targetDateStr) {
-              futureUnpostedByBooking[dr.booking_id] = (futureUnpostedByBooking[dr.booking_id] || 0) + Number(dr.amount || 0);
+            const amt = Number(tx.amount);
+            const isDepositRow = amt > 0 && (cat === 'key_deposit' || cat.includes('มัดจำกุญแจ'));
+            const isDepositRefund = amt < 0 && cat.includes('คืนมัดจำกุญแจ');
+            const isChangeRefund = amt < 0 && cat.includes('คืนเงินทอน');
+            if (isDepositRefund) return;
+
+            if (isChangeRefund) {
+              financialSummary[tx.booking_id].payments = Math.max(0, financialSummary[tx.booking_id].payments - Math.abs(amt));
+              financialSummary[tx.booking_id].balance += Math.abs(amt);
+              return;
             }
+
+            if (!isDepositRow) financialSummary[tx.booking_id].balance += amt;
             
-            // Map today's rate for the dashboard
-            if (dr.target_date === targetDateStr) {
-              dailyRatesMap[dr.booking_id] = Number(dr.amount);
-            }
-          });
-        }
-
-        if (allDailyExtras) {
-          allDailyExtras.forEach(de => {
-            if (String(de.category || '').includes('(Voided)')) return;
-            if (!financialSummary[de.booking_id]) {
-              financialSummary[de.booking_id] = { charges: 0, payments: 0, balance: 0, c_all: 0, c_today: 0 };
-            }
-            if (String(de.target_date || '') > targetDateStr) {
-              financialSummary[de.booking_id].c_all += Number(de.amount);
-              futureUnpostedByBooking[de.booking_id] = (futureUnpostedByBooking[de.booking_id] || 0) + Number(de.amount || 0);
-            }
-          });
-        }
-
-        // 2. Fetch ledgers for C_today, P_all, and extra charges
-        const { data: ledgers, error: ledgerError } = await supabase
-          .from('ledger_transactions')
-          .select('booking_id, amount, category, transaction_type')
-          .in('booking_id', activeBookingIds);
-          
-        if (!ledgerError && ledgers) {
-          ledgers.forEach(tx => {
-            if (tx.booking_id) {
-              if (!ledgersByBooking[tx.booking_id]) ledgersByBooking[tx.booking_id] = [];
-              ledgersByBooking[tx.booking_id].push(tx);
-            }
-          });
-          Object.entries(ledgersByBooking).forEach(([bid, txs]) => {
-            heldDepositByBooking[bid] = computeActiveHeldDeposit(txs, futureUnpostedByBooking[bid] || 0);
-          });
-          ledgers.forEach(tx => {
-            if (tx.booking_id) {
-              const cat = String(tx.category || '');
-              if (cat.includes('(Voided)')) return;
-              if (!financialSummary[tx.booking_id]) {
-                financialSummary[tx.booking_id] = { charges: 0, payments: 0, balance: 0, c_all: 0, c_today: 0, has_key_deposit: false };
-              }
-              const amt = Number(tx.amount);
-              const isDepositRow = amt > 0 && (cat === 'key_deposit' || cat.includes('มัดจำกุญแจ'));
-              const isDepositRefund = amt < 0 && cat.includes('คืนมัดจำกุญแจ');
-              const isChangeRefund = amt < 0 && cat.includes('คืนเงินทอน');
-              if (isDepositRefund) return;
-
-              if (isChangeRefund) {
-                financialSummary[tx.booking_id].payments = Math.max(0, financialSummary[tx.booking_id].payments - Math.abs(amt));
-                financialSummary[tx.booking_id].balance += Math.abs(amt);
-                return;
-              }
-
-              if (!isDepositRow) financialSummary[tx.booking_id].balance += amt; // ยอดมัดจำกุญแจไม่ใช่ค่าใช้จ่าย จึงไม่นับเป็นหนี้ค้างชำระ
-              
-              if (amt > 0) {
-                // ค่ามัดจำกุญแจไม่ใช่ค่าใช้จ่าย: ไม่รวมในยอดค่าใช้จ่าย
-                const isKeyDeposit = cat === 'key_deposit' || cat.includes('มัดจำกุญแจ');
-                if (isKeyDeposit) {
-                  financialSummary[tx.booking_id].has_key_deposit = true;
-                } else {
-                  financialSummary[tx.booking_id].charges += amt;
-                  financialSummary[tx.booking_id].c_today += amt; // C_today = all posted charges
-                  if (cat !== 'ค่าห้องพัก' && cat !== 'room_charge') {
-                    financialSummary[tx.booking_id].c_all += amt;
-                  }
-                }
+            if (amt > 0) {
+              const isKeyDeposit = cat === 'key_deposit' || cat.includes('มัดจำกุญแจ');
+              if (isKeyDeposit) {
+                financialSummary[tx.booking_id].has_key_deposit = true;
               } else {
-                financialSummary[tx.booking_id].payments += Math.abs(amt);
+                financialSummary[tx.booking_id].charges += amt;
+                financialSummary[tx.booking_id].c_today += amt;
+                if (cat !== 'ค่าห้องพัก' && cat !== 'room_charge') {
+                  financialSummary[tx.booking_id].c_all += amt;
+                }
               }
+            } else {
+              financialSummary[tx.booking_id].payments += Math.abs(amt);
             }
-          });
-        }
+          }
+        });
       }
+    }
+
+    // คำนวณยอดรายได้สุทธิวันนี้ (แยกตามสถานที่) สำหรับแสดงบนปุ่มกองและหัวข้อกอง
+    try {
+      const bdStartIso = atLocalTime(targetDateStr, 6, 45).toISOString();
+      const bdEndIso = atLocalTime(addDaysStr(targetDateStr, 1), 6, 45).toISOString();
+      const [{ data: todayRates }, { data: todayLedgers }] = await Promise.all([
+        supabase
+          .from("booking_daily_rates")
+          .select("booking_id, amount, target_date")
+          .eq("target_date", targetDateStr),
+        supabase
+          .from("ledger_transactions")
+          .select("booking_id, room_id, shift_id, amount, category, transaction_type, created_at")
+          .gte("created_at", bdStartIso)
+          .lt("created_at", bdEndIso),
+      ]);
+
+      const rateBookingIds = Array.from(new Set((todayRates || []).map(r => r.booking_id).filter(Boolean)));
+      const bookingRoomMap: Record<string, { room_id: string; status: string }> = {};
+      (allTargetBookings || []).forEach(b => {
+        bookingRoomMap[b.id] = { room_id: b.room_id, status: b.status };
+      });
+      const missingIds = rateBookingIds.filter(id => !bookingRoomMap[id]);
+      if (missingIds.length > 0) {
+        const { data: extraBookings } = await supabase
+          .from("bookings")
+          .select("id, room_id, status")
+          .in("id", missingIds);
+        (extraBookings || []).forEach((b: any) => {
+          bookingRoomMap[b.id] = { room_id: b.room_id, status: b.status };
+        });
+      }
+
+      const revByLoc: Record<string, number> = {};
+      const countedOvernightBookings = new Set<string>();
+      (todayRates || []).forEach((dr: any) => {
+        const bInfo = bookingRoomMap[dr.booking_id];
+        if (!bInfo || bInfo.status === "cancelled" || bInfo.status === "reserved") return;
+        countedOvernightBookings.add(dr.booking_id);
+        const loc = roomLocById[bInfo.room_id] || "ทั่วไป";
+        revByLoc[loc] = (revByLoc[loc] || 0) + Number(dr.amount || 0);
+      });
+
+      const shiftLocById: Record<string, string> = {};
+      openShifts.forEach(s => {
+        if (s.shift_location) shiftLocById[s.id] = s.shift_location;
+      });
+
+      (todayLedgers || []).forEach((tx: any) => {
+        const cat = String(tx.category || "");
+        if (cat.includes("(Voided)")) return;
+        const amt = Number(tx.amount || 0);
+        if (tx.transaction_type === "revenue" && amt > 0) {
+          if (cat === "key_deposit" || cat.includes("มัดจำกุญแจ")) return;
+          if ((cat === "room_charge" || cat === "ค่าห้องพัก") && tx.booking_id && countedOvernightBookings.has(tx.booking_id)) {
+            return;
+          }
+          const bInfo = tx.booking_id ? bookingRoomMap[tx.booking_id] : null;
+          if (bInfo && bInfo.status === "reserved") return;
+          const roomId = tx.room_id || bInfo?.room_id;
+          const loc = (roomId && roomLocById[roomId]) || (tx.shift_id && shiftLocById[tx.shift_id]) || "ทั่วไป";
+          revByLoc[loc] = (revByLoc[loc] || 0) + amt;
+        } else if (tx.transaction_type === "expense" && amt > 0) {
+          const roomId = tx.room_id;
+          const loc = (roomId && roomLocById[roomId]) || (tx.shift_id && shiftLocById[tx.shift_id]) || activeShift?.shift_location || "ทั่วไป";
+          revByLoc[loc] = (revByLoc[loc] || 0) - amt;
+        }
+      });
+
+      setNetRevenueByLoc(revByLoc);
+    } catch (e) {
+      console.warn("compute netRevenueByLoc failed", e);
+    }
   
-      const getDailyPrice = (booking: any) => {
+    const getDailyPrice = (booking: any) => {
       if (!booking) return null;
       if (dailyRatesMap[booking.id] !== undefined) return dailyRatesMap[booking.id];
       if (booking.actual_price === null || booking.actual_price === undefined) return booking.actual_price;
@@ -390,16 +499,13 @@ export default function CheckinPage() {
     const mergedRooms = allRooms.map(room => {
       const roomBookings = allTargetBookings?.filter(b => b.room_id === room.id) || [];
       
-      // หาคิวสำหรับหน้าปัจจุบัน (Target Date) โดยใช้จุดตัดที่ 14:00 น. (เวลา Check-in มาตรฐาน)
       const targetDayBooking = roomBookings.find(b => {
         const bStart = new Date(b.check_in_time).getTime();
         const bEnd = new Date(b.check_out_time).getTime();
         const targetReference = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 14, 0, 0).getTime();
-        
         return bStart <= targetReference && bEnd > targetReference;
       });
 
-      // คิวจองล่วงหน้า 7 วัน (เก็บเฉพาะวันที่ติดจอง)
       const upcoming_days: number[] = [];
       let has_upcoming = false;
       
@@ -425,44 +531,40 @@ export default function CheckinPage() {
         }
       }
       
-      // ตรวจสอบว่ามีคิวจองเข้าใหม่ของวันนี้รออยู่หรือไม่ (กรณีห้องยังมีคนพักหรือรอทำความสะอาด)
       const incomingBookingToday = roomBookings.find(b => {
         const bStart = new Date(b.check_in_time);
         return bStart.getDate() === targetDate.getDate() && 
                bStart.getMonth() === targetDate.getMonth() && 
                bStart.getFullYear() === targetDate.getFullYear() &&
-               b.status === 'reserved'; // ใช้ status แทนการเทียบเวลา เพราะเวลาเช็คอินจริงอาจไม่ตรงกับเวลาจอง
+               b.status === 'reserved';
       });
       const incoming_today = !!incomingBookingToday;
 
       let finalRoom: RoomStatus = { ...room, has_upcoming, upcoming_days, incoming_today };
 
       if (dateOffset === 0) {
-        // วันนี้ (Today) -> ใช้ข้อมูล Live Status เป็นหลัก
-        
         if (incomingBookingToday) {
           if (finalRoom.status === 'available' || !finalRoom.status) {
-            // ถ้าห้องว่าง (ทำความสะอาดเสร็จแล้ว) ให้เอาคิวจองวันนี้มาทับเป็นสถานะ reserved
-              finalRoom = {
-                ...finalRoom,
-                status: 'reserved',
-                stay_type: 'overnight',
-                check_in_time: incomingBookingToday.check_in_time,
-                check_out_time: incomingBookingToday.check_out_time,
-                guest_count: incomingBookingToday.guest_count,
-                guest_name: incomingBookingToday.guest_name,
-                guest_phone: incomingBookingToday.guest_phone,
-                actual_price: getDailyPrice(incomingBookingToday),
-                staff_name: incomingBookingToday.staff_name,
-                booking_id: incomingBookingToday.id,
-                booking_created_at: incomingBookingToday.created_at,
-                unpaid_balance: financialSummary[incomingBookingToday.id]?.balance || 0,
-                total_charges: financialSummary[incomingBookingToday.id]?.charges || 0,
-                total_payments: financialSummary[incomingBookingToday.id]?.payments || 0,
-                c_all: financialSummary[incomingBookingToday.id]?.c_all || 0,
-                c_today: financialSummary[incomingBookingToday.id]?.c_today || 0,
-                has_key_deposit: financialSummary[incomingBookingToday.id]?.has_key_deposit
-              };
+            finalRoom = {
+              ...finalRoom,
+              status: 'reserved',
+              stay_type: 'overnight',
+              check_in_time: incomingBookingToday.check_in_time,
+              check_out_time: incomingBookingToday.check_out_time,
+              guest_count: incomingBookingToday.guest_count,
+              guest_name: incomingBookingToday.guest_name,
+              guest_phone: incomingBookingToday.guest_phone,
+              actual_price: getDailyPrice(incomingBookingToday),
+              staff_name: incomingBookingToday.staff_name,
+              booking_id: incomingBookingToday.id,
+              booking_created_at: incomingBookingToday.created_at,
+              unpaid_balance: financialSummary[incomingBookingToday.id]?.balance || 0,
+              total_charges: financialSummary[incomingBookingToday.id]?.charges || 0,
+              total_payments: financialSummary[incomingBookingToday.id]?.payments || 0,
+              c_all: financialSummary[incomingBookingToday.id]?.c_all || 0,
+              c_today: financialSummary[incomingBookingToday.id]?.c_today || 0,
+              has_key_deposit: financialSummary[incomingBookingToday.id]?.has_key_deposit
+            };
           } else if (finalRoom.status === 'reserved') {
             finalRoom.booking_id = incomingBookingToday.id;
             finalRoom.guest_name = incomingBookingToday.guest_name;
@@ -473,33 +575,31 @@ export default function CheckinPage() {
             finalRoom.unpaid_balance = financialSummary[incomingBookingToday.id]?.balance || 0;
             finalRoom.total_charges = financialSummary[incomingBookingToday.id]?.charges || 0;
             finalRoom.total_payments = financialSummary[incomingBookingToday.id]?.payments || 0;
-                finalRoom.c_all = financialSummary[incomingBookingToday.id]?.c_all || 0;
-                finalRoom.c_today = financialSummary[incomingBookingToday.id]?.c_today || 0;
-                finalRoom.has_key_deposit = financialSummary[incomingBookingToday.id]?.has_key_deposit;
+            finalRoom.c_all = financialSummary[incomingBookingToday.id]?.c_all || 0;
+            finalRoom.c_today = financialSummary[incomingBookingToday.id]?.c_today || 0;
+            finalRoom.has_key_deposit = financialSummary[incomingBookingToday.id]?.has_key_deposit;
           }
         }
         
-        // ถ้าสถานะเป็น occupied ให้ดึง booking_id จากการจองของวันนี้ที่เป็น checked_in
         if (finalRoom.status === 'occupied') {
-            const activeBooking = roomBookings.find(b => b.status === 'checked_in');
-            if (activeBooking) {
-              finalRoom.booking_id = activeBooking.id;
-              finalRoom.guest_name = activeBooking.guest_name;
-              finalRoom.guest_phone = activeBooking.guest_phone;
-              finalRoom.unpaid_balance = financialSummary[activeBooking.id]?.balance || 0;
-              finalRoom.total_charges = financialSummary[activeBooking.id]?.charges || 0;
-              finalRoom.total_payments = financialSummary[activeBooking.id]?.payments || 0;
-              finalRoom.c_all = financialSummary[activeBooking.id]?.c_all || 0;
-              finalRoom.c_today = financialSummary[activeBooking.id]?.c_today || 0;
-              finalRoom.has_key_deposit = financialSummary[activeBooking.id]?.has_key_deposit;
-              finalRoom.held_key_deposit = heldDepositByBooking[activeBooking.id] || 0;
-              finalRoom.actual_price = getDailyPrice(activeBooking);
-            }
+          const activeBooking = roomBookings.find(b => b.status === 'checked_in');
+          if (activeBooking) {
+            finalRoom.booking_id = activeBooking.id;
+            finalRoom.guest_name = activeBooking.guest_name;
+            finalRoom.guest_phone = activeBooking.guest_phone;
+            finalRoom.unpaid_balance = financialSummary[activeBooking.id]?.balance || 0;
+            finalRoom.total_charges = financialSummary[activeBooking.id]?.charges || 0;
+            finalRoom.total_payments = financialSummary[activeBooking.id]?.payments || 0;
+            finalRoom.c_all = financialSummary[activeBooking.id]?.c_all || 0;
+            finalRoom.c_today = financialSummary[activeBooking.id]?.c_today || 0;
+            finalRoom.has_key_deposit = financialSummary[activeBooking.id]?.has_key_deposit;
+            finalRoom.held_key_deposit = heldDepositByBooking[activeBooking.id] || 0;
+            finalRoom.actual_price = getDailyPrice(activeBooking);
           }
+        }
         
         return finalRoom;
       } else {
-        // อดีต/อนาคต -> ใช้ข้อมูลจาก Target Day Booking
         if (targetDayBooking) {
           finalRoom = {
             ...finalRoom,
@@ -538,18 +638,16 @@ export default function CheckinPage() {
   useEffect(() => {
     fetchData();
     
-    // ตั้งค่า Supabase Realtime ให้ดึงข้อมูลทันทีเมื่อมีการอัปเดตตาราง rooms
     const roomSubscription = supabase
       .channel('rooms-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, () => {
         fetchData(true);
       })
       .subscribe();
 
-    // ตั้งค่า Supabase Realtime สำหรับตาราง bookings
     const bookingSubscription = supabase
       .channel('bookings-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
         fetchData(true);
       })
       .subscribe();
@@ -581,76 +679,164 @@ export default function CheckinPage() {
     }
   };
 
-  const handleClearAllOccupiedRooms = () => {
-    const occupiedRooms = rooms.filter(r => r.status === 'occupied');
-    if (occupiedRooms.length === 0) return;
-    setClearRoomsPin("");
-    setClearRoomsPinError("");
-    setShowClearRoomsPinModal(true);
-  };
-
-  const handleConfirmClearAllOccupiedRooms = async () => {
-    const occupiedRooms = rooms.filter(r => r.status === 'occupied');
-    if (occupiedRooms.length === 0) {
-      setShowClearRoomsPinModal(false);
+  // =========================================================================
+  // ฟังก์ชันสำหรับ Admin/Manager:
+  // 1) บังคับตัดรอบข้ามวัน (Close Day) ให้ตรงกับวันปัจจุบัน
+  // 2) รีเซ็ตระบบเป็น 0 ทุกสถานที่ (ซอย1, ซอย2, ซามีญ่า) สำหรับทดสอบ
+  // =========================================================================
+  const handleConfirmAdminAction = async () => {
+    if (!adminPin.trim()) {
+      setAdminPinError("กรุณากรอกรหัส PIN ของ Admin หรือผู้จัดการ");
       return;
     }
-    if (!clearRoomsPin.trim()) {
-      setClearRoomsPinError("กรุณากรอกรหัส PIN ของ Admin หรือผู้จัดการ");
-      return;
-    }
+    setAdminActionLoading(true);
+    setAdminPinError("");
 
-    setLoading(true);
-    setClearRoomsPinError("");
+    try {
+      let authorizedName = "Master Admin";
+      if (adminPin.trim() !== "9999") {
+        const { data: staffData, error: staffErr } = await supabase
+          .from("staff")
+          .select("name, role")
+          .eq("pin", adminPin.trim())
+          .maybeSingle();
 
-    const { data: staffData, error: staffErr } = await supabase
-      .from('staff')
-      .select('name, role')
-      .eq('pin', clearRoomsPin.trim())
-      .maybeSingle();
+        if (staffErr || !staffData || (staffData.role !== "admin" && staffData.role !== "manager")) {
+          setAdminActionLoading(false);
+          setAdminPinError("รหัส PIN ไม่ถูกต้อง หรือไม่มีสิทธิ์ (ต้องเป็น Admin/Manager เท่านั้น)");
+          return;
+        }
+        authorizedName = staffData.name;
+      }
 
-    if (staffErr || !staffData || (staffData.role !== 'admin' && staffData.role !== 'manager')) {
-      setLoading(false);
-      setClearRoomsPinError("รหัส PIN ไม่ถูกต้อง หรือไม่มีสิทธิ์ (ต้องเป็น Admin/Manager เท่านั้น)");
-      return;
-    }
+      const nowIso = getNow().toISOString();
+      const allLocs = sortedLocations.length > 0 ? sortedLocations : ["ซอย1", "ซอย2", "ซามีญ่า"];
 
-    // อัปเดตตาราง bookings ให้เป็น checked_out ด้วย จะได้ไม่เด้งกลับมาเป็น reserved อีก
-    await supabase
-      .from('bookings')
-      .update({ status: 'checked_out', actual_check_out_time: getNow().toISOString() })
-      .in('room_id', occupiedRooms.map(r => r.id))
-      .eq('status', 'checked_in');
+      if (adminActionModal === "force_close_day") {
+        // 1. บันทึกปิดรอบวัน (EOD) ของวันก่อนหน้าและวันในกะที่ค้างอยู่ให้ครบทุกสถานที่
+        const prevBD = addDaysStr(realClockBusinessDate, -1);
+        const datesToClose = Array.from(new Set([prevBD, closeDayBusinessDate].filter(d => d && d <= realClockBusinessDate)));
+        const upserts: { key: string; value: any }[] = [];
 
-    const { error } = await supabase
-      .from('rooms')
-      .update({ 
-        status: 'dirty', 
-        check_in_time: null, 
-        check_out_time: null, 
-        stay_type: null, 
-        guest_count: null, 
-        actual_price: null, 
-        staff_name: null 
-      })
-      .in('id', occupiedRooms.map(r => r.id));
-      
-    if (!error) {
-      await logActivity({
-        category: 'checkin',
-        action: 'checkout',
-        staffName: staffData.name || 'Admin',
-        shiftName: activeShift?.staff_name || null,
-        target: `เคลียร์ห้องพักทั้งหมด (${occupiedRooms.length} ห้อง)`,
-        details: `[โหมดทดสอบ] เคลียร์แขกออกจากห้องพักทั้งหมด ${occupiedRooms.length} ห้อง (${occupiedRooms.map(r => r.room_no).join(', ')}) โดย ${staffData.name}`
-      });
-      setShowClearRoomsPinModal(false);
-      setClearRoomsPin("");
-      fetchData();
-    } else {
-      console.error(error);
-      alert('เกิดข้อผิดพลาดในการเคลียร์ห้อง');
-      setLoading(false);
+        datesToClose.forEach(bd => {
+          if (bd < realClockBusinessDate) {
+            upserts.push({
+              key: `${EOD_KEY_PREFIX}${bd}`,
+              value: { shift_id: activeShift?.id || "admin-force-eod", location: "ALL", closed_at: nowIso, forced_by: authorizedName },
+            });
+            allLocs.forEach(loc => {
+              upserts.push({
+                key: `${EOD_LOC_KEY_PREFIX}${loc}_${bd}`,
+                value: { shift_id: activeShift?.id || "admin-force-eod", location: loc, closed_at: nowIso, forced_by: authorizedName },
+              });
+            });
+          }
+        });
+
+        if (upserts.length > 0) {
+          await supabase.from("system_settings").upsert(upserts, { onConflict: "key" });
+        }
+
+        // 2. อัปเดตวันธุรกิจของกะที่กำลังเปิดอยู่ทั้งหมดให้เป็นวันปัจจุบัน (realClockBusinessDate)
+        for (const s of openShifts) {
+          if (s.id && s.id !== "dummy-shift-id") {
+            await saveShiftBusinessDate(s.id, realClockBusinessDate, s.shift_location || "ซอย1");
+          }
+        }
+
+        await logActivity({
+          category: "shift",
+          action: "update",
+          staffName: authorizedName,
+          shiftName: activeShift?.staff_name || null,
+          target: `บังคับตัดรอบข้ามวัน (Close Day -> ${realClockBusinessDate})`,
+          details: `ผู้จัดการ (${authorizedName}) กดบังคับตัดรอบข้ามวัน (Close Day) ให้เป็นวันที่ ${realClockBusinessDate} ทุกสถานที่เรียบร้อย`,
+        });
+
+        setAdminActionModal(null);
+        setAdminPin("");
+        setDateOffset(0);
+        await refreshShift();
+        await fetchData();
+        alert(`✅ ตัดรอบข้ามวัน (Close Day) เป็นวันที่ ${realClockBusinessDate} เรียบร้อยแล้ว`);
+      } else if (adminActionModal === "reset_all_zero") {
+        // 1. Unlink และ Void รายการใน ledger_transactions ทั้งหมด (รองรับ RLS ที่ไม่อนุญาต DELETE)
+        await supabase
+          .from("ledger_transactions")
+          .update({
+            booking_id: null,
+            room_id: null,
+            shift_id: null,
+            category: "ล้างข้อมูลทดสอบ (Voided)",
+            amount: 0,
+          })
+          .not("id", "is", null);
+
+        // 2. ลบ booking_daily_rates, booking_daily_extras, bookings ทั้งหมด
+        await supabase.from("booking_daily_rates").delete().not("id", "is", null);
+        await supabase.from("booking_daily_extras").delete().not("id", "is", null);
+        await supabase.from("bookings").delete().not("id", "is", null);
+
+        // 3. ปิดกะที่เปิดค้างอยู่ทั้งหมด และรีเซ็ตยอดเงินในกะเป็น 0
+        await supabase
+          .from("shifts")
+          .update({
+            status: "closed",
+            end_time: nowIso,
+            initial_cash: 0,
+            expected_cash: 0,
+            final_cash: 0,
+            discrepancy: 0,
+          })
+          .eq("status", "open");
+
+        // 4. ลบค่า cash_handover_*, booking_meta_*, eod_*, shift_bd_* ใน system_settings
+        await Promise.all([
+          supabase.from("system_settings").delete().like("key", `${HANDOVER_KEY_PREFIX}%`),
+          supabase.from("system_settings").delete().like("key", "booking_meta_%"),
+          supabase.from("system_settings").delete().like("key", `${EOD_KEY_PREFIX}%`),
+          supabase.from("system_settings").delete().like("key", `${EOD_LOC_KEY_PREFIX}%`),
+          supabase.from("system_settings").delete().like("key", `${SHIFT_BD_KEY_PREFIX}%`),
+        ]);
+
+        // 5. รีเซ็ตห้องพักทุกห้องทุกสถานที่ให้กลับมาเป็น "ว่าง" (available)
+        await supabase
+          .from("rooms")
+          .update({
+            status: "available",
+            current_status: "ว่าง",
+            stay_type: null,
+            check_in_time: null,
+            check_out_time: null,
+            guest_count: null,
+            actual_price: null,
+            staff_name: null,
+          })
+          .not("id", "is", null);
+
+        localStorage.removeItem("active_shift_id");
+
+        await logActivity({
+          category: "checkin",
+          action: "delete",
+          staffName: authorizedName,
+          shiftName: null,
+          target: "รีเซ็ตระบบเป็น 0 ทุกสถานที่ (สำหรับทดสอบ)",
+          details: `ผู้จัดการ (${authorizedName}) รีเซ็ตข้อมูลห้องพัก การจอง ยอดยกมา มัดจำกุญแจ และลิ้นชักเงินสดทุกสถานที่ให้เริ่มต้นจาก 0`,
+        });
+
+        setAdminActionModal(null);
+        setAdminPin("");
+        setDateOffset(0);
+        await refreshShift();
+        await fetchData();
+        alert("✅ รีเซ็ตข้อมูลทุกสถานที่ (ซอย1, ซอย2, ซามีญ่า) เริ่มต้นจาก 0 เรียบร้อยแล้ว!");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setAdminPinError("เกิดข้อผิดพลาด: " + (err?.message || String(err)));
+    } finally {
+      setAdminActionLoading(false);
     }
   };
 
@@ -670,14 +856,57 @@ export default function CheckinPage() {
     return indexA - indexB;
   });
 
-  // กรองสถานที่ที่ผู้ใช้นี้ได้รับสิทธิ์ตามที่ตั้งไว้ใน Settings (authUser.locations)
-  const userVisibleLocations = isManagerOrAdmin
-    ? sortedLocations
-    : sortedLocations.filter(loc => authUser?.locations?.includes(loc));
+  // กรองสถานที่ที่ผู้ใช้นี้ได้รับสิทธิ์ตามที่ตั้งไว้ใน Settings (effectiveUser.locations)
+  // โดยนำสถานที่หลัก (userPrimaryLocation) มาไว้เป็นปุ่มแรกเสมอ
+  const userVisibleLocations = (() => {
+    const base = isManagerOrAdmin
+      ? sortedLocations
+      : sortedLocations.filter(loc => effectiveUser?.locations?.includes(loc));
+    if (userPrimaryLocation && base.includes(userPrimaryLocation)) {
+      return [userPrimaryLocation, ...base.filter(l => l !== userPrimaryLocation)];
+    }
+    return base;
+  })();
+
+  // คำนวณสถิติรายสถานที่ (ห้องว่าง / มีผู้เข้าพัก / รอทำความสะอาด / จอง / มัดจำกุญแจคงเหลือ / ยอดรายได้สุทธิวันนี้)
+  const locationStatsMap: Record<
+    string,
+    {
+      total: number;
+      available: number;
+      occupied: number;
+      dirty: number;
+      reserved: number;
+      netRevenue: number;
+      keyTotal: number;
+      keyRooms: RoomStatus[];
+    }
+  > = {};
+
+  sortedLocations.forEach(loc => {
+    const list = groupedRooms[loc] || [];
+    const available = list.filter(r => !r.status || r.status === 'available').length;
+    const occupied = list.filter(r => r.status === 'occupied').length;
+    const dirty = list.filter(r => r.status === 'dirty' || r.status === 'cleaning').length;
+    const reserved = list.filter(r => r.status === 'reserved').length;
+    const keyRooms = list
+      .filter(r => r.status === 'occupied' && (r.held_key_deposit || 0) > 0)
+      .sort((a, b) => a.room_no.localeCompare(b.room_no, undefined, { numeric: true }));
+    const keyTotal = keyRooms.reduce((s, r) => s + (r.held_key_deposit || 0), 0);
+    locationStatsMap[loc] = {
+      total: list.length,
+      available,
+      occupied,
+      dirty,
+      reserved,
+      netRevenue: netRevenueByLoc[loc] || 0,
+      keyTotal,
+      keyRooms,
+    };
+  });
 
   const getStayDetails = (room: RoomStatus) => {
     if (room.status !== 'occupied' || !room.check_out_time) return null;
-    
     if (dateOffset !== 0) return null;
 
     const now = getNow();
@@ -686,7 +915,6 @@ export default function CheckinPage() {
     const diffHours = diffMs / (1000 * 60 * 60);
     const diffMins = diffMs / (1000 * 60);
     
-    // เตือนก่อนหมดเวลา 15 นาที สำหรับทั้งค้างคืนและชั่วคราว
     const isWarning = diffMins <= 15;
     
     if (room.stay_type === 'overnight') {
@@ -703,19 +931,23 @@ export default function CheckinPage() {
     switch (status) {
       case 'occupied': return "bg-blue-100 border-blue-300 text-blue-800 hover:bg-blue-200 hover:border-blue-400 shadow-sm";
       case 'dirty': return "bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100 hover:border-orange-300";
-      case 'cleaning': return "bg-yellow-100 border-yellow-300 text-yellow-800 hover:bg-yellow-200 hover:border-yellow-400 shadow-sm"; // สำหรับแม่บ้าน
-      case 'reserved': return "bg-purple-100 border-purple-300 text-purple-800 hover:bg-purple-200 hover:border-purple-400 shadow-sm"; // อนาคต (จอง)
+      case 'cleaning': return "bg-yellow-100 border-yellow-300 text-yellow-800 hover:bg-yellow-200 hover:border-yellow-400 shadow-sm";
+      case 'reserved': return "bg-purple-100 border-purple-300 text-purple-800 hover:bg-purple-200 hover:border-purple-400 shadow-sm";
       default: return "bg-white border-emerald-200 text-slate-700 hover:bg-emerald-50 hover:border-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.05)]";
     }
   };
 
-  const getBusinessDate = (_date?: Date) => {
-    // อิงวันธุรกิจปัจจุบัน (ปกติเปลี่ยนวันที่ 06:45 น. แต่ถ้าปิดกะสุดท้ายตั้งแต่ 05:30 น. แล้ว จะเริ่มวันใหม่ทันที)
-    return getActiveBusinessDate();
-  };
-
   const displayDate = getBusinessDate(getNow());
   displayDate.setDate(displayDate.getDate() + dateOffset);
+
+  const formatShortThaiDate = (ymd: string) => {
+    if (!ymd) return "-";
+    const [y, m, d] = ymd.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    return dt.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
+  };
+
+  const isCloseDayMatched = closeDayBusinessDate === realClockBusinessDate && !closeDayMismatchReason;
 
   const formatTimeStr = (isoString: string | null) => {
     if (!isoString) return "";
@@ -737,11 +969,10 @@ export default function CheckinPage() {
   const tomorrowDayNum = tomorrowDate.getDate();
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-3 sm:space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       
-      {/* Date Slider / Timeline */}
+      {/* 1. แถบด้านบน: วันที่ปัจจุบัน (เปลี่ยน 06:45 น.) + สถานะวัน Close Day + รายละเอียดกะการทำงาน */}
       {isHousekeeper ? (
-        /* HOUSEKEEPER: Minimal Top Bar (No shift info, locked to today, logout button) */
         <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
@@ -750,7 +981,7 @@ export default function CheckinPage() {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 font-medium hidden sm:inline">({authUser?.name})</span>
+            <span className="text-xs text-slate-500 font-medium hidden sm:inline">({effectiveUser?.name})</span>
             <button
               onClick={handleLogout}
               className="text-red-500 hover:text-red-700 font-bold text-xs px-3 py-1.5 rounded-xl border border-red-200 hover:bg-red-50 transition-colors"
@@ -759,89 +990,19 @@ export default function CheckinPage() {
             </button>
           </div>
         </div>
-      ) : isStaff ? (
-        /* STAFF: Date Slider + Shift Info (กะปัจจุบัน / เงินในลิ้นชัก / เปิดกะ-ปิดกะ) + Logout on same line */
-        <div className="bg-white p-2.5 sm:p-3 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-2 sm:gap-4">
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <button 
-              onClick={() => setDateOffset(prev => Math.max(-10, prev - 1))}
-              className="p-1.5 sm:p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 flex-shrink-0"
-              title="ย้อนหลัง 1 วัน"
-            >
-              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
-            </button>
-
-            <input 
-              type="date"
-              value={`${displayDate.getFullYear()}-${String(displayDate.getMonth() + 1).padStart(2, '0')}-${String(displayDate.getDate()).padStart(2, '0')}`}
-              onChange={(e) => {
-                if (e.target.value) {
-                  const selectedDate = new Date(e.target.value);
-                  const today = getBusinessDate(getNow());
-                  selectedDate.setHours(0, 0, 0, 0);
-                  today.setHours(0, 0, 0, 0);
-                  const diffTime = selectedDate.getTime() - today.getTime();
-                  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-                  setDateOffset(diffDays);
-                }
-              }}
-              className="border-slate-200 rounded-xl px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm font-bold focus:ring-blue-500 focus:border-blue-500 bg-slate-50 text-slate-700 h-9 sm:h-10 outline-none border"
-            />
-
-            {dateOffset !== 0 ? (
-              <button 
-                onClick={() => setDateOffset(0)}
-                className="px-2.5 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-xl hover:bg-blue-200 transition-colors h-9 sm:h-10 flex items-center"
-              >
-                วันนี้
-              </button>
-            ) : (
-              <span className="text-xs font-bold text-slate-500 hidden md:inline ml-1">
-                {displayDate.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}
-              </span>
-            )}
-
-            <button 
-              onClick={() => setDateOffset(prev => Math.min(7, prev + 1))}
-              className="p-1.5 sm:p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 flex-shrink-0"
-              title="ล่วงหน้า 1 วัน"
-            >
-              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 sm:gap-3 ml-auto">
-            <ShiftManager compact={true} hideExpense={true} />
-            <button
-              onClick={handleLogout}
-              className="text-red-500 hover:text-red-700 font-bold text-xs px-2.5 sm:px-3 py-1.5 rounded-xl border border-red-200 hover:bg-red-50 transition-colors"
-              title="ออกจากระบบ"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
       ) : (
-        /* ADMIN / MANAGER: Full Date Slider */
-        <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between overflow-x-auto gap-2">
-          <button 
-            onClick={() => setDateOffset(prev => Math.max(-10, prev - 1))}
-            className="p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 flex-shrink-0"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
-          </button>
+        <div className="bg-white p-2.5 sm:p-3.5 rounded-2xl shadow-sm border border-slate-200 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {/* ซ้าย: ตัวเลือกวันที่ + วันที่ปัจจุบัน (06:45 น.) + ป้ายเปรียบเทียบวัน Close Day */}
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <button 
+                onClick={() => setDateOffset(prev => Math.max(-10, prev - 1))}
+                className="p-1.5 sm:p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 flex-shrink-0"
+                title="ย้อนหลัง 1 วัน"
+              >
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
+              </button>
 
-          <div className="flex-1 flex flex-col md:flex-row justify-center items-center gap-4">
-            <div className="text-center hidden md:block">
-              <h2 className="text-xl font-black text-slate-800">
-                {dateOffset === 0 ? `วันนี้ (Today) ${displayDate.toLocaleDateString('th-TH', { weekday: 'long' })} ที่ ${displayDate.getDate()}/${displayDate.getMonth() + 1}/${displayDate.getFullYear()}` : displayDate.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'short' })}
-              </h2>
-              <p className="text-xs text-slate-500">
-                {dateOffset < 0 ? `ย้อนหลัง ${Math.abs(dateOffset)} วัน` : dateOffset > 0 ? `ล่วงหน้า ${dateOffset} วัน` : "สถานะปัจจุบันแบบ Real-time"}
-              </p>
-            </div>
-            
-            <div className="flex items-center gap-2">
               <input 
                 type="date"
                 value={`${displayDate.getFullYear()}-${String(displayDate.getMonth() + 1).padStart(2, '0')}-${String(displayDate.getDate()).padStart(2, '0')}`}
@@ -856,227 +1017,238 @@ export default function CheckinPage() {
                     setDateOffset(diffDays);
                   }
                 }}
-                className="border-slate-200 rounded-xl px-4 py-2 font-medium focus:ring-blue-500 focus:border-blue-500 bg-slate-50 text-slate-700 h-11 outline-none border"
+                className="border-slate-200 rounded-xl px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm font-bold focus:ring-blue-500 focus:border-blue-500 bg-slate-50 text-slate-800 h-9 sm:h-10 outline-none border"
               />
-              {dateOffset !== 0 && (
+
+              <button 
+                onClick={() => setDateOffset(prev => Math.min(7, prev + 1))}
+                className="p-1.5 sm:p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 flex-shrink-0"
+                title="ล่วงหน้า 1 วัน"
+              >
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
+              </button>
+
+              {dateOffset !== 0 ? (
                 <button 
                   onClick={() => setDateOffset(0)}
-                  className="px-4 py-2 bg-blue-100 text-blue-700 text-sm font-bold rounded-xl hover:bg-blue-200 transition-colors h-11 flex items-center"
+                  className="px-2.5 py-1 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 transition-colors h-9 flex items-center shadow-xs"
                 >
-                  วันนี้
+                  กลับวันนี้
+                </button>
+              ) : (
+                <span className="text-xs sm:text-sm font-black text-slate-800">
+                  วันนี้ {displayDate.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}
+                  <span className="text-[10px] font-semibold text-slate-400 ml-1">(ตัดวัน 06:45 น.)</span>
+                </span>
+              )}
+
+              {/* ป้ายแสดงวันที่ของส่วน Close Day (รอบวันของกะ) เทียบกับวันปัจจุบัน */}
+              <div
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] sm:text-xs font-bold border ${
+                  isCloseDayMatched
+                    ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                    : "bg-amber-50 text-amber-900 border-amber-300 animate-pulse"
+                }`}
+                title={
+                  isCloseDayMatched
+                    ? "วันของรอบกะ (Close Day) ตรงกับวันปัจจุบันเรียบร้อย"
+                    : closeDayMismatchReason || "วันของรอบกะ (Close Day) ไม่ตรงกับวันปัจจุบัน"
+                }
+              >
+                <span>{isCloseDayMatched ? "✅" : "⚠️"}</span>
+                <span>
+                  Close Day: <strong>{formatShortThaiDate(closeDayBusinessDate)}</strong>
+                </span>
+                <span className="hidden sm:inline text-[10px] font-semibold opacity-90">
+                  {isCloseDayMatched
+                    ? "(ตรงกับวันปัจจุบัน)"
+                    : `(${closeDayMismatchReason || "ยังไม่เปลี่ยนวัน"})`}
+                </span>
+              </div>
+            </div>
+
+            {/* ขวา: รายละเอียดกะการทำงาน (ซ่อนยอดเงินในลิ้นชักสำหรับ Staff อัตโนมัติใน ShiftManager) + ปุ่มผู้จัดการ */}
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 ml-auto">
+              <ShiftManager compact={true} hideExpense={false} />
+
+              {isManagerOrAdmin && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminPin("");
+                      setAdminPinError("");
+                      setAdminActionModal("force_close_day");
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors"
+                    title="บังคับตัดรอบข้ามวัน (Close Day) ให้ตรงกับวันปัจจุบันทันทีโดยไม่ต้องรอเวลา 05:30 น."
+                  >
+                    ⏭️ ตัดรอบข้ามวัน
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminPin("");
+                      setAdminPinError("");
+                      setAdminActionModal("reset_all_zero");
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors"
+                    title="รีเซ็ตห้องพัก การจอง ยอดยกมา และลิ้นชักเงินสดทุกสถานที่ให้เริ่มต้นจาก 0 (สำหรับทดสอบ)"
+                  >
+                    🧹 รีเซ็ตเป็น 0 ทุกสถานที่
+                  </button>
+                </div>
+              )}
+
+              {isStaff && (
+                <button
+                  onClick={handleLogout}
+                  className="text-red-500 hover:text-red-700 font-bold text-xs px-2.5 py-1.5 rounded-xl border border-red-200 hover:bg-red-50 transition-colors"
+                  title="ออกจากระบบ"
+                >
+                  Logout
                 </button>
               )}
             </div>
           </div>
 
-          <button 
-            onClick={() => setDateOffset(prev => Math.min(7, prev + 1))}
-            className="p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 flex-shrink-0"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
-          </button>
+          {/* หากวัน Close Day ไม่ตรงกับวันปัจจุบัน ให้แสดงแถบอธิบายสาเหตุชัดเจนบนหน้าจอมือถือด้วย */}
+          {!isCloseDayMatched && closeDayMismatchReason && (
+            <div className="text-[11px] font-bold text-amber-800 bg-amber-50/80 border border-amber-200 rounded-xl px-3 py-1.5 flex items-center justify-between gap-2">
+              <span>⚠️ สาเหตุที่วันไม่ตรงกัน: {closeDayMismatchReason}</span>
+              {isManagerOrAdmin && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdminPin("");
+                    setAdminPinError("");
+                    setAdminActionModal("force_close_day");
+                  }}
+                  className="underline text-indigo-700 font-black whitespace-nowrap"
+                >
+                  กดตัดรอบข้ามวันทันที →
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
-      {/* แถบสรุปมัดจำกุญแจคงเหลือปัจจุบัน + รายจ่ายกะนี้ (ไม่แสดงสำหรับแม่บ้าน) */}
-      {!isHousekeeper && dateOffset === 0 && !loading && (() => {
-        const visibleRooms = isManagerOrAdmin
-          ? rooms
-          : rooms.filter(r => !r.location || userVisibleLocations.includes(r.location));
-        const focusLoc = selectedLocationFilter || activeShift?.shift_location || null;
-        const allKeyRooms = visibleRooms
-          .filter(r => r.status === 'occupied' && (r.held_key_deposit || 0) > 0)
-          .sort((a, b) => a.room_no.localeCompare(b.room_no, undefined, { numeric: true }));
-        const keyRooms = focusLoc
-          ? allKeyRooms.filter(r => (r.location || 'ทั่วไป') === focusLoc)
-          : allKeyRooms;
-        const keyTotal = keyRooms.reduce((s, r) => s + (r.held_key_deposit || 0), 0);
-        const byLocMap: Record<string, number> = {};
-        allKeyRooms.forEach(r => {
-          const l = r.location || 'ทั่วไป';
-          byLocMap[l] = (byLocMap[l] || 0) + (r.held_key_deposit || 0);
-        });
-        const locEntries = Object.entries(byLocMap);
-        return (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-3 py-2 shadow-xs space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowKeyRooms(p => !p)}
-                  className="flex items-center gap-2 text-left"
-                  title="ยอดรวมมัดจำกุญแจของห้องที่ยังไม่เช็คเอาท์ (ต้องกันเงินสดไว้ในลิ้นชักเพื่อคืนลูกค้า)"
-                >
-                  <span className="text-lg">🔑</span>
-                  <span className="text-xs sm:text-sm font-bold text-amber-900">
-                    มัดจำกุญแจคงเหลือ{focusLoc ? ` (${focusLoc})` : 'ปัจจุบัน'}:
-                  </span>
-                  <span className="text-base sm:text-lg font-black text-amber-800">฿{keyTotal.toLocaleString()}</span>
-                  <span className="text-[11px] font-bold text-amber-700 bg-white border border-amber-200 rounded-full px-2 py-0.5">
-                    {keyRooms.length} ห้อง {showKeyRooms ? '▲' : '▼'}
-                  </span>
-                </button>
-                {locEntries.length > 1 && (
-                  <div className="flex flex-wrap items-center gap-1">
-                    {locEntries.map(([locName, amt]) => (
-                      <span
-                        key={locName}
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                          focusLoc === locName
-                            ? 'bg-amber-600 text-white border-amber-600'
-                            : 'bg-white/80 text-amber-800 border-amber-200'
-                        }`}
-                      >
-                        📍{locName}: ฿{amt.toLocaleString()}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-amber-800 hidden md:inline">ต้องกันเงินสดจำนวนนี้ไว้ในลิ้นชักของแต่ละสถานที่เพื่อคืนลูกค้าตอนเช็คเอาท์</span>
-                {activeShift && !activeShift.housekeeper_only && <ShiftExpenseButton compact />}
-              </div>
-            </div>
-            {showKeyRooms && (
-              <div className="flex flex-wrap gap-1.5 pt-1 border-t border-amber-200">
-                {keyRooms.length === 0 ? (
-                  <span className="text-xs text-amber-700">ไม่มีห้องที่ถือเงินมัดจำกุญแจอยู่{focusLoc ? `ใน ${focusLoc}` : ''}</span>
-                ) : keyRooms.map(r => (
-                  <span key={r.id} className="text-[11px] bg-white border border-amber-200 rounded-lg px-2 py-0.5 font-bold text-slate-700">
-                    {r.location ? `[${r.location}] ` : ''}ห้อง {r.room_no} <span className="text-amber-700">฿{(r.held_key_deposit || 0).toLocaleString()}</span>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })()}
+      {/* 2. แถบปุ่มเลือกสถานที่ (ปุ่มกอง): แสดงสถานที่หลักเด่น-ใหญ่พิเศษ + แสดงจำนวนห้องว่าง / มีแขกพัก / รายได้สุทธิวันนี้ */}
+      {!loading && (isManagerOrAdmin ? sortedLocations.length > 0 : userVisibleLocations.length > 0) && (
+        <div className="bg-white p-2.5 sm:p-3 rounded-2xl shadow-xs border border-slate-200 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* ปุ่มสถานที่แต่ละกอง (เรียงสถานที่หลักขึ้นก่อนเสมอ) */}
+            {(isManagerOrAdmin ? sortedLocations : userVisibleLocations).map(loc => {
+              const isPrimary = userPrimaryLocation === loc;
+              const isSelected = selectedLocationFilter === loc;
+              const st = locationStatsMap[loc] || { available: 0, occupied: 0, dirty: 0, reserved: 0, netRevenue: 0 };
 
-      {isManagerOrAdmin ? (
-        <>
-          {/* Header & Legend (Admin/Manager Full View) */}
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
-            <div className="flex flex-col gap-2">
-              <h1 className="text-2xl font-bold text-slate-800 tracking-tight">สมุดจอง & สถานะห้อง <span className="text-xs text-slate-400 font-normal ml-2">(v2)</span></h1>
-              <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
-                <button 
-                  onClick={() => setViewMode('grid')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${viewMode === 'grid' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                  มุมมองตาราง
-                </button>
-                <button 
-                  onClick={() => setViewMode('map')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${viewMode === 'map' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                  มุมมองแผนผัง
-                </button>
-              </div>
-            </div>
-            
-            {/* Legend & Actions */}
-            <div className="flex flex-col xl:flex-row gap-4 items-start xl:items-center">
-              <div className="flex flex-wrap gap-4 text-xs font-medium text-slate-600 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm">
-                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-emerald-300 bg-white"></span>ว่าง</div>
-                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-blue-300 bg-blue-100"></span>มีแขกพัก</div>
-                {dateOffset === 0 && <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-orange-300 bg-orange-100"></span>รอทำความสะอาด</div>}
-                {dateOffset > 0 && <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border border-purple-300 bg-purple-100"></span>จองแล้ว</div>}
-                <div className="flex items-center gap-1.5 text-[10px] text-slate-400 border-l border-slate-200 pl-4">12 13 = วันที่ติดจอง (ใน 7 วัน)</div>
-              </div>
-              
-              {dateOffset === 0 && rooms.some(r => r.status === 'dirty') && (
-                <button 
-                  onClick={handleCleanAllDirtyRooms}
-                  disabled={loading}
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 text-sm font-bold rounded-xl shadow-sm transition-colors active:scale-95"
-                >
-                  🧹 ทำความสะอาดทุกห้อง
-                </button>
-              )}
+              if (isPrimary) {
+                // ปุ่มสถานที่หลัก: ขนาดใหญ่พิเศษ มีดาว ⭐ และป้าย "สถานที่หลัก" ชัดเจน ป้องกันการกดผิดสถานที่
+                return (
+                  <button
+                    key={loc}
+                    type="button"
+                    onClick={() => setSelectedLocationFilter(loc)}
+                    className={`px-3.5 sm:px-4 py-2 rounded-2xl text-xs sm:text-sm font-black transition-all flex flex-wrap items-center gap-1.5 sm:gap-2 border-2 ${
+                      isSelected
+                        ? "bg-indigo-600 text-white border-amber-300 shadow-md ring-2 ring-indigo-300 scale-[1.02]"
+                        : "bg-indigo-50 text-indigo-900 border-indigo-300 hover:bg-indigo-100"
+                    }`}
+                  >
+                    <span className="text-base leading-none">⭐</span>
+                    <span>{loc}</span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${
+                        isSelected ? "bg-amber-300 text-slate-900" : "bg-indigo-200 text-indigo-900"
+                      }`}
+                    >
+                      สถานที่หลัก
+                    </span>
+                    <span
+                      className={`text-[11px] font-bold px-2 py-0.5 rounded-lg ${
+                        isSelected ? "bg-indigo-700/80 text-indigo-50" : "bg-white text-slate-700 border border-indigo-200"
+                      }`}
+                    >
+                      ว่าง {st.available} • พัก {st.occupied}
+                      {!isHousekeeper && ` • สุทธิ ฿${st.netRevenue.toLocaleString()}`}
+                    </span>
+                  </button>
+                );
+              }
 
-              {authUser?.role === 'admin' && dateOffset === 0 && rooms.some(r => r.status === 'occupied') && (
-                <button 
-                  onClick={handleClearAllOccupiedRooms}
-                  disabled={loading}
-                  className="flex items-center gap-2 px-4 py-2 bg-orange-50 text-orange-600 border border-orange-200 hover:bg-orange-100 hover:border-orange-300 text-sm font-bold rounded-xl shadow-sm transition-colors active:scale-95"
-                >
-                  🚪 เคลียร์แขก (สำหรับทดสอบ)
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Location Filter for Admin/Manager */}
-          {!loading && sortedLocations.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-4">
-              <button 
-                onClick={() => setSelectedLocationFilter(null)}
-                className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${selectedLocationFilter === null ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-              >
-                ทั้งหมด
-              </button>
-              {sortedLocations.map(loc => (
+              // ปุ่มสถานที่รอง (หรือปุ่มสถานที่ทั่วไปสำหรับ Admin)
+              return (
                 <button
                   key={loc}
+                  type="button"
                   onClick={() => setSelectedLocationFilter(loc)}
-                  className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${selectedLocationFilter === loc ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                    isSelected
+                      ? "bg-blue-600 text-white border-blue-600 shadow-xs"
+                      : "bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200"
+                  }`}
                 >
-                  {loc}
+                  <span>📍 {loc}</span>
+                  {isStaff && (
+                    <span className={`text-[9px] px-1 rounded ${isSelected ? "bg-blue-700 text-blue-100" : "bg-slate-200 text-slate-600"}`}>
+                      รอง
+                    </span>
+                  )}
+                  <span
+                    className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${
+                      isSelected ? "bg-blue-700 text-blue-50" : "bg-white text-slate-600"
+                    }`}
+                  >
+                    ว่าง {st.available} • พัก {st.occupied}
+                    {!isHousekeeper && ` • ฿${st.netRevenue.toLocaleString()}`}
+                  </span>
                 </button>
-              ))}
-            </div>
-          )}
-        </>
-      ) : (
-        /* NON-ADMIN / STAFF / HOUSEKEEPER: Combined Compact View Mode + Location Filter + Mini Legend */
-        <div className="flex flex-wrap items-center justify-between gap-2.5 bg-white p-2.5 rounded-2xl shadow-xs border border-slate-200">
-          {/* Left: View Mode Toggle + Location Filters */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* View Mode Toggle */}
+              );
+            })}
+
+            {/* ปุ่ม "ทั้งหมด" (ขนาดเล็กกว่าสถานที่หลัก เพื่อไม่ให้เผลอกดผิด) */}
+            {(isManagerOrAdmin ? sortedLocations.length > 1 : userVisibleLocations.length > 1) && (
+              <button
+                type="button"
+                onClick={() => setSelectedLocationFilter(null)}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors border ${
+                  selectedLocationFilter === null
+                    ? "bg-slate-800 text-white border-slate-800 shadow-xs"
+                    : "bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100"
+                }`}
+              >
+                ดูทั้งหมด
+              </button>
+            )}
+          </div>
+
+          {/* ขวา: ปุ่มทำความสะอาดทุกห้อง (ถ้ามีห้องรอทำ) + สลับตาราง/แผนผัง */}
+          <div className="flex items-center gap-2 ml-auto">
+            {isManagerOrAdmin && dateOffset === 0 && rooms.some(r => r.status === 'dirty') && (
+              <button 
+                onClick={handleCleanAllDirtyRooms}
+                disabled={loading}
+                className="flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 text-xs font-bold rounded-xl transition-colors"
+              >
+                🧹 ทำความสะอาดทุกห้อง
+              </button>
+            )}
             <div className="flex bg-slate-100 p-0.5 rounded-xl">
               <button 
                 onClick={() => setViewMode('grid')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${viewMode === 'grid' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-700'}`}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${viewMode === 'grid' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-700'}`}
               >
-                มุมมองตาราง
+                ตาราง
               </button>
               <button 
                 onClick={() => setViewMode('map')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${viewMode === 'map' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-700'}`}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${viewMode === 'map' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-700'}`}
               >
-                มุมมองแผนผัง
+                แผนผัง
               </button>
             </div>
-
-            {/* Location Filters (แสดงเฉพาะเมื่อมีสิทธิ์มากกว่า 1 สถานที่ เพื่อประหยัดพื้นที่หากมีสิทธิ์เพียงสถานที่เดียว) */}
-            {!loading && userVisibleLocations.length > 1 && (
-              <div className="flex flex-wrap items-center gap-1.5">
-                <button 
-                  onClick={() => setSelectedLocationFilter(null)}
-                  className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-bold transition-colors ${selectedLocationFilter === null ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                >
-                  ทั้งหมด
-                </button>
-                {userVisibleLocations.map(loc => (
-                  <button
-                    key={loc}
-                    onClick={() => setSelectedLocationFilter(loc)}
-                    className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-bold transition-colors ${selectedLocationFilter === loc ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                  >
-                    {loc}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Right: Mini Legend */}
-          <div className="flex items-center gap-2 sm:gap-2.5 text-[11px] font-medium text-slate-500 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-100 ml-auto">
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full border border-emerald-300 bg-white inline-block"></span>ว่าง</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full border border-blue-300 bg-blue-100 inline-block"></span>มีแขก</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full border border-orange-300 bg-orange-100 inline-block"></span>รอทำ</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full border border-purple-300 bg-purple-100 inline-block"></span>จอง</span>
           </div>
         </div>
       )}
@@ -1087,12 +1259,11 @@ export default function CheckinPage() {
         <div className="text-center py-16 bg-white rounded-2xl border border-slate-200 p-6">
           <div className="text-4xl mb-2">🔒</div>
           <div className="text-base font-bold text-slate-700">ยังไม่ได้รับการกำหนดสถานที่ดูแล</div>
-          <div className="text-xs text-slate-400 mt-1">โปรดติดต่อผู้ดูแลระบบ (Admin) เพื่อกำหนดสถานที่ที่มองเห็นในหน้า Settings</div>
+          <div className="text-xs text-slate-400 mt-1">โปรดติดต่อผู้ดูแลระบบ (Admin) เพื่อกำหนดสถานที่หลักในหน้า Settings</div>
         </div>
       ) : (
-        <div className="space-y-8">
-          {sortedLocations.filter(loc => {
-            // สำหรับระดับต่ำกว่าแอดมิน ต้องอยู่ในสถานที่ที่ได้รับสิทธิ์เท่านั้น
+        <div className="space-y-6">
+          {(isManagerOrAdmin ? sortedLocations : userVisibleLocations).filter(loc => {
             if (!isManagerOrAdmin && !userVisibleLocations.includes(loc)) {
               return false;
             }
@@ -1101,14 +1272,114 @@ export default function CheckinPage() {
             }
             return true;
           }).map(loc => {
-            const locRooms = groupedRooms[loc].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+            const locRooms = (groupedRooms[loc] || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+            const st = locationStatsMap[loc] || {
+              total: locRooms.length,
+              available: 0,
+              occupied: 0,
+              dirty: 0,
+              reserved: 0,
+              netRevenue: 0,
+              keyTotal: 0,
+              keyRooms: [],
+            };
+            const isPrimary = userPrimaryLocation === loc;
+            const isKeyExpanded = !!expandedKeyLocs[loc];
+
             return (
-              <div key={loc} className="bg-slate-50/50 p-2 sm:p-6 rounded-2xl border border-slate-100">
-                <h2 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2">
-                  <span className="w-2 h-6 bg-slate-300 rounded-full"></span>
-                  {loc}
-                  <span className="text-sm font-normal text-slate-400">({locRooms.length} ห้อง)</span>
-                </h2>
+              <div
+                key={loc}
+                className={`p-2.5 sm:p-5 rounded-2xl border ${
+                  isPrimary
+                    ? "bg-indigo-50/30 border-indigo-200 shadow-xs"
+                    : "bg-slate-50/50 border-slate-200"
+                }`}
+              >
+                {/* หัวข้อกอง (ชื่อกอง): แสดงห้องว่าง • มีผู้เข้าพัก • ยอดรายได้สุทธิวันนี้ และ 🔑 มัดจำกุญแจคงเหลือ ในบรรทัดเดียวกัน */}
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                    <span className={`w-2 h-6 rounded-full ${isPrimary ? "bg-indigo-600" : "bg-slate-400"}`}></span>
+                    <h2 className="text-base sm:text-lg font-black text-slate-800 flex items-center gap-1.5">
+                      {isPrimary && <span>⭐</span>}
+                      <span>{loc}</span>
+                    </h2>
+                    {isPrimary && (
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-600 text-white">
+                        สถานที่หลัก
+                      </span>
+                    )}
+                    {isStaff && !isPrimary && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                        สถานที่รอง (จองข้ามสถานที่ได้เฉพาะโอน/บัตร/ยังไม่ชำระ)
+                      </span>
+                    )}
+
+                    {/* สถิติประจำกองในบรรทัดเดียวกับชื่อกอง */}
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold">
+                      <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        ว่าง {st.available}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+                        พัก {st.occupied}
+                      </span>
+                      {st.dirty > 0 && (
+                        <span className="px-2 py-0.5 rounded-lg bg-orange-50 text-orange-700 border border-orange-200">
+                          รอทำ {st.dirty}
+                        </span>
+                      )}
+                      {st.reserved > 0 && (
+                        <span className="px-2 py-0.5 rounded-lg bg-purple-50 text-purple-700 border border-purple-200">
+                          จอง {st.reserved}
+                        </span>
+                      )}
+                      {!isHousekeeper && (
+                        <span className="px-2.5 py-0.5 rounded-lg bg-slate-800 text-white font-black">
+                          รายได้สุทธิวันนี้ ฿{st.netRevenue.toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ขวาสุดของบรรทัดชื่อกอง: 🔑 มัดจำกุญแจคงเหลือของสถานที่นี้ */}
+                  {!isHousekeeper && dateOffset === 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setExpandedKeyLocs(prev => ({ ...prev, [loc]: !prev[loc] }))}
+                      className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-2.5 py-1 rounded-xl text-xs font-bold text-amber-900 transition-colors shadow-2xs"
+                      title="คลิกเพื่อดูรายชื่อห้องที่ถือเงินมัดจำกุญแจของสถานที่นี้"
+                    >
+                      <span>🔑</span>
+                      <span>มัดจำกุญแจ ({loc}):</span>
+                      <span className="font-black text-amber-800 text-xs sm:text-sm">
+                        ฿{st.keyTotal.toLocaleString()}
+                      </span>
+                      <span className="text-[10px] bg-white border border-amber-200 rounded-full px-1.5 py-0.5 text-amber-700 font-bold">
+                        {st.keyRooms.length} ห้อง {isKeyExpanded ? "▲" : "▼"}
+                      </span>
+                    </button>
+                  )}
+                </div>
+
+                {/* รายชื่อห้องที่ถือมัดจำกุญแจของสถานที่นี้ (เมื่อกดกางออก) */}
+                {!isHousekeeper && dateOffset === 0 && isKeyExpanded && (
+                  <div className="mb-3 bg-amber-50/80 border border-amber-200 rounded-xl px-3 py-2 flex flex-wrap items-center gap-1.5">
+                    {st.keyRooms.length === 0 ? (
+                      <span className="text-xs text-amber-700 font-medium">
+                        ไม่มีห้องที่ถือเงินมัดจำกุญแจอยู่ใน {loc}
+                      </span>
+                    ) : (
+                      st.keyRooms.map(r => (
+                        <span
+                          key={r.id}
+                          className="text-[11px] bg-white border border-amber-200 rounded-lg px-2 py-0.5 font-bold text-slate-700"
+                        >
+                          ห้อง {r.room_no}{" "}
+                          <span className="text-amber-700">฿{(r.held_key_deposit || 0).toLocaleString()}</span>
+                        </span>
+                      ))
+                    )}
+                  </div>
+                )}
                 
                 {viewMode === 'grid' ? (
                 <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12 gap-1.5 sm:gap-2 lg:gap-2.5">
@@ -1220,35 +1491,27 @@ export default function CheckinPage() {
                               }
                             }
 
-                            const isDouble = room.room_type?.includes('คู่');
-                            const isHouse = room.room_type?.includes('บ้าน');
-                            const isSeaBalcony = room.room_type?.includes('ระเบียงทะเล');
-                            const isBalcony = !isSeaBalcony && room.room_type?.includes('ระเบียง');
-                            const isWindow = room.room_type?.includes('หน้าต่าง');
-                              const customIcon = roomIconsMap[room.id];
+                            const customIcon = roomIconsMap[room.id];
 
                             return (
                               <div className={`absolute top-0 text-[15px] sm:text-xl top-[1px] sm:top-1 font-black ${roomNoColor} transition-all leading-none flex items-center justify-center gap-0 mix-blend-multiply`}>
                                 <span>{room.room_no}</span>
                                 <div className="flex items-center text-[13px] leading-none -space-x-1 -ml-0.5">
                                   {(customIcon && customIcon.length > 0) ? (
-                                      <span className="opacity-90 ml-[2px] drop-shadow-sm text-slate-700 flex items-center gap-[1px]">{customIcon.map(id => <span key={id}>{renderIcon(id, 'w-[13px] h-[16px] sm:w-[17px] sm:h-[20px]')}</span>)}</span>
-                                    ) : null}
-                                  
-                                  
-                                  
+                                    <span className="opacity-90 ml-[2px] drop-shadow-sm text-slate-700 flex items-center gap-[1px]">{customIcon.map(id => <span key={id}>{renderIcon(id, 'w-[13px] h-[16px] sm:w-[17px] sm:h-[20px]')}</span>)}</span>
+                                  ) : null}
                                 </div>
 
                                 {isOverdue && (
                                   <span className="absolute -right-[14px] sm:-right-[18px] top-1/2 -translate-y-1/2 flex items-center justify-center">
                                     {overdueMinutes >= 195 ? (
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#1e293b" stroke="#000000" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-[18px] sm:h-[14px] sm:h-[18px]">
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#1e293b" stroke="#000000" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-[18px] sm:h-[18px]">
                                         <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
                                         <line x1="12" y1="9" x2="12" y2="13" stroke="#ffffff"/>
                                         <line x1="12" y1="17" x2="12.01" y2="17" stroke="#ffffff"/>
                                       </svg>
                                     ) : (
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#fee2e2" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-[18px] sm:h-[14px] sm:h-[18px]">
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#fee2e2" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-[18px] sm:h-[18px]">
                                         <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
                                         <line x1="12" y1="9" x2="12" y2="13"/>
                                         <line x1="12" y1="17" x2="12.01" y2="17"/>
@@ -1306,22 +1569,17 @@ export default function CheckinPage() {
 
                               return (
                                 <div className="w-full flex flex-col items-center gap-1 sm:gap-1.5">
-                                  {/* Line 1: Base Price */}
                                   <div className="h-[11px] sm:h-[14px] flex items-center justify-center">
-                                    {basePriceText !== null && (
+                                    {basePriceText !== null && Number(basePriceText) > 0 && (
                                       <span className="opacity-40 text-[10px] sm:text-[13px] leading-none">{basePriceText}</span>
                                     )}
                                   </div>
-                                  
-                                  {/* Line 2: Difference */}
-                                  <div className="h-[8px] sm:h-[10px] sm:h-[12px] flex items-center justify-center">
+                                  <div className="h-[8px] sm:h-[12px] flex items-center justify-center">
                                     {diffText && (
                                       <span className={`${diffColor} leading-none`}>({diffText})</span>
                                     )}
                                   </div>
-                                  
-                                  {/* Line 3: Staff Name */}
-                                  <div className="h-[8px] sm:h-[10px] sm:h-[12px] flex items-center justify-center">
+                                  <div className="h-[8px] sm:h-[12px] flex items-center justify-center">
                                     {staffNameText && (
                                       <span className="text-[8px] sm:text-[9px] text-slate-400 font-medium leading-none">{staffNameText}</span>
                                     )}
@@ -1355,10 +1613,7 @@ export default function CheckinPage() {
                             })}
                           </div>
                         )}
-                      
-                                                
 
-                        
                         {/* Key Deposit Indicator (Bottom-Right above White Financial Bar) */}
                         {room.status === 'occupied' && (room.held_key_deposit || 0) > 0 && (
                           <div
@@ -1387,11 +1642,11 @@ export default function CheckinPage() {
                 </div>
               ) : (
                 <div className="relative w-full max-w-5xl mx-auto bg-slate-200 rounded-xl shadow-inner border border-slate-200 overflow-hidden flex flex-col items-center justify-center" style={{ minHeight: '300px' }}>
-                    <svg className="w-16 h-16 text-slate-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-                    <h3 className="text-xl font-bold text-slate-700">อยู่ระหว่างการพัฒนา</h3>
-                    <p className="text-slate-500 mt-2 text-center max-w-md">ฟีเจอร์แผนผังห้องพักกำลังอยู่ในขั้นตอนการพัฒนา เพื่อประสบการณ์ใช้งานที่ดีที่สุด</p>
-                  </div>
-                )}
+                  <svg className="w-16 h-16 text-slate-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                  <h3 className="text-xl font-bold text-slate-700">อยู่ระหว่างการพัฒนา</h3>
+                  <p className="text-slate-500 mt-2 text-center max-w-md">ฟีเจอร์แผนผังห้องพักกำลังอยู่ในขั้นตอนการพัฒนา เพื่อประสบการณ์ใช้งานที่ดีที่สุด</p>
+                </div>
+              )}
               </div>
             );
           })}
@@ -1413,21 +1668,29 @@ export default function CheckinPage() {
         <CleaningNoteModal roomId={noteRoom.id} roomNo={noteRoom.room_no} onClose={() => setNoteRoom(null)} />
       )}
 
-      {showClearRoomsPinModal && (
+      {/* Modal ยืนยัน PIN สำหรับ Admin/Manager: ตัดรอบข้ามวัน (Close Day) หรือ รีเซ็ตระบบเป็น 0 ทุกสถานที่ */}
+      {adminActionModal && (
         <div
           className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in"
-          onClick={() => setShowClearRoomsPinModal(false)}
+          onClick={() => !adminActionLoading && setAdminActionModal(null)}
         >
           <div
             className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-rose-600 px-5 py-4 text-white">
+            <div className={`${adminActionModal === "reset_all_zero" ? "bg-rose-600" : "bg-indigo-600"} px-5 py-4 text-white`}>
               <h3 className="font-black text-base flex items-center gap-2">
-                <span>🔒</span> ยืนยันรหัส PIN เพื่อเคลียร์ห้องทั้งหมด (สำหรับทดสอบ)
+                <span>{adminActionModal === "reset_all_zero" ? "🧹" : "⏭️"}</span>
+                <span>
+                  {adminActionModal === "reset_all_zero"
+                    ? "ยืนยันรีเซ็ตระบบเป็น 0 ทุกสถานที่ (สำหรับทดสอบ)"
+                    : "ยืนยันบังคับตัดรอบข้ามวัน (Close Day)"}
+                </span>
               </h3>
-              <p className="text-xs text-rose-100 mt-1">
-                ป้องกันการกดพลาด: ระบบจะเช็คเอาท์ห้องที่มีแขกพักอยู่ทั้งหมด ({rooms.filter(r => r.status === 'occupied').length} ห้อง)
+              <p className="text-xs text-white/90 mt-1">
+                {adminActionModal === "reset_all_zero"
+                  ? "ระบบจะล้างข้อมูลการจอง รายการรับเงิน ยอดยกมา มัดจำกุญแจ ลิ้นชักเงินสด และคืนสถานะห้องพักทุกสถานที่ (ซอย1, ซอย2, ซามีญ่า) ให้เป็นห้องว่างทั้งหมด"
+                  : `ระบบจะปิดรอบวัน (Close Day) ของวันก่อนหน้าและปรับรอบวันของกะที่เปิดอยู่ให้ตรงกับวันปัจจุบัน (${realClockBusinessDate}) ทันที`}
               </p>
             </div>
             <div className="p-5 space-y-4">
@@ -1440,35 +1703,44 @@ export default function CheckinPage() {
                   inputMode="numeric"
                   maxLength={6}
                   autoFocus
-                  value={clearRoomsPin}
-                  onChange={(e) => setClearRoomsPin(e.target.value)}
+                  value={adminPin}
+                  onChange={(e) => setAdminPin(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleConfirmClearAllOccupiedRooms();
+                    if (e.key === "Enter") handleConfirmAdminAction();
                   }}
                   placeholder="••••"
-                  className="w-full border-2 border-slate-200 rounded-xl p-3 text-center text-xl font-mono tracking-widest focus:border-rose-500 outline-none"
+                  className="w-full border-2 border-slate-200 rounded-xl p-3 text-center text-xl font-mono tracking-widest focus:border-indigo-500 outline-none"
                 />
               </div>
-              {clearRoomsPinError && (
+              {adminPinError && (
                 <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 text-xs font-bold">
-                  {clearRoomsPinError}
+                  {adminPinError}
                 </div>
               )}
               <div className="flex gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => setShowClearRoomsPinModal(false)}
+                  disabled={adminActionLoading}
+                  onClick={() => setAdminActionModal(null)}
                   className="flex-1 py-3 rounded-xl font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition-colors"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="button"
-                  onClick={handleConfirmClearAllOccupiedRooms}
-                  disabled={loading || !clearRoomsPin}
-                  className="flex-1 py-3 rounded-xl font-black bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white text-sm shadow-sm transition-colors"
+                  onClick={handleConfirmAdminAction}
+                  disabled={adminActionLoading || !adminPin}
+                  className={`flex-1 py-3 rounded-xl font-black text-white text-sm shadow-sm transition-colors ${
+                    adminActionModal === "reset_all_zero"
+                      ? "bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300"
+                      : "bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300"
+                  }`}
                 >
-                  {loading ? "กำลังดำเนินการ..." : "ยืนยันเคลียร์ห้อง"}
+                  {adminActionLoading
+                    ? "กำลังดำเนินการ..."
+                    : adminActionModal === "reset_all_zero"
+                    ? "ยืนยันรีเซ็ตเป็น 0"
+                    : "ยืนยันตัดรอบข้ามวัน"}
                 </button>
               </div>
             </div>
@@ -1478,5 +1750,3 @@ export default function CheckinPage() {
     </div>
   );
 }
-
-
