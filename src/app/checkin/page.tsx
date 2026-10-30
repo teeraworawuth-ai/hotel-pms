@@ -84,6 +84,9 @@ export default function CheckinPage() {
     openShifts,
     currentUser,
     refreshShift,
+    shiftLock,
+    unlockShiftTemporarily,
+    relockShift,
     getActiveBusinessDate,
     realClockBusinessDate,
     closeDayBusinessDate,
@@ -1269,21 +1272,52 @@ export default function CheckinPage() {
 
           {/* แจ้งเตือนสั้นๆ เมื่อวัน Close Day ไม่ตรงกับวันปัจจุบัน */}
           {!isCloseDayMatched && closeDayMismatchReason && (
-            <div className="text-[10.5px] font-bold text-amber-800 bg-amber-50/80 border border-amber-200 rounded-lg px-2.5 py-1 flex items-center justify-between gap-2">
+            <div className="text-[10.5px] font-bold text-amber-800 bg-amber-50/80 border border-amber-200 rounded-lg px-2.5 py-1 flex flex-wrap items-center justify-between gap-2">
               <span className="truncate">⚠️ {closeDayMismatchReason}</span>
-              {isManagerOrAdmin && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAdminPin("");
-                    setAdminPinError("");
-                    setAdminActionModal("force_close_day");
-                  }}
-                  className="underline text-indigo-700 font-black whitespace-nowrap shrink-0"
-                >
-                  ตัดรอบข้ามวัน →
-                </button>
-              )}
+              <div className="flex items-center gap-2 shrink-0 ml-auto">
+                {shiftLock.tempUnlocked ? (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-600 text-white font-black">
+                    <span>🔓 ปลดล็อกอยู่ ({shiftLock.tempUnlockRemainingMin} นาที)</span>
+                    <button
+                      type="button"
+                      onClick={() => unlockShiftTemporarily(30)}
+                      className="underline hover:text-amber-200 cursor-pointer"
+                      title="ต่อเวลาปลดล็อกเป็น 30 นาที"
+                    >
+                      +30น.
+                    </button>
+                    <button
+                      type="button"
+                      onClick={relockShift}
+                      className="underline hover:text-rose-200 cursor-pointer"
+                      title="ล็อกกลับทันที"
+                    >
+                      ล็อก
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => unlockShiftTemporarily(30)}
+                    className="px-2 py-0.5 rounded-md bg-amber-500 hover:bg-amber-600 text-white font-black whitespace-nowrap shadow-2xs transition-colors cursor-pointer"
+                  >
+                    🔓 ปลดล็อกทำรายการ 30 นาที
+                  </button>
+                )}
+                {isManagerOrAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminPin("");
+                      setAdminPinError("");
+                      setAdminActionModal("force_close_day");
+                    }}
+                    className="underline text-indigo-700 font-black whitespace-nowrap shrink-0"
+                  >
+                    ตัดรอบข้ามวัน →
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

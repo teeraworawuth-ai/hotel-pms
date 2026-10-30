@@ -37,7 +37,11 @@ export interface Shift {
 }
 
 export interface ShiftLockState {
-  locked: boolean; // เลย 06:30 น. ของวันถัดไปแล้ว → ล็อกการทำรายการ (ยกเว้นปิดกะ)
+  locked: boolean; // เลย 06:30 น. ของวันถัดไปแล้ว และไม่ได้ปลดล็อกชั่วคราว → ล็อกการทำรายการ (ยกเว้นปิดกะ)
+  isPastLockTime?: boolean; // เลยเวลา 06:30 น. แล้วหรือไม่
+  tempUnlocked?: boolean; // กำลังปลดล็อกชั่วคราว 30 นาทีหรือไม่
+  tempUnlockUntil?: number | null; // เวลาหมดอายุการปลดล็อกชั่วคราว (ms)
+  tempUnlockRemainingMin?: number; // จำนวนนาทีที่เหลือ
   nearLock: boolean; // 05:30–06:29 น. → ปิดกะสุดท้ายได้แล้ว ใกล้ถึงเวลาล็อก
   canCloseEod: boolean; // ติ๊ก "กะสุดท้ายของวัน" ได้แล้ว
   businessDate: string | null;
@@ -65,6 +69,8 @@ type ShiftContextType = {
   refreshShift: () => Promise<void>;
   shiftLock: ShiftLockState;
   ensureShiftWritable: () => boolean;
+  unlockShiftTemporarily: (minutes?: number) => void;
+  relockShift: () => void;
   currentBusinessDate: string;
   realClockBusinessDate: string;
   closeDayBusinessDate: string;
@@ -72,7 +78,19 @@ type ShiftContextType = {
   getActiveBusinessDate: () => Date;
 };
 
-const DEFAULT_LOCK: ShiftLockState = { locked: false, nearLock: false, canCloseEod: false, businessDate: null, lockFrom: null, eodAllowedFrom: null, message: '' };
+const DEFAULT_LOCK: ShiftLockState = {
+  locked: false,
+  isPastLockTime: false,
+  tempUnlocked: false,
+  tempUnlockUntil: null,
+  tempUnlockRemainingMin: 0,
+  nearLock: false,
+  canCloseEod: false,
+  businessDate: null,
+  lockFrom: null,
+  eodAllowedFrom: null,
+  message: '',
+};
 
 const ShiftContext = createContext<ShiftContextType>({
   activeShift: null,
@@ -84,6 +102,8 @@ const ShiftContext = createContext<ShiftContextType>({
   refreshShift: async () => {},
   shiftLock: DEFAULT_LOCK,
   ensureShiftWritable: () => true,
+  unlockShiftTemporarily: () => {},
+  relockShift: () => {},
   currentBusinessDate: getBusinessDateStr(new Date()),
   realClockBusinessDate: getBusinessDateStr(new Date()),
   closeDayBusinessDate: getBusinessDateStr(new Date()),
@@ -93,6 +113,8 @@ const ShiftContext = createContext<ShiftContextType>({
 
 export const useShift = () => useContext(ShiftContext);
 
+const TEMP_UNLOCK_STORAGE_KEY = 'shift_temp_unlock_until';
+
 export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
   const { getNow } = useSimulatedTime();
   const [activeShift, setActiveShift] = useState<Shift | null>(null);
@@ -101,6 +123,11 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [closedEodDates, setClosedEodDates] = useState<Set<string>>(new Set());
   const [closedLocEodKeys, setClosedLocEodKeys] = useState<Set<string>>(new Set());
+  const [tempUnlockUntil, setTempUnlockUntil] = useState<number | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const raw = Number(localStorage.getItem(TEMP_UNLOCK_STORAGE_KEY) || 0);
+    return raw > Date.now() ? raw : null;
+  });
 
   const refreshShift = async () => {
     setLoading(true);
@@ -324,37 +351,79 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
     return () => clearInterval(t);
   }, []);
 
+  const unlockShiftTemporarily = React.useCallback((minutes: number = 30) => {
+    const until = Date.now() + minutes * 60 * 1000;
+    try {
+      localStorage.setItem(TEMP_UNLOCK_STORAGE_KEY, String(until));
+    } catch (e) {}
+    setTempUnlockUntil(until);
+  }, []);
+
+  const relockShift = React.useCallback(() => {
+    try {
+      localStorage.removeItem(TEMP_UNLOCK_STORAGE_KEY);
+    } catch (e) {}
+    setTempUnlockUntil(null);
+  }, []);
+
   const computeLock = (): ShiftLockState => {
     const isReal = !!activeShift && activeShift.id !== 'dummy-shift-id' && !activeShift.housekeeper_only;
     if (!isReal || !activeShift?.business_date) {
-      return { locked: false, nearLock: false, canCloseEod: false, businessDate: activeShift?.business_date || null, lockFrom: null, eodAllowedFrom: null, message: '' };
+      return {
+        locked: false,
+        isPastLockTime: false,
+        tempUnlocked: false,
+        tempUnlockUntil: null,
+        tempUnlockRemainingMin: 0,
+        nearLock: false,
+        canCloseEod: false,
+        businessDate: activeShift?.business_date || null,
+        lockFrom: null,
+        eodAllowedFrom: null,
+        message: '',
+      };
     }
     const bd = activeShift.business_date;
     const { lockFrom, eodAllowedFrom } = getShiftCutoffs(bd);
     const nowMs = getNow().getTime();
-    const locked = nowMs >= lockFrom.getTime();
+    const isPastLockTime = nowMs >= lockFrom.getTime();
+    const nowRealMs = Date.now();
+    const isTempUnlocked = isPastLockTime && !!tempUnlockUntil && tempUnlockUntil > nowRealMs;
+    const tempUnlockRemainingMin =
+      isTempUnlocked && tempUnlockUntil ? Math.max(1, Math.ceil((tempUnlockUntil - nowRealMs) / 60000)) : 0;
+    const locked = isPastLockTime && !isTempUnlocked;
     const canCloseEod = nowMs >= eodAllowedFrom.getTime();
     const bdLabel = new Date(`${bd}T00:00:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
     return {
       locked,
-      nearLock: !locked && canCloseEod,
+      isPastLockTime,
+      tempUnlocked: isTempUnlocked,
+      tempUnlockUntil: isTempUnlocked ? tempUnlockUntil : null,
+      tempUnlockRemainingMin,
+      nearLock: !isPastLockTime && canCloseEod,
       canCloseEod,
       businessDate: bd,
       lockFrom,
       eodAllowedFrom,
       message: locked
-        ? `🔒 เลยเวลาตัดรอบวันใหม่ (06:30 น.) แล้ว\nกะของ ${activeShift.staff_name} (วันที่ ${bdLabel}) ยังไม่ได้ปิด\n\nกรุณา "ปิดกะ" (กะสุดท้ายของวัน) แล้วเปิดกะของวันใหม่ก่อนทำรายการ รับเงิน / เช็คอิน / เพิ่มค่าบริการ-มินิบาร์ / ค่าใช้จ่าย`
+        ? `🔒 เลยเวลาตัดรอบวันใหม่ (06:30 น.) แล้ว\nกะของ ${activeShift.staff_name} (วันที่ ${bdLabel}) ยังไม่ได้ปิด\n\nกรุณา "ปิดกะ" (กะสุดท้ายของวัน) แล้วเปิดกะของวันใหม่ หรือกดปุ่ม "🔓 ปลดล็อกชั่วคราว 30 นาที" เพื่อทำรายการต่อก่อนปิดกะ`
         : '',
     };
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const shiftLock = React.useMemo(computeLock, [activeShift, clockTick, getNow]);
+  const shiftLock = React.useMemo(computeLock, [activeShift, clockTick, getNow, tempUnlockUntil]);
 
-  /** คืนค่า true ถ้าทำรายการได้ / false (พร้อมแจ้งเตือน) ถ้ากะถูกล็อกข้ามวัน */
+  /** คืนค่า true ถ้าทำรายการได้ / หากถูกล็อก ให้ถามว่าต้องการปลดล็อกชั่วคราว 30 นาทีเพื่อทำรายการต่อทันทีหรือไม่ */
   const ensureShiftWritable = () => {
     const s = computeLock();
     if (s.locked) {
-      alert(s.message);
+      const wantUnlock = window.confirm(
+        `${s.message}\n\n👉 กด "ตกลง (OK)" เพื่อปลดล็อกชั่วคราว 30 นาที แล้วทำรายการนี้ต่อทันที`
+      );
+      if (wantUnlock) {
+        unlockShiftTemporarily(30);
+        return true;
+      }
       return false;
     }
     return true;
@@ -452,6 +521,8 @@ export const ShiftProvider = ({ children }: { children: React.ReactNode }) => {
         refreshShift,
         shiftLock,
         ensureShiftWritable,
+        unlockShiftTemporarily,
+        relockShift,
         currentBusinessDate,
         realClockBusinessDate,
         closeDayBusinessDate,
