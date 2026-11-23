@@ -291,7 +291,7 @@ export default function DailyReport({
           .limit(10000),
         supabase
           .from("booking_daily_extras")
-          .select("id, booking_id, target_date, category, description, amount")
+          .select("id, booking_id, target_date, category, amount")
           .gte("target_date", windowStartDateStr)
           .limit(10000),
         supabase
@@ -1479,21 +1479,6 @@ export default function DailyReport({
 
   // สรุปตัวเลขคอลัมน์ซ้าย (ฝั่งรายได้) — ธรรมชาติเป็นบวก (+)
   
-  const canPrintCurrentLocation =
-    selectedLocation === "ALL"
-      ? isCashComplete
-      : Boolean(reportsByLocation[selectedLocation]?.isDayClosed);
-
-  const handlePrintLocationFinancialReport = () => {
-    if (!canPrintCurrentLocation) {
-      alert(
-        `⚠️ สาขา ${selectedLocation === "ALL" ? "รวมทุกสาขา" : selectedLocation} ยังไม่สามารถพิมพ์รายงานการเงินฉบับปิดวันได้\n\nเนื่องจากสถานะปัจจุบันยังไม่ปิดวัน (ต้องปิดกะสุดท้ายและส่งมอบปิดวันให้เสร็จสิ้นก่อน)`
-      );
-      return;
-    }
-    window.open(`/financial-report.html?loc=${encodeURIComponent(selectedLocation)}&date=${encodeURIComponent(businessDateStr)}`, '_blank');
-  };
-
   const roomExtraTotal = earlyLateTotal + upsellTotal; // 1.2 รายได้ส่วนเพิ่ม (1.2.1 + 1.2.2)
   const netRoomRevenue = roomTargetTotal + roomExtraTotal - roomDiscountTotal; // 1. รายได้ค่าห้อง (สุทธิ)
   const grossTotalRevenue =
@@ -1556,6 +1541,22 @@ export default function DailyReport({
     isDayClosed &&
     handovers.length > 0 &&
     pendingManagerSign.length === 0;
+
+  const canPrintCurrentLocation =
+    selectedLocation === "ALL"
+      ? isCashComplete
+      : Boolean(reportsByLocation[selectedLocation]?.isDayClosed);
+
+  const handlePrintLocationFinancialReport = () => {
+    if (!canPrintCurrentLocation) {
+      alert(
+        `⚠️ สาขา ${selectedLocation === "ALL" ? "รวมทุกสาขา" : selectedLocation} ยังไม่สามารถพิมพ์รายงานการเงินฉบับปิดวันได้\n\nเนื่องจากสถานะปัจจุบันยังไม่ปิดวัน (ต้องปิดกะสุดท้ายและส่งมอบปิดวันให้เสร็จสิ้นก่อน)`
+      );
+      return;
+    }
+    window.open(`/financial-report.html?loc=${encodeURIComponent(selectedLocation)}&date=${encodeURIComponent(businessDateStr)}`, '_blank');
+  };
+
   const incompleteReasons: string[] = [];
   if (dayShifts.length === 0) incompleteReasons.push("ยังไม่มีการเปิดกะของวันนี้");
   if (openShifts.length > 0)
