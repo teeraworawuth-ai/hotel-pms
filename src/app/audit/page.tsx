@@ -62,7 +62,7 @@ export default function AuditPage() {
             activeTab === "daily" ? "bg-emerald-50 text-emerald-700" : "text-slate-600 hover:bg-slate-50"
           }`}
         >
-          📊 รายงานเงินสดประจำวัน
+          📊 รายงานการเงิน
         </button>
         <button
           onClick={() => setActiveTab("guest")}

@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="th" class="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ต้นแบบระบบแยกสถานที่ & ใบตรวจยอดโอน-บัตรเครดิต (A4)</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white !important; padding: 0 !important; }
+    }
+    .a4-sheet {
+      width: 100%;
+      max-width: 840px;
+      margin: 0 auto;
+      background: #ffffff;
+      color: #0f172a;
+      box-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.15);
+      border: 1px solid #cbd5e1;
+    }
+  </style>
+</head>
+<body class="bg-[var(--background)] text-[var(--foreground)] antialiased p-4 sm:p-6">
+
+  <!-- Top Navigation Controls -->
+  <div class="max-w-5xl mx-auto mb-5 no-print">
+    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 shadow-sm">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-[var(--border)]">
+        <div>
+          <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800 mb-1">
+            Interactive HTML Prototype (ตัวอย่างสำหรับออกแบบและพูดคุย)
+          </span>
+          <h1 class="text-lg sm:text-xl font-black text-[var(--foreground)]">
+            ต้นแบบระบบแยกสถานที่ + จองข้ามสถานที่ + ใบพิมพ์ตรวจยอดโอน/บัตร (A4)
+          </h1>
+        </div>
+        <div class="flex flex-wrap gap-1.5">
+          <button onclick="switchMainTab('print')" id="tab-btn-print" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-indigo-600 text-white shadow-xs transition-all">
+            🖨️ 1. ตัวอย่างใบพิมพ์ A4 (ฝ่ายบัญชี)
+          </button>
+          <button onclick="switchMainTab('report')" id="tab-btn-report" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all">
+            📊 2. ตำแหน่งในหน้ารายงานประจำวัน
+          </button>
+          <button onclick="switchMainTab('cross')" id="tab-btn-cross" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all">
+            🔄 3. หน้าจอรับจองข้ามสถานที่ (กะซอย1 จองซอย2)
+          </button>
+        </div>
+      </div>
+
+      <!-- Sub-controls for Tab 1 (Print Mode Switcher) -->
+      <div id="print-subcontrols" class="pt-3 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-xs font-bold text-[var(--muted-foreground)]">เลือกจำลองปริมาณรายการในวันนั้น:</span>
+          <button onclick="setPrintMode('half')" id="mode-btn-half" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white shadow-xs">
+            ✂️ วันรายการน้อย (16 รายการ) → จัดลง "ครึ่งหน้า A4" อัตโนมัติ (ประหยัดกระดาษ)
+          </button>
+          <button onclick="setPrintMode('full')" id="mode-btn-full" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-200 text-slate-700 hover:bg-slate-300">
+            📄 วันรายการเยอะ (84 รายการ) → จัดลง "เต็มหน้า A4 (3 คอลัมน์)" ในแผ่นเดียว
+          </button>
+        </div>
+        <div class="text-xs text-[var(--muted-foreground)]">
+          💡 เรียงแยกตาม <b>บัญชีธนาคาร (SCB / KBANK)</b> + <b>บัตรเครดิต</b> และเรียงตาม<b>เวลาโอนจริงจากเก่า → ใหม่</b>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- TAB 1: A4 PRINT PREVIEW (HALF A4 ECO MODE vs FULL A4 100-ITEM MODE)       -->
+  <!-- ========================================================================= -->
+  <div id="view-print" class="max-w-5xl mx-auto">
+
+    <!-- MODE A: HALF-A4 ECO MODE (<= 32 items) -->
+    <div id="sheet-half" class="a4-sheet rounded-lg overflow-hidden">
+      <!-- Top Half of A4 -->
+      <div class="p-5 bg-white">
+        <!-- Header -->
+        <div class="flex justify-between items-start border-b-2 border-slate-800 pb-2 mb-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 class="text-base font-black text-slate-900">ใบตรวจสอบยอดเงินโอนและบัตรเครดิตประจำวัน (รวมทุกสถานที่)</h2>
+              <span class="px-2 py-0.5 text-xs font-bold bg-emerald-100 text-emerald-800 rounded border border-emerald-300">
+                โหมดครึ่งกระดาษ A4 (16 รายการ)
+              </span>
+            </div>
+            <p class="text-xs text-slate-600 mt-0.5">
+              ประจำวันทำการ: <b>พุธที่ 28 ต.ค. 2569</b> (ตัดรอบ 06:45 น.) • รวม 3 สถานที่: <b>ซอย1, ซอย2, ซามีญ่า</b>
+            </p>
+          </div>
+          <div class="text-right text-xs">
+            <div class="font-bold text-slate-900">รวมสุทธิทั้งสิ้น: <span class="text-sm font-black text-indigo-700">฿13,900</span> (16 รายการ)</div>
+            <div class="text-slate-600">
+              SCB (7): <b>฿5,800</b> | KBANK (6): <b>฿5,200</b> | บัตรเครดิต (3): <b>฿2,900</b>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2-Column Compact Layout inside Top Half of A4 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+
+          <!-- LEFT COLUMN: SCB + CREDIT CARD -->
+          <div class="space-y-2.5">
+            <!-- SCB Section -->
+            <div class="border border-slate-300 rounded overflow-hidden">
+              <div class="bg-purple-50 border-b border-slate-300 px-2.5 py-1 flex justify-between items-center">
+                <span class="font-black text-purple-900">🏦 1. ธนาคารไทยพาณิชย์ (SCB) — เรียงเวลาโอนเก่า→ใหม่</span>
+                <span class="font-black text-purple-900">7 รายการ • ฿5,800</span>
+              </div>
+              <table class="w-full text-left border-collapse">
+                <thead>
+                  <tr class="bg-slate-100 border-b border-slate-300 text-slate-700">
+                    <th class="py-1 px-1.5 w-6 text-center">#</th>
+                    <th class="py-1 px-1.5">วัน-เวลาโอน</th>
+                    <th class="py-1 px-1.5">ห้อง (สถานที่)</th>
+                    <th class="py-1 px-1.5">ผู้รับ (กะที่เปิด)</th>
+                    <th class="py-1 px-1.5 text-right">ยอดโอน</th>
+                    <th class="py-1 px-1.5 w-6 text-center">✓</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200">
+                  <tr>
+                    <td class="py-1 px-1.5 text-center text-slate-500">1</td>
+                    <td class="py-1 px-1.5 font-mono font-bold">28/10 07:18</td>
+                    <td class="py-1 px-1.5 font-bold">3 <span class="text-slate-500 font-normal">(ซอย1)</span></td>
+                    <td class="py-1 px-1.5">ซอย1 <span class="text-slate-500">(กะซอย1)</span></td>
+                    <td class="py-1 px-1.5 text-right font-bold">700</td>
+                    <td class="py-1 px-1.5 text-center">☐</td>
+                  </tr>
+                  <tr>
+                    <td class="py-1 px-1.5 text-center text-slate-500">2</td>
+                    <td class="py-1 px-1.5 font-mono font-bold">28/10 08:42</td>
+                    <td class="py-1 px-1.5 font-bold">11 <span class="text-slate-500 font-normal">(ซอย1)</span></td>
+                    <td class="py-1 px-1.5">ซอย1 <span class="text-slate-500">(กะซอย1)</span></td>
+                    <td class="py-1 px-1.5 text-right font-bold">500</td>
+                    <td class="py-1 px-1.5 text-center">☐</td>
+                  </tr>
+                  <tr class="bg-amber-50/70">
+                    <td class="py-1 px-1.5 text-center text-slate-500">3</td>
+                    <td class="py-1 px-1.5 font-mono font-bold">28/10 10:05</td>
+                    <td class="py-1 px-1.5 font-bold">204 <span class="text-indigo-700 font-bold">(ซอย2)</span></td>
+                    <td class="py-1 px-1.5 font-semibold text-amber-900">ซอย1 <span class="underline">(กะซอย1 ข้ามที่)</span></td>
+                    <td class="py-1 px-1.5 text-right font-bold">1,000</td>
+                    <td class="py-1 px-1.5 text-center">☐</td>
+                  </tr>
+                  <tr>
+                    <td class="py-1 px-1.5 text-center text-slate-500">4</td>
+                    <td class="py-1 px-1.5 font-mono font-bold">28/10 12:30</td>
+                    <td class="py-1 px-1.5 font-bold">S2 <span class="text-slate-500 font-normal">(ซามีญ่า)</span></td>
+                    <td class="py-1 px-1.5">ซามิญา <span class="text-slate-500">(กะซามีญ่า)</span></td>
+                    <td class="py-1 px-1.5 text-right font-bold">1,200</td>
+                    <td class="py-1 px-1.5 text-center">☐</td>
+                  </tr>
+                  <tr>
+                    <td class="py-1 px-1.5 text-center text-slate-500">5</td>
+                    <td class="py-1 px-1.5 font-mono font-bold">28/10 14:15</td>
+                    <td class="py-1 px-1.5 font-bold">208 <span class="text-slate-500 font-normal">(ซอย2)</span></td>
+                    <td class="py-1 px-1.5">ซอย 2 <span class="text-slate-500">(กะซอย2)</span></td>
+                    <td class="py-1 px-1.5 text-right font-bold">800</td>
+                    <td class="py-1 px-1.5 text-center">☐</td>
+                  </tr>
+                  <tr>
+                    <td class="py-1 px-1.5 text-center text-slate-500">6</td>
+                    <td class="py-1 px-1.5 font-mono font-bold">28/10 16:50</td>
+                    <td class="py-1 px-1.5 font-bold">6 <span class="text-slate-500 font-normal">(ซอย1)</span></td>
+                    <td class="py-1 px-1.5">โอลีฟ <span class="text-slate-500">(กะซอย1)</span></td>
+                    <td class="py-1 px-1.5 text-right font-bold">600</td>
+                    <td class="py-1 px-1.5 text-center">☐</td>
+                  </tr>
+                  <tr>
+                    <td class="py-1 px-1.5 text-center text-slate-500">7</td>
+                    <td class="py-1 px-1.5 font-mono font-bold">28/10 19:10</td>
+                    <td class="py-1 px-1.5 font-bold">28 <span class="text-slate-500 font-normal">(ซอย1)</span></td>
+                    <td class="py-1 px-1.5">โอลีฟ <span class="text-slate-500">(กะซอย1)</span></td>
+                    <td class="py-1 px-1.5 text-right font-bold">1,000</td>
+                    <td class="py-1 px-1.5 text-center">☐</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Credit Card Section -->
+            <div class="border border-slate-300 rounded overflow-hidden">
+              <div class="bg-sky-50 border-b border-slate-300 px-2.5 py-1 flex justify-between items-center">
+                <span class="font-black text-sky-900">💳 3. บัตรเครดิต (Credit Card) — เรียงเวลารูดเก่า→ใหม่</span>
+                <span class="font-black text-sky-900">3 รายการ • ฿2,900</span>
+              </div>
+              <table class="w-full text-left border-collapse">
+                <thead>
+                  <tr class="bg-slate-100 border-b border-slate-300 text-slate-700">
+                    <th class="py-1 px-1.5 w-6 text-center">#</th>
+                    <th class="py-1 px-1.5">วัน-เวลารูดบัตร</th>
+                    <th class="py-1 px-1.5">ห้อง (สถานที่)</th>
+                    <th class="py-1 px-1.5">ผู้รับ (กะที่เปิด)</th>
+                    <th class="py-1 px-1.5 text-right">ยอดรูด</th>
+                    <th class="py-1 px-1.5 w-6 text-center">✓</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200">
+                  <tr>
+                    <td class="py-1 px-1.5 text-center text-slate-500">1</td>
+                    <td class="py-1 px-1.5 font-mono font-bold">28/10 11:20</td>
+                    <td class="py-1 px-1.5 font-bold">บ้าน <span class="text-slate-500 font-normal">(ซอย1)</span></td>
+                    <td class="py-1 px-1.5">ซอย1 <span class="text-slate-500">(กะซอย1)</span></td>
+                    <td class="py-1 px-1.5 text-right font-bold">1,500</td>
+                    <td class="py-1 px-1.5 text-center">☐</td>
+                  </tr>
+                  <tr class="bg-amber-50/70">
+                    <td class="py-1 px-1.5 text-center text-slate-500">2</td>
+                    <td class="py-1 px-1.5 font-mono font-bold">28/10 15:05</td>
+                    <td class="py-1 px-1.5 font-bold">S5 <span class="text-indigo-700 font-bold">(ซามีญ่า)</span></td>
+                    <td class="py-1 px-1.5 font-semibold text-amber-900">ซอย 2 <span class="underline">(กะซอย2 ข้ามที่)</span></td>
+                    <td class="py-1 px-1.5 text-right font-bold">900</td>
+                    <td class="py-1 px-1.5 text-center">☐</td>
+                  </tr>
+                  <tr>
+                    <td class="py-1 px-1.5 text-center text-slate-500">3</td>
+                    <td class="py-1 px-1.5 font-mono font-bold">28/10 20:40</td>
+                    <td class="py-1 px-1.5 font-bold">201 <span class="text-slate-500 font-normal">(ซอย2)</span></td>
+                    <td class="py-1 px-1.5">ซอย 2 <span class="text-slate-500">(กะซอย2)</span></td>
+                    <td class="py-1 px-1.5 text-right font-bold">500</td>
+                    <td class="py-1 px-1.5 text-center">☐</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- RIGHT COLUMN: KBANK + SUMMARY BY LOCATION -->
+          <div class="space-y-2.5">
+            <div class="border border-slate-300 rounded overflow-hidden">
+              <div class="bg-emerald-50 border-b border-slate-300 px-2.5 py-1 flex justify-between items-center">
+                <span class="font-black text-emerald-900">🏦 2. ธนาคารกสิกรไทย (KBANK) — เรียงเวลาโอนเก่า→ใหม่</span>
+                <span class="font-black text-emerald-900">6 รายการ • ฿5,200</span>
+              </div>
+              <table class="w-full text-left border-collapse">
+                <thead>
+                  <tr class="bg-slate-100 border-b border-slate-300 text-slate-700">
+                    <th class="py-1 px-1.5 w-6 text-center">#</th>
+                    <th class="py-1 px-1.5">วัน-เวลาโอน</th>
+                    <th class="py-1 px-1.5">ห้อง (สถานที่)</th>
+                    <th class="py-1 px-1.5">ผู้รับ (กะที่เปิด)</th>
+                    <th class="py-1 px-1.5 text-right">ยอดโอน</th>
+                    <th class="py-1 px-1.5 w-6 text-center">✓</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200">
+                  <tr>
+                    <td class="py-1 px-1.5 text-center text-slate-500">1</td>
+                    <td class="py-1 px-1.5 font-mono font-bold">28/10 09:00</td>
+                    <td class="py-1 px-1.5 font-bold">202 <span class="text-slate-500 font-normal">(ซอย2)</span></td>
+                    <td class="py-1 px-1.5">ซอย 2 <span class="text-slate-500">(กะซอย2)</span></td>
+                    <td class="py-1 px-1.5 text-right font-bold">800</td>
+                    <td class="py-1 px-1.5 text-center">☐</td>
+                  </tr>
+                  <tr>
+                    <td class="py-1 px-1.5 text-center text-slate-500">2</td>
+                    <td class="py-1 px-1.5 font-mono font-bold">28/10 11:45</td>
+                    <td class="py-1 px-1.5 font-bold">17 <span class="text-slate-500 font-normal">(ซอย1)</span></td>
+                    <td class="py-1 px-1.5">ซอย1 <span class="text-slate-500">(กะซอย1)</span></td>
+                    <td class="py-1 px-1.5 text-right font-bold">500</td>
+                    <td class="py-1 px-1.5 text-center">☐</td>
+                  </tr>
+                  <tr>
+                    <td class="py-1 px-1.5 text-center text-slate-500">3</td>
+                    <td class="py-1 px-1.5 font-mono font-bold">28/10 13:12</td>
+                    <td class="py-1 px-1.5 font-bold">S1 <span class="text-slate-500 font-normal">(ซามีญ่า)</span></td>
+                    <td class="py-1 px-1.5">ซามิญา <span class="text-slate-500">(กะซามีญ่า)</span></td>
+                    <td class="py-1 px-1.5 text-right font-bold">1,500</td>
+                    <td class="py-1 px-1.5 text-center">☐</td>
+                  </tr>
+                  <tr class="bg-amber-50/70">
+                    <td class="py-1 px-1.5 text-center text-slate-500">4</td>
+                    <td class="py-1 px-1.5 font-mono font-bold">28/10 16:02</td>
+                    <td class="py-1 px-1.5 font-bold">210 <span class="text-indigo-700 font-bold">(ซอย2)</span></td>
+                    <td class="py-1 px-1.5 font-semibold text-amber-900">โอลีฟ <span class="underline">(กะซอย1 ข้ามที่)</span></td>
+                    <td class="py-1 px-1.5 text-right font-bold">900</td>
+                    <td class="py-1 px-1.5 text-center">☐</td>
+                  </tr>
+                  <tr>
+                    <td class="py-1 px-1.5 text-center text-slate-500">5</td>
+                    <td class="py-1 px-1.5 font-mono font-bold">28/10 18:25</td>
+                    <td class="py-1 px-1.5 font-bold">25 <span class="text-slate-500 font-normal">(ซอย1)</span></td>
+                    <td class="py-1 px-1.5">โอลีฟ <span class="text-slate-500">(กะซอย1)</span></td>
+                    <td class="py-1 px-1.5 text-right font-bold">500</td>
+                    <td class="py-1 px-1.5 text-center">☐</td>
+                  </tr>
+                  <tr>
+                    <td class="py-1 px-1.5 text-center text-slate-500">6</td>
+                    <td class="py-1 px-1.5 font-mono font-bold">28/10 21:30</td>
+                    <td class="py-1 px-1.5 font-bold">S4 <span class="text-slate-500 font-normal">(ซามีญ่า)</span></td>
+                    <td class="py-1 px-1.5">ซามิญา <span class="text-slate-500">(กะซามีญ่า)</span></td>
+                    <td class="py-1 px-1.5 text-right font-bold">1,000</td>
+                    <td class="py-1 px-1.5 text-center">☐</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Summary Box by Location & Sign-off -->
+            <div class="border border-slate-300 rounded p-2.5 bg-slate-50 space-y-1.5">
+              <div class="font-bold text-slate-800 flex justify-between">
+                <span>สรุปยอดโอน+บัตร แยกตามสถานที่ห้องพัก:</span>
+                <span>รวม ฿13,900</span>
+              </div>
+              <div class="grid grid-cols-3 gap-2 text-center">
+                <div class="bg-white border border-slate-200 rounded p-1">
+                  <div class="text-slate-500">📍 ซอย1 (6 รายการ)</div>
+                  <div class="font-black text-slate-800">฿4,800</div>
+                </div>
+                <div class="bg-white border border-slate-200 rounded p-1">
+                  <div class="text-slate-500">📍 ซอย2 (5 รายการ)</div>
+                  <div class="font-black text-slate-800">฿4,000</div>
+                </div>
+                <div class="bg-white border border-slate-200 rounded p-1">
+                  <div class="text-slate-500">📍 ซามีญ่า (4 รายการ)</div>
+                  <div class="font-black text-slate-800">฿4,600</div>
+                </div>
+              </div>
+              <div class="pt-1 flex justify-between items-center text-slate-600 border-t border-slate-200">
+                <span>หมายเหตุ: แถบสีเหลือง = พนักงานรับโอน/รูดบัตรข้ามสถานที่</span>
+                <span>ผู้ตรวจบัญชี: ______________________</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Dashed Cut Line in the Exact Middle of A4 -->
+      <div class="border-t-2 border-dashed border-rose-400 bg-rose-50/60 py-2 px-4 flex items-center justify-between text-xs font-bold text-rose-700">
+        <span>✂️ แนวตัดครึ่งกระดาษ A4 (ส่วนบนใช้พื้นที่ไม่เกินครึ่งหน้า A4 แนวตั้ง)</span>
+        <span>นำกระดาษครึ่งล่างที่ว่างอยู่ไปใส่ถาดปริ้นท์ใช้ต่อได้ทันที</span>
+      </div>
+
+      <!-- Bottom Half of A4 (Blank Reusable Paper Area) -->
+      <div class="p-10 bg-slate-50/70 text-center text-slate-400 flex flex-col items-center justify-center" style="min-height: 220px;">
+        <div class="border-2 border-dashed border-slate-300 rounded-2xl p-6 max-w-md">
+          <p class="text-sm font-bold text-slate-500">พื้นที่กระดาษครึ่งล่างของ A4 (ไม่ถูกพิมพ์)</p>
+          <p class="text-xs mt-1">ระบบคำนวณจำนวนรายการให้อัตโนมัติ หากวันไหนมีรายการรวมไม่เกิน 32 รายการ จะจัดให้อยู่เฉพาะครึ่งบนของหน้า A4 เพื่อให้ตัดครึ่งกระดาษประหยัดได้ 50%</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODE B: FULL-A4 3-COLUMN COMPACT MODE (Up to 100 items on 1 single A4 page) -->
+    <div id="sheet-full" class="a4-sheet rounded-lg overflow-hidden hidden p-4 bg-white">
+      <div class="flex justify-between items-start border-b-2 border-slate-800 pb-2 mb-2.5">
+        <div>
+          <div class="flex items-center gap-2">
+            <h2 class="text-base font-black text-slate-900">ใบตรวจสอบยอดเงินโอนและบัตรเครดิตประจำวัน (รวมทุกสถานที่)</h2>
+            <span class="px-2 py-0.5 text-xs font-bold bg-indigo-100 text-indigo-800 rounded border border-indigo-300">
+              โหมดเต็มหน้า A4 แนวตั้ง (84 รายการ ใน 1 แผ่น A4)
+            </span>
+          </div>
+          <p class="text-xs text-slate-600">
+            ประจำวันทำการ: <b>เสาร์ที่ 31 ต.ค. 2569 (High Season)</b> • จัดเรียง 3 คอลัมน์อัตโนมัติเพื่อให้จบใน A4 หน้าเดียว (รองรับสูงสุด 100 รายการ)
+          </p>
+        </div>
+        <div class="text-right text-xs">
+          <div class="font-bold text-slate-900">รวมสุทธิ: <span class="text-sm font-black text-indigo-700">฿68,400</span> (84 รายการ)</div>
+          <div class="text-slate-600">SCB (42): <b>฿34,200</b> | KBANK (30): <b>฿24,500</b> | บัตรเครดิต (12): <b>฿9,700</b></div>
+        </div>
+      </div>
+
+      <!-- 3-Column High-Density Layout for up to 100 rows -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs" id="full-a4-columns">
+        <!-- Populated dynamically by JS below to show realistic 84 sorted rows -->
+      </div>
+
+      <div class="mt-2.5 pt-2 border-t border-slate-300 flex flex-wrap justify-between items-center text-xs text-slate-700">
+        <div><b>สรุปแยกตามสถานที่ห้องพัก:</b> 📍 ซอย1: <b>฿28,500</b> (35 รายการ) | 📍 ซอย2: <b>฿24,100</b> (31 รายการ) | 📍 ซามีญ่า: <b>฿15,800</b> (18 รายการ)</div>
+        <div>ลงชื่อฝ่ายบัญชีผู้ตรวจยอด: __________________________ วันที่ ____/____/____</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- TAB 2: DAILY REPORT LOCATION TABS & ENTRY BUTTON                          -->
+  <!-- ========================================================================= -->
+  <div id="view-report" class="max-w-5xl mx-auto hidden space-y-4">
+    <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4 text-slate-800">
+      
+      <!-- Location Filter Bar + Print Transfer Report Button -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200">
+        <div class="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl overflow-x-auto">
+          <button class="px-4 py-2 rounded-lg text-xs sm:text-sm font-black bg-indigo-600 text-white shadow-xs">
+            📊 รวมทั้งหมด (3 สถานที่)
+          </button>
+          <button class="px-4 py-2 rounded-lg text-xs sm:text-sm font-bold text-slate-600 hover:bg-white">
+            📍 ซอย1
+          </button>
+          <button class="px-4 py-2 rounded-lg text-xs sm:text-sm font-bold text-slate-600 hover:bg-white">
+            📍 ซอย2
+          </button>
+          <button class="px-4 py-2 rounded-lg text-xs sm:text-sm font-bold text-slate-600 hover:bg-white">
+            📍 ซามีญ่า
+          </button>
+        </div>
+
+        <!-- NEW BUTTON FOR ACCOUNTING -->
+        <button onclick="switchMainTab('print')" class="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2">
+          <span>🖨️ ใบตรวจยอดโอน & บัตรเครดิต (พิมพ์ A4)</span>
+          <span class="bg-white/20 px-2 py-0.5 rounded-full text-xs">16 รายการ</span>
+        </button>
+      </div>
+
+      <!-- Mini Summary Strip per Location (When viewing All) -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div class="border border-emerald-200 bg-emerald-50/50 rounded-xl p-3">
+          <div class="flex justify-between items-center mb-1">
+            <span class="font-black text-sm text-slate-800">📍 ซอย1</span>
+            <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">✅ เก็บเงินครบแล้ว</span>
+          </div>
+          <div class="text-xs text-slate-600 space-y-0.5">
+            <div class="flex justify-between"><span>รายได้ค่าห้อง:</span><b class="text-slate-900">฿8,500</b></div>
+            <div class="flex justify-between"><span>เงินสดในลิ้นชักซอย1:</span><b class="text-emerald-700">฿3,700</b></div>
+            <div class="flex justify-between"><span>โอน + บัตร (ห้องซอย1):</span><b class="text-blue-700">฿4,800</b></div>
+            <div class="flex justify-between"><span>มัดจำกุญแจคงเหลือ:</span><b class="text-amber-700">🔑 ฿800 (4 ห้อง)</b></div>
+          </div>
+        </div>
+
+        <div class="border border-amber-200 bg-amber-50/50 rounded-xl p-3">
+          <div class="flex justify-between items-center mb-1">
+            <span class="font-black text-sm text-slate-800">📍 ซอย2</span>
+            <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">⚠️ รอผู้จัดการเซ็นรับเงินสด</span>
+          </div>
+          <div class="text-xs text-slate-600 space-y-0.5">
+            <div class="flex justify-between"><span>รายได้ค่าห้อง:</span><b class="text-slate-900">฿6,200</b></div>
+            <div class="flex justify-between"><span>เงินสดในลิ้นชักซอย2:</span><b class="text-emerald-700">฿2,200</b></div>
+            <div class="flex justify-between"><span>โอน + บัตร (ห้องซอย2):</span><b class="text-blue-700">฿4,000</b></div>
+            <div class="flex justify-between"><span>มัดจำกุญแจคงเหลือ:</span><b class="text-amber-700">🔑 ฿600 (3 ห้อง)</b></div>
+          </div>
+        </div>
+
+        <div class="border border-emerald-200 bg-emerald-50/50 rounded-xl p-3">
+          <div class="flex justify-between items-center mb-1">
+            <span class="font-black text-sm text-slate-800">📍 ซามีญ่า</span>
+            <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">✅ เก็บเงินครบแล้ว</span>
+          </div>
+          <div class="text-xs text-slate-600 space-y-0.5">
+            <div class="flex justify-between"><span>รายได้ค่าห้อง:</span><b class="text-slate-900">฿5,600</b></div>
+            <div class="flex justify-between"><span>เงินสดในลิ้นชักซามีญ่า:</span><b class="text-emerald-700">฿1,000</b></div>
+            <div class="flex justify-between"><span>โอน + บัตร (ห้องซามีญ่า):</span><b class="text-blue-700">฿4,600</b></div>
+            <div class="flex justify-between"><span>มัดจำกุญแจคงเหลือ:</span><b class="text-amber-700">🔑 ฿400 (2 ห้อง)</b></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- How Section 2.2 & 2.3 link to the Transfer/Card Report -->
+      <div class="border border-slate-200 rounded-xl p-4 bg-slate-50">
+        <div class="text-xs font-bold text-slate-500 mb-2">ตัวอย่างในคอลัมน์ขวาของรายงานประจำวัน (หัวข้อ 2. ยอดรับชำระจริงตามช่องทาง):</div>
+        <div class="space-y-2 text-sm">
+          <div class="flex justify-between items-center bg-white p-2.5 rounded-lg border border-slate-200">
+            <span class="font-bold text-slate-700">2.1 เงินสด (Cash)</span>
+            <span class="font-black text-emerald-600">฿6,900</span>
+          </div>
+          <div class="flex justify-between items-center bg-white p-2.5 rounded-lg border border-blue-200">
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-slate-700">2.2 เงินโอน (SCB ฿5,800 | KBANK ฿5,200)</span>
+              <button onclick="switchMainTab('print')" class="text-xs font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100">
+                🔍 ดูรายการโอน / พิมพ์ใบตรวจสลิป
+              </button>
+            </div>
+            <span class="font-black text-blue-600">฿11,000</span>
+          </div>
+          <div class="flex justify-between items-center bg-white p-2.5 rounded-lg border border-purple-200">
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-slate-700">2.3 บัตรเครดิต (Credit Card)</span>
+              <button onclick="switchMainTab('print')" class="text-xs font-bold px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100">
+                🔍 ดูรายการรูดบัตร / พิมพ์ใบตรวจ
+              </button>
+            </div>
+            <span class="font-black text-purple-600">฿2,900</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- TAB 3: CROSS-LOCATION BOOKING MODAL MOCKUP                                -->
+  <!-- ========================================================================= -->
+  <div id="view-cross" class="max-w-lg mx-auto hidden">
+    <div class="bg-white border border-slate-200 rounded-2xl shadow-lg overflow-hidden text-slate-800">
+      <div class="p-4 border-b border-slate-200 flex justify-between items-center">
+        <div class="flex items-center gap-2">
+          <span class="font-black text-lg">← จอง / เช็คอิน</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">📍 ห้องของ: ซอย2</span>
+          <span class="px-3 py-1 rounded-full text-sm font-black bg-slate-100 border border-slate-200">ห้อง 204</span>
+        </div>
+      </div>
+
+      <!-- Cross-location warning banner -->
+      <div class="bg-amber-50 border-b border-amber-200 px-4 py-2.5 text-xs text-amber-900 space-y-1">
+        <div class="font-black flex items-center gap-1.5">
+          <span>🔄 ทำรายการข้ามสถานที่: คุณเปิดกะอยู่ที่ "ซอย1" (พนักงาน: โอลีฟ)</span>
+        </div>
+        <p class="text-amber-800">
+          • อนุญาตรับชำระเฉพาะ <b>โอนเงิน</b> หรือ <b>บัตรเครดิต</b> (ยอดเงินจะเข้าเป็นรายได้ของ <b>ซอย2</b> โดยมีชื่อ <b>โอลีฟ กะซอย1</b> กำกับเป็นผู้รับชำระ)<br/>
+          • ปิดการรับ <b>เงินสด</b> ข้ามสถานที่ เพื่อไม่ให้เงินสดของซอย2 ปนในลิ้นชักซอย1 (หากลูกค้าจ่ายเงินสด ให้กดจองไว้ก่อนแล้วไปรับเงินที่หน้างานซอย2)
+        </p>
+      </div>
+
+      <div class="p-4 space-y-4 text-xs">
+        <div>
+          <div class="font-bold text-slate-600 mb-1.5">วิธีชำระเงิน (กรณีทำรายการข้ามสถานที่)</div>
+          <div class="grid grid-cols-3 gap-2">
+            <!-- Cash Disabled -->
+            <div class="py-2.5 px-2 rounded-xl border border-slate-200 bg-slate-100 text-slate-400 flex flex-col items-center justify-center cursor-not-allowed">
+              <span class="font-bold line-through">💵 เงินสด</span>
+              <span class="text-xs text-rose-500 font-bold">ห้ามรับข้ามซอย</span>
+            </div>
+            <!-- Transfer Active -->
+            <div class="py-2.5 px-2 rounded-xl border-2 border-blue-500 bg-blue-50 text-blue-800 flex flex-col items-center justify-center font-black shadow-xs">
+              <span>📱 โอนเงิน</span>
+              <span class="text-xs text-blue-600">รับข้ามสถานที่ได้</span>
+            </div>
+            <!-- Credit Card Allowed -->
+            <div class="py-2.5 px-2 rounded-xl border border-slate-200 bg-white text-slate-700 flex flex-col items-center justify-center font-bold">
+              <span>💳 บัตรเครดิต</span>
+              <span class="text-xs text-slate-500">รับข้ามสถานที่ได้</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Transfer Details + Credit Card Date/Time -->
+        <div class="bg-blue-50/60 border border-blue-200 rounded-xl p-3 space-y-2">
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-blue-900">เข้าบัญชี:</span>
+            <span class="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-black">SCB</span>
+            <span class="px-2.5 py-1 rounded-lg bg-white text-blue-700 border border-blue-200 font-bold">KBANK</span>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <div class="bg-white border border-blue-200 rounded-lg px-3 py-1.5 font-bold text-slate-700 flex-1">
+              🕒 เวลาโอนตามสลิป: 28 ต.ค. 69 • 10:05 น.
+            </div>
+            <button class="px-3 py-1.5 rounded-lg bg-blue-600 text-white font-bold">📷 สแกนสลิป</button>
+          </div>
+        </div>
+
+        <!-- Stamp Preview -->
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1">
+          <div class="font-bold text-slate-500">ป้ายกำกับที่จะถูกบันทึกในระบบและรายงานอัตโนมัติ:</div>
+          <div class="font-bold text-slate-800 bg-white border border-slate-200 rounded-lg p-2">
+            📍 รายได้ของ: <span class="text-indigo-700">ซอย2 (ห้อง 204)</span><br/>
+            👤 ผู้รับจอง/รับโอน: <span class="text-amber-800">โอลีฟ (เปิดกะอยู่ที่: ซอย1)</span><br/>
+            🕒 เวลาทำรายการรับชำระ: <span class="text-slate-600">28/10/2569 10:06 น. (เวลาโอนในสลิป 10:05 น.)</span>
+          </div>
+        </div>
+
+        <div class="space-y-2 pt-1">
+          <button class="w-full py-3.5 bg-indigo-700 text-white font-bold rounded-2xl text-sm shadow-md">
+            📝 ยืนยันรับโอนมัดจำ/ค่าห้อง และจองให้ซอย2
+          </button>
+          <button class="w-full py-2.5 bg-white border border-slate-300 text-slate-700 font-bold rounded-xl text-xs">
+            📋 จองไว้ก่อนแบบยังไม่รับเงิน (ให้ลูกค้าไปจ่ายเงินสดที่หน้างานซอย2)
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function switchMainTab(tab) {
+      ['print', 'report', 'cross'].forEach(t => {
+        document.getElementById('view-' + t).classList.toggle('hidden', t !== tab);
+        const btn = document.getElementById('tab-btn-' + t);
+        if (t === tab) {
+          btn.className = 'px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-indigo-600 text-white shadow-xs transition-all';
+        } else {
+          btn.className = 'px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all';
+        }
+      });
+      document.getElementById('print-subcontrols').classList.toggle('hidden', tab !== 'print');
+    }
+
+    function setPrintMode(mode) {
+      document.getElementById('sheet-half').classList.toggle('hidden', mode !== 'half');
+      document.getElementById('sheet-full').classList.toggle('hidden', mode !== 'full');
+      document.getElementById('mode-btn-half').className = mode === 'half'
+        ? 'px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white shadow-xs'
+        : 'px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-200 text-slate-700 hover:bg-slate-300';
+      document.getElementById('mode-btn-full').className = mode === 'full'
+        ? 'px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white shadow-xs'
+        : 'px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-200 text-slate-700 hover:bg-slate-300';
+    }
+
+    // Generate 84 sample rows across 3 columns for Full A4 Preview
+    (function renderFullCols() {
+      const container = document.getElementById('full-a4-columns');
+      const groups = [
+        { title: '🏦 SCB (ส่วนที่ 1: #1–28)', color: 'bg-purple-50 text-purple-900', start: 1, count: 28, prefix: 'SCB' },
+        { title: '🏦 SCB (#29–42) + 🏦 KBANK (#1–14)', color: 'bg-emerald-50 text-emerald-900', start: 29, count: 28, prefix: 'MIX' },
+        { title: '🏦 KBANK (#15–30) + 💳 บัตรเครดิต (#1–12)', color: 'bg-sky-50 text-sky-900', start: 57, count: 28, prefix: 'CARD' }
+      ];
+      const locs = ['ซอย1', 'ซอย2', 'ซามีญ่า'];
+      const staffs = ['ซอย1(กะซอย1)', 'ซอย2(กะซอย2)', 'ซามิญา(กะซามีญ่า)', 'โอลีฟ(กะซอย1*)'];
+      container.innerHTML = groups.map((g, colIdx) => {
+        let rowsHtml = '';
+        for (let i = 0; i < g.count; i++) {
+          const idx = g.start + i;
+          const hr = String(7 + Math.floor((idx * 11) / 60) % 16).padStart(2, '0');
+          const mn = String((idx * 11) % 60).padStart(2, '0');
+          const loc = locs[idx % 3];
+          const stf = staffs[idx % 4];
+          const isCross = stf.includes('*');
+          rowsHtml += `<tr class="${isCross ? 'bg-amber-50' : ''}">
+            <td class="py-0.5 px-1 text-center text-slate-400">${idx}</td>
+            <td class="py-0.5 px-1 font-mono">${hr}:${mn}</td>
+            <td class="py-0.5 px-1 font-bold">${(idx % 30) + 1}(${loc})</td>
+            <td class="py-0.5 px-1">${stf}</td>
+            <td class="py-0.5 px-1 text-right font-bold">${(idx % 2 === 0 ? 800 : 500)}</td>
+            <td class="py-0.5 px-1 text-center">☐</td>
+          </tr>`;
+        }
+        return `<div class="border border-slate-300 rounded overflow-hidden">
+          <div class="${g.color} border-b border-slate-300 px-2 py-0.5 font-black text-xs">${g.title}</div>
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="bg-slate-100 border-b border-slate-300 text-slate-600">
+                <th class="py-0.5 px-1">#</th>
+                <th class="py-0.5 px-1">เวลา</th>
+                <th class="py-0.5 px-1">ห้อง</th>
+                <th class="py-0.5 px-1">ผู้รับ(กะ)</th>
+                <th class="py-0.5 px-1 text-right">ยอด</th>
+                <th class="py-0.5 px-1 text-center">✓</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200">${rowsHtml}</tbody>
+          </table>
+        </div>`;
+      }).join('');
+    })();
+  </script>
+</body>
+</html>

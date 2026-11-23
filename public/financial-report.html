@@ -1,0 +1,1643 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>รายงานประจำวันรวม 3 กะ : เช็คอิน &amp; จองห้องพัก &amp; ตรวจสอบการใช้ไฟจริง (Daily Audit 24h Portrait)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&family=Dancing+Script:wght@700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Sarabun', sans-serif;
+      font-size: 7.6px;
+      line-height: 1.15;
+      background-color: #f1f5f9;
+      color: #0f172a;
+    }
+    @page {
+      size: A4 portrait;
+      margin: 4mm 4mm;
+    }
+    @media print {
+      .no-print { display: none !important; }
+      body {
+        background: #ffffff !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+      .a4-portrait-container {
+        box-shadow: none !important;
+        border: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        max-width: 100% !important;
+        width: 100% !important;
+      }
+      table.audit-table {
+        page-break-inside: auto !important;
+      }
+      table.audit-table thead {
+        display: table-header-group !important;
+      }
+      table.audit-table tfoot {
+        display: table-row-group !important;
+        page-break-inside: avoid !important;
+      }
+      table.audit-table tr {
+        page-break-inside: avoid !important;
+        page-break-after: auto !important;
+      }
+      /* ป้องกันไม่ให้แถวสรุปยอดของกะถูกตัดแยกไปหน้าถัดไปเดี่ยวๆ */
+      tr[class*="bg-amber-100"],
+      tr[class*="bg-blue-100"],
+      tr[class*="bg-indigo-100"] {
+        break-before: avoid !important;
+        page-break-before: avoid !important;
+      }
+    }
+    .a4-portrait-container {
+      width: 100%;
+      max-width: 820px;
+      margin: 0 auto;
+      background: #ffffff;
+      color: #0f172a;
+      box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.12);
+      border: 1px solid #cbd5e1;
+      padding: 8px 10px;
+      border-radius: 4px;
+    }
+    table.audit-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+    table.audit-table th,
+    table.audit-table td {
+      border: 1px solid #64748b;
+      padding: 0.8px 1.5px;
+      vertical-align: middle;
+      font-size: 7.9px;
+      line-height: 1.1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    table.audit-table thead th {
+      background-color: #f1f5f9;
+      color: #0f172a;
+      font-weight: 800;
+      text-align: center;
+      padding: 2px 1px;
+    }
+    table.audit-table tfoot td {
+      background-color: #f8fafc;
+      font-weight: 800;
+      border-top: 1.5px solid #0f172a;
+      padding: 2px 1.5px;
+    }
+    .sig-canvas {
+      font-family: 'Dancing Script', 'Brush Script MT', cursive, sans-serif;
+      font-size: 13px;
+      color: #1e3a8a;
+      line-height: 1;
+    }
+
+    /* เส้นแบ่งกลุ่ม ชำระเงิน (เงินสด, โอน/บัตร) กับ เครดิต (รับจอง, ล่วงหน้า) ให้แยกกลุ่มชัดเจน */
+    table.audit-table tbody tr:not(.section-row) td:nth-last-child(6),
+    table.audit-table tfoot tr td:nth-last-child(6) {
+      border-left: 1.8px solid #334155 !important;
+    }
+    table.audit-table tbody tr:not(.section-row) td:nth-last-child(4),
+    table.audit-table tfoot tr td:nth-last-child(4) {
+      border-left: 2px solid #312e81 !important;
+    }
+    table.audit-table tbody tr:not(.section-row) td:nth-last-child(3),
+    table.audit-table tfoot tr td:nth-last-child(3) {
+      border-right: 1.8px solid #334155 !important;
+    }
+    table.audit-table tbody tr.item-checkin td:nth-last-child(4),
+    table.audit-table tbody tr.item-checkin td:nth-last-child(3) {
+      background-color: rgba(238, 242, 255, 0.45);
+    }
+
+    /* รองรับข้อความอธิบายรายการเสริม (ช่องเสริม) ให้ยื่นเข้าช่องว่างข้างเคียงหรือห้อยบน/ล่างโดยไม่ทับตัวเลข */
+    td.extra-note-left {
+      position: relative;
+      overflow: visible !important;
+    }
+    td.extra-note-left .extra-desc {
+      position: absolute;
+      right: 100%;
+      top: 50%;
+      transform: translateY(-50%);
+      padding-right: 3px;
+      font-size: 6px;
+      color: #4338ca;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    td.extra-note-right {
+      position: relative;
+      overflow: visible !important;
+    }
+    td.extra-note-right .extra-desc {
+      position: absolute;
+      left: 100%;
+      top: 50%;
+      transform: translateY(-50%);
+      padding-left: 3px;
+      font-size: 6px;
+      color: #4338ca;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body class="p-1 md:p-3">
+
+  <!-- แถบควบคุม Interactive ด้านบน (ไม่พิมพ์) -->
+  <div class="no-print max-w-[820px] mx-auto mb-2 bg-slate-900 text-white px-3 py-2 rounded-lg flex flex-wrap items-center justify-between gap-2 shadow">
+    <div class="flex items-center gap-1.5">
+      <div class="flex items-center gap-1.5 flex-wrap">
+        <span class="px-2 py-0.5 rounded bg-indigo-900 text-indigo-100 font-black text-[10.5px] tracking-wide flex items-center gap-1 shadow-xs border border-indigo-700">
+          📊 รายงานการเงิน
+        </span>
+        <div class="flex items-center gap-1 bg-slate-950 p-0.5 rounded-lg border border-slate-800" id="location-button-group">
+          <!-- ซอย 1: ปิดวันแล้ว (คลิกดู/พิมพ์ได้) -->
+          <button onclick="selectLocation('soi1')" id="loc-btn-soi1" class="px-2 py-0.5 rounded text-[9.5px] font-bold flex items-center gap-1 bg-emerald-700 text-white ring-2 ring-emerald-400 shadow transition-all" title="สถานะ: ปิดวันเรียบร้อย (พิมพ์ได้)">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-300"></span>
+            🏨 ซอย 1 <span class="bg-emerald-900/80 text-emerald-200 px-1 py-0.2 rounded text-[7.5px]">ปิดวันแล้ว ✅</span>
+          </button>
+
+          <!-- ซอย 2: ปิดวันแล้ว (คลิกดู/พิมพ์ได้) -->
+          <button onclick="selectLocation('soi2')" id="loc-btn-soi2" class="px-2 py-0.5 rounded text-[9.5px] font-bold flex items-center gap-1 bg-slate-800 text-slate-300 hover:bg-slate-700 transition-all" title="สถานะ: ปิดวันเรียบร้อย (พิมพ์ได้)">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            🏨 ซอย 2 <span class="bg-emerald-900/60 text-emerald-300 px-1 py-0.2 rounded text-[7.5px]">ปิดวันแล้ว ✅</span>
+          </button>
+
+          <!-- ซามิย่า: ยังไม่ปิดวัน (กำลังเปิดกะ 3) -->
+          <button onclick="selectLocation('samy')" id="loc-btn-samy" class="px-2 py-0.5 rounded text-[9.5px] font-bold flex items-center gap-1 bg-amber-950/70 text-amber-300 border border-amber-600/50 hover:bg-amber-900/60 transition-all" title="สถานะ: กำลังเปิดกะ 3 (ยังไม่ปิดวัน - ล็อคการพิมพ์)">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+            🏨 ซามิย่า <span class="bg-amber-800 text-amber-100 px-1 py-0.2 rounded text-[7.5px]">เปิดกะ 3 ⏳ ยังไม่ปิดวัน</span>
+          </button>
+
+          <!-- รวมทุกสถานที่ -->
+          <button onclick="selectLocation('all')" id="loc-btn-all" class="px-2 py-0.5 rounded text-[9.5px] font-bold flex items-center gap-1 bg-slate-800 text-slate-300 hover:bg-slate-700 transition-all" title="สถานะ: รวมทุกสถานที่ (รอปิดวันครบ)">
+            🌐 รวมทุกสถานที่ <span class="bg-slate-700 text-slate-300 px-1 py-0.2 rounded text-[7.5px]">รอปิดครบ</span>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="flex items-center gap-1.5 text-[9.5px]">
+      <button onclick="filterView('all')" id="btn-all" class="px-2 py-0.5 rounded bg-blue-600 font-bold hover:bg-blue-500">ทั้งหมด (45 รายการ)</button>
+      <button onclick="filterView('checkin')" id="btn-checkin" class="px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600">เช็คอิน (40)</button>
+      <button onclick="filterView('anomaly')" id="btn-anomaly" class="px-2 py-0.5 rounded bg-rose-700 hover:bg-rose-600 font-bold">ผิดปกติ (213 &amp; 109)</button>
+      <button onclick="filterView('booking')" id="btn-booking" class="px-2 py-0.5 rounded bg-indigo-700 hover:bg-indigo-600 font-bold">จองห้อง (3)</button>
+      <button onclick="toggleShortOverDemo()" id="btn-demo" class="ml-1 px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 font-bold">⚡ จำลองเงินขาด/เกิน &amp; เติมเงินทอน</button>
+      <button onclick="triggerPrintReport()" id="btn-print-main" class="ml-1 px-2.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 font-black text-white text-[9.5px] shadow flex items-center gap-1 transition-all" title="พิมพ์รายงานการเงินเฉพาะสถานที่ที่ปิดวันแล้ว">
+        🖨️ พิมพ์รายงานการเงิน A4
+      </button>
+      <button onclick="openTransferAuditSheet()" id="btn-print-transfer" class="ml-0.5 px-2 py-0.5 rounded bg-indigo-600 hover:bg-indigo-500 font-black text-white text-[9.5px] shadow flex items-center gap-1" title="พิมพ์ใบตรวจสอบยอดโอนเงินและบัตรเครดิต A4 สำหรับฝ่ายบัญชี">
+        💳 พิมพ์ใบตรวจยอดโอน &amp; บัตรเครดิต (A4)
+      </button>
+    </div>
+  </div>
+
+  <div class="a4-portrait-container">
+    <!-- ================= ส่วนสรุปท้ายรายงาน: กล่องส่งมอบเงินสดแยก 3 กะ (จัดวางในแถวเดียว 3 คอลัมน์) ================= -->
+    <div class="mb-1.5 border border-slate-300 rounded bg-slate-50 p-1.5">
+      <div class="flex justify-between items-center border-b border-slate-300 pb-1 mb-1.5 gap-1.5 text-[8.2px]">
+        <div class="flex items-center shrink-0">
+          <div class="flex items-center gap-1.5 whitespace-nowrap">
+            <span class="font-black text-slate-900 text-[10px] flex items-center gap-1">
+              🏨 ห้องพักเบิร์ด (<span id="location-title">ซอย 1</span>)
+            </span>
+            <span id="location-status-badge" class="px-1.5 py-0.2 rounded font-black text-[7.8px] bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+              ✅ ปิดวันสมบูรณ์ (พร้อมพิมพ์)
+            </span>
+          </div>
+        </div>
+        <div class="flex-1 flex justify-center items-center min-w-0">
+          <span class="px-2 py-0.5 bg-blue-50 text-blue-950 border border-blue-300 rounded font-black text-[9px] whitespace-nowrap">
+            📅 วันอาทิตย์ที่ 8 พฤศจิกายน 2569
+          </span>
+        </div>
+        <div class="flex items-center gap-1 font-bold shrink-0">
+          <span class="px-1.5 py-0.2 bg-rose-50 text-rose-950 border border-rose-300 rounded shadow-2xs whitespace-nowrap" title="ยอดยกมาค้างชำระ +/- ลูกค้าค้างชำระ/รับชำระหนี้ค้าง = ยอดยกไปค้างชำระ">
+            ค้างชำระ: <b>0</b> + <b>600</b> - <b>600</b> = ยกไป <b class="text-rose-700">0 ฿</b>
+          </span>
+          <span class="px-1.5 py-0.2 bg-indigo-50 text-indigo-950 border border-indigo-200 rounded shadow-2xs whitespace-nowrap" title="ยอดยกมารับจอง +/- รับจองสุทธิ = ยอดยกไปรับจอง">
+            รับจอง: <b>2,400</b> - <b>800</b> = ยกไป <b class="text-indigo-700">1,600 ฿</b>
+          </span>
+          <span class="px-1.5 py-0.2 bg-amber-50 text-amber-950 border border-amber-200 rounded shadow-2xs whitespace-nowrap" title="ยอดยกมาล่วงหน้า +/- ล่วงหน้าสุทธิ = ยอดยกไปล่วงหน้า">
+            ล่วงหน้า: <b>1,900</b> - <b>700</b> = ยกไป <b class="text-amber-800">1,200 ฿</b>
+          </span>
+        </div>
+      </div>
+
+      <!-- ================= รูปแบบที่ 2: ตารางสรุปการเงินรวมชุดเดียว (ใช้ฐานรายการ 1-9 เดียวกันด้านซ้าย แยกคอลัมน์ กะเช้า | กะบ่าย | กะดึก | รวม 24 ชม.) ================= -->
+      <!-- ================= รูปแบบที่ 2: ตารางสรุปการเงินรวมชุดเดียว (ใช้ฐานรายการ 1-9 เดียวกันด้านซ้าย แยกคอลัมน์ กะเช้า | กะบ่าย | กะดึก | รวม 24 ชม.) ================= -->
+      <div id="summary-type-2">
+        <table class="w-full border-collapse border border-slate-400 bg-white text-[8.8px] leading-[1.3]">
+          <thead>
+            <tr class="bg-slate-100 border-b border-slate-400 font-black text-[9.8px]">
+              <th class="border border-slate-400 px-1.5 py-1 text-center text-slate-900" style="width: 16.1%;">
+                รายการสรุปการเงิน
+              </th>
+              <th class="border border-slate-400 px-1.5 py-1 bg-amber-100/80 text-amber-950 text-right" style="width: 25.5%;">
+                <div class="font-bold text-[9.8px]">1. กะเช้า (เมย์)</div>
+                <div class="text-[7.4px] bg-white/90 px-1 rounded border border-amber-300 inline-block font-medium">07:00–15:00 น.</div>
+              </th>
+              <th class="border border-slate-400 px-1.5 py-1 bg-blue-100/80 text-blue-950 text-right" style="width: 25.5%;">
+                <div class="font-bold text-[9.8px]">2. กะบ่าย (แอน)</div>
+                <div class="text-[7.4px] bg-white/90 px-1 rounded border border-blue-300 inline-block font-medium">15:00–23:00 น.</div>
+              </th>
+              <th class="border border-slate-400 px-1.5 py-1 bg-indigo-100/80 text-indigo-950 text-right" style="width: 25.5%;">
+                <div class="font-bold text-[9.8px]">3. กะดึก (บี)</div>
+                <div class="text-[7.4px] bg-white/90 px-1 rounded border border-indigo-300 inline-block font-medium">23:00–07:00 น.</div>
+              </th>
+              <th class="border border-slate-400 px-0.5 py-1 bg-slate-800 text-white text-center whitespace-nowrap text-[8.8px] font-black" style="width: 7.4%;">
+                รวมทั้งวัน
+              </th>
+            </tr>
+          </thead>
+          <tbody class="text-slate-800">
+            <tr>
+              <td class="border border-slate-300 px-1.5 py-0.5 font-bold text-slate-800 whitespace-nowrap">1. รายได้รวมในกะ</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right"><span class="text-[7.8px] text-slate-500 mr-1">(13 ห้อง)</span><b class="text-[9.8px] text-slate-900">8,360 ฿</b></td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right"><span class="text-[7.8px] text-slate-500 mr-1">(25 ห้อง)</span><b class="text-[9.8px] text-slate-900">16,450 ฿</b></td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right"><span class="text-[7.8px] text-slate-500 mr-1">(2 ห้อง)</span><b class="text-[9.8px] text-slate-900">1,300 ฿</b></td>
+              <td class="border border-slate-300 px-1 py-0.5 text-right bg-slate-50 font-black text-slate-900 text-[9.8px]">26,110 ฿</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-300 px-1.5 py-0.5 font-bold text-slate-800">2. ค้างชำระ (-) / รับชำระ (+)</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right text-slate-400"></td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right bg-rose-50/70"><span class="text-[7.8px] text-rose-800 font-bold mr-1">(ค้าง 109)</span><b class="text-[9.8px] text-rose-700 font-black">-600 ฿</b></td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right bg-emerald-50/70"><span class="text-[7.8px] text-emerald-800 font-bold mr-1">(รับ 109: 08/11)</span><b class="text-[9.8px] text-emerald-700 font-black">+600 ฿</b></td>
+              <td class="border border-slate-300 px-1 py-0.5 text-right bg-slate-50"></td>
+            </tr>
+            <tr>
+              <td class="border border-slate-300 px-1.5 py-0.5 font-bold text-slate-800">3. เครดิต รับจอง &amp; ล่วงหน้า</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right"><span class="text-[7.8px] text-slate-500 mr-1">(-700 &amp; -1,300)</span><b class="text-[9.8px] text-amber-900">-2,000 ฿</b></td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right"><span class="text-[7.8px] text-slate-500 mr-1">(-100 &amp; +600)</span><b class="text-[9.8px] text-emerald-800">+500 ฿</b></td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right text-slate-400"></td>
+              <td class="border border-slate-300 px-1 py-0.5 text-right bg-slate-50 font-bold text-amber-900">-1,500 ฿</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-300 px-1.5 py-0.5 font-bold text-slate-800">4. หัก โอน / บัตรเครดิต</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right font-bold text-blue-800 text-[9.8px]">-3,360 ฿</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right font-bold text-blue-800 text-[9.8px]">-6,580 ฿</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right font-bold text-blue-800 text-[9.8px]">-2,300 ฿</td>
+              <td class="border border-slate-300 px-1 py-0.5 text-right bg-slate-50 font-bold text-blue-900 text-[9.8px]">-12,240 ฿</td>
+            </tr>
+            <tr class="bg-emerald-50/70 font-bold">
+              <td class="border border-slate-300 px-1.5 py-0.5 font-black text-emerald-950">5. เงินสดรับสุทธิในกะ</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right font-black text-emerald-800 text-[10px]">+3,000 ฿</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right font-black text-emerald-800 text-[10px]">+9,770 ฿</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right font-black text-rose-700 text-[10px]">-400 ฿</td>
+              <td class="border border-slate-300 px-1 py-0.5 text-right bg-emerald-100/80 font-black text-emerald-900 text-[10.3px]">+12,370 ฿</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-300 px-1.5 py-0.5 font-bold text-slate-800">6. บวก เงินสดยกมาต้นกะ</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right"><span class="text-[7.8px] text-slate-500 mr-1">(ยกมา 0)</span><b class="text-[9.8px] text-slate-900">3,000 ฿</b></td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right"><span class="text-[7.8px] text-slate-500 mr-1">(ยกมา 2,900)</span><b class="text-[9.8px] text-slate-900">12,670 ฿</b></td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right"><span class="text-[7.8px] text-slate-500 mr-1">(ยกมา 0)</span><b class="text-[9.8px] text-rose-700 font-black">-400 ฿</b></td>
+              <td class="border border-slate-300 px-1 py-0.5 text-right bg-slate-50 font-bold text-slate-700">12,370 ฿</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-300 px-1.5 py-0.5 font-bold text-slate-800">7. หัก ค่าใช้จ่ายในกะ (-)</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right text-slate-400"></td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right bg-amber-50/70"><span class="text-[7.8px] text-amber-900 font-bold mr-1">(น้ำแข็ง/หลอดไฟ)</span><b class="text-[9.8px] text-rose-700 font-black">-170 ฿</b></td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right text-slate-400"></td>
+              <td class="border border-slate-300 px-1 py-0.5 text-right bg-slate-50 font-bold text-rose-700">-170 ฿</td>
+            </tr>
+            <tr class="border-t-2 border-b-2 border-slate-400 bg-emerald-100 font-black text-emerald-950 shadow-2xs">
+              <td class="border border-slate-400 px-1.5 py-0.5 font-black text-emerald-950 whitespace-nowrap bg-emerald-100">8. เงินสดก่อนส่งเงิน</td>
+              <td class="border border-slate-400 px-1.5 py-0.5 text-right font-black text-emerald-900 text-[10px] bg-emerald-100">3,000 ฿</td>
+              <td class="border border-slate-400 px-1.5 py-0.5 text-right font-black text-emerald-900 text-[10px] bg-emerald-100">12,500 ฿</td>
+              <td class="border border-slate-400 px-1.5 py-0.5 text-right font-black text-rose-700 text-[10px] bg-emerald-100">-400 ฿</td>
+              <td class="border border-slate-400 px-1 py-0.5 text-right bg-emerald-200/90 font-black text-emerald-950 text-[10.3px]">12,200 ฿</td>
+            </tr>
+            <tr class="border-t border-b border-slate-300 bg-rose-50/20">
+              <td class="border border-slate-300 px-1.5 py-0.5 font-bold text-slate-900 whitespace-nowrap">9. หัก ส่งเงินระหว่างกะ (-)</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right text-slate-400">-</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right bg-amber-50/70"><span class="text-[7.8px] text-amber-800 mr-1">(เก็บ)</span><b class="text-[9.8px] text-amber-900 font-black">-2,500 ฿</b></td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right text-slate-400">-</td>
+              <td class="border border-slate-300 px-1 py-0.5 text-right bg-slate-50 font-bold text-amber-900 text-[9.6px]">-2,500 ฿</td>
+            </tr>
+            <tr class="bg-amber-50/40">
+              <td class="border border-slate-300 px-1.5 py-0.5 font-bold text-slate-900 whitespace-nowrap">10. เงินสดในเก๊ะตามระบบ</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right font-black text-slate-900 text-[9.8px]">3,000 ฿</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right font-black text-slate-900 text-[9.8px]">10,000 ฿</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right font-black text-rose-700 bg-rose-50 text-[9.8px]">-400 ฿</td>
+              <td class="border border-slate-300 px-1 py-0.5 text-right bg-slate-50 font-black text-slate-900 text-[9.8px]">9,700 ฿</td>
+            </tr>
+            <tr class="bg-slate-100/90 border-t border-b border-slate-300 font-bold">
+              <td class="border border-slate-300 px-1.5 py-0.5 font-black text-slate-900 whitespace-nowrap">11. เงินสดตรวจนับจริง (ในเก๊ะ)</td>
+              <td class="border border-slate-300 px-1 py-0.5 bg-amber-50/40">
+                <div class="flex justify-end items-center gap-1 w-full">
+                  <span class="text-[7.2px] leading-none text-rose-700 font-black bg-rose-50 px-1 py-[1px] rounded border border-rose-300 whitespace-nowrap">ขาด -100 ฿</span>
+                  <b class="text-[9.8px] leading-tight text-slate-900 font-black">2,900 ฿</b>
+                </div>
+              </td>
+              <td class="border border-slate-300 px-1 py-0.5 bg-blue-50/40">
+                <div class="flex justify-end items-center gap-1 w-full">
+                  <span class="text-[7.2px] leading-none text-emerald-800 font-black bg-emerald-50 px-1 py-[1px] rounded border border-emerald-300 whitespace-nowrap">เกิน +50 ฿</span>
+                  <b class="text-[9.8px] leading-tight text-slate-900 font-black">10,050 ฿</b>
+                </div>
+              </td>
+              <td class="border border-slate-300 px-1 py-0.5 bg-indigo-50/40 text-right">
+                <b class="text-[9.8px] leading-tight text-rose-700 font-black">-400 ฿</b>
+              </td>
+              <td class="border border-slate-300 px-1 py-0.5 text-right bg-slate-50 font-black text-slate-900" style="white-space: nowrap;">
+                <div class="flex justify-end items-center w-full">
+                  <span class="text-[8.2px] leading-none text-rose-700 font-black bg-rose-50 px-1 py-[1px] rounded border border-rose-300 whitespace-nowrap inline-flex items-center" title="ผลต่างขาดเกินสุทธิทั้ง 3 กะ: ขาด -50 ฿">ขาด -50 ฿</span>
+                </div>
+              </td>
+            </tr>
+            <tr class="border-t border-slate-300">
+              <td class="border border-slate-300 px-1.5 py-0.5 font-bold text-slate-800 whitespace-nowrap">12. หัก ส่งเงิน (-) / บวก เบิกทอน (+)</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right text-slate-400">-</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right bg-rose-50/60"><span class="text-[7.8px] text-rose-800 mr-1">(เก็บ)</span><b class="text-[9.8px] text-rose-800 font-black">-10,050 ฿</b></td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right bg-emerald-50/90"><span class="text-[7.8px] text-emerald-900 font-bold mr-1">(เบิก)</span><b class="text-[9.8px] text-emerald-700 font-black">+400 ฿</b></td>
+              <td class="border border-slate-300 px-1 py-0.5 text-right bg-slate-50 font-bold text-rose-900 text-[9.6px]">-9,650 ฿</td>
+            </tr>
+            <tr class="border-t border-b-2 border-slate-500 bg-amber-50/30">
+              <td class="border border-slate-300 px-1.5 py-0.5 font-black text-amber-950 whitespace-nowrap">13. เงินทอนส่งมอบยกไป</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right font-black text-emerald-800 text-[9.8px]">2,900 ฿</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right font-bold text-slate-400 text-[8.5px]">0 ฿</td>
+              <td class="border border-slate-300 px-1.5 py-0.5 text-right font-bold text-slate-400 text-[8.5px]">0 ฿</td>
+              <td class="border border-slate-300 px-1 py-0.5 text-right bg-slate-100 font-black text-slate-800 text-[9.8px]">0 ฿</td>
+            </tr>
+            <!-- ส่วนการลงนาม & การส่งมอบเงิน (3 แถว: ลายเซ็น ส่งเงินระหว่างกะ, ลายเซ็น ส่งเงินปิดกะ, ลายเซ็น ส่งมอบเงินกะถัดไป) -->
+            <tr class="bg-slate-100 text-[8.5px] text-slate-800 font-bold border-t-2 border-slate-400">
+              <td class="border border-slate-300 px-1 py-1.5 font-black text-slate-950 bg-slate-200 text-center text-[12px] leading-tight tracking-tight shadow-2xs">
+                การลงนาม &amp; การส่งมอบเงิน
+              </td>
+              <td class="border border-slate-300 px-1 py-1 bg-amber-100/70">
+                <div class="flex items-center w-full text-center">
+                  <div class="flex-1 text-amber-950 font-bold text-[9.5px]">ผู้ส่งเงิน</div>
+                  <div class="w-[38px] shrink-0 border-x border-amber-300 text-amber-950 font-black text-[9.5px]">ยอดเงิน</div>
+                  <div class="flex-1 text-amber-950 font-bold text-[9.5px]">ผู้รับเงิน</div>
+                </div>
+              </td>
+              <td class="border border-slate-300 px-1 py-1 bg-blue-100/70">
+                <div class="flex items-center w-full text-center">
+                  <div class="flex-1 text-blue-950 font-bold text-[9.5px]">ผู้ส่งเงิน</div>
+                  <div class="w-[38px] shrink-0 border-x border-blue-300 text-blue-950 font-black text-[9.5px]">ยอดเงิน</div>
+                  <div class="flex-1 text-blue-950 font-bold text-[9.5px]">ผู้รับเงิน</div>
+                </div>
+              </td>
+              <td class="border border-slate-300 px-1 py-1 bg-indigo-100/70">
+                <div class="flex items-center w-full text-center">
+                  <div class="flex-1 text-indigo-950 font-bold text-[9.5px]">ผู้ส่งเงิน</div>
+                  <div class="w-[38px] shrink-0 border-x border-indigo-300 text-indigo-950 font-black text-[9.5px]">ยอดเงิน</div>
+                  <div class="flex-1 text-indigo-950 font-bold text-[9.5px]">ผู้รับเงิน</div>
+                </div>
+              </td>
+              <td class="border border-slate-300 px-1 py-1 text-center bg-slate-200/90 text-slate-950 font-black whitespace-nowrap">
+                <div class="text-[9.5px] leading-tight">สรุปยอดรวม</div>
+                <div class="text-[8.5px] font-black text-rose-900 mt-0.5">(12,150 ฿)</div>
+              </td>
+            </tr>
+            <!-- แถวที่ 1: ลายเซ็น ส่งเงินระหว่างกะ (โยงข้อ 9) -->
+            <tr class="text-[7.6px] border-b border-slate-200">
+              <td class="border border-slate-300 px-1.5 py-1 font-black text-amber-950 bg-amber-50/70 text-center text-[9px] leading-snug">
+                <span class="font-black text-amber-950 text-[9.8px]">(9) ลายเซ็น ส่งเงินระหว่างกะ</span>
+              </td>
+              <td class="border border-slate-300 px-1 py-0.5 bg-slate-50 text-slate-400">
+                <div class="flex items-center h-[23px] w-full text-center justify-center">
+                  <span class="text-[8.5px] font-bold text-slate-400 italic">ไม่มีการส่งมอบ (-)</span>
+                </div>
+              </td>
+              <td class="border border-slate-300 px-1 py-0.5 bg-amber-50/50">
+                <div class="flex items-center h-[23px] w-full">
+                  <div class="flex-1 text-center flex items-center justify-center overflow-hidden"><span class="sig-canvas text-[13px]">Ann T.</span></div>
+                  <div class="w-[38px] shrink-0 border-x border-amber-300 text-center flex flex-col justify-center items-center px-0.5">
+                    <span class="font-black text-amber-950 text-[8.2px] leading-tight whitespace-nowrap">2,500 ฿</span>
+                    <span class="text-[6.5px] font-bold text-amber-800 leading-none mt-0.5">(เก็บ)</span>
+                  </div>
+                  <div class="flex-1 text-center flex items-center justify-center overflow-hidden"><span class="sig-canvas text-[13px] text-amber-900">Monthira K.</span></div>
+                </div>
+              </td>
+              <td class="border border-slate-300 px-1 py-0.5 bg-slate-50 text-slate-400">
+                <div class="flex items-center h-[23px] w-full text-center justify-center">
+                  <span class="text-[8.5px] font-bold text-slate-400 italic">ไม่มีการส่งมอบ (-)</span>
+                </div>
+              </td>
+              <td class="border border-slate-300 px-0.5 py-0.5 text-center bg-amber-50">
+                <div class="font-black text-amber-950 text-[9.5px]">2,500 ฿</div>
+                <div class="text-[7.5px] text-amber-800 font-bold mt-0.5">ส่งระหว่างกะ</div>
+              </td>
+            </tr>
+            <!-- แถวที่ 2: ลายเซ็น ส่งเงินปิดกะ (โยงข้อ 12) -->
+            <tr class="text-[7.6px] border-b border-slate-300">
+              <td class="border border-slate-300 px-1.5 py-1 font-black text-rose-950 bg-rose-50/70 text-center text-[9px] leading-snug">
+                <span class="font-black text-rose-950 text-[9.8px]">(12) ลายเซ็น ส่งเงินปิดกะ</span>
+              </td>
+              <td class="border border-slate-300 px-1 py-0.5 bg-slate-50 text-slate-400">
+                <div class="flex items-center h-[23px] w-full text-center justify-center">
+                  <span class="text-[8.5px] font-bold text-slate-400 italic">ไม่มีการส่งมอบ (-)</span>
+                </div>
+              </td>
+              <td class="border border-slate-300 px-1 py-0.5 bg-rose-50/50">
+                <div class="flex items-center h-[23px] w-full">
+                  <div class="flex-1 text-center flex items-center justify-center overflow-hidden"><span class="sig-canvas text-[13px]">Ann T.</span></div>
+                  <div class="w-[38px] shrink-0 border-x border-rose-300 text-center flex flex-col justify-center items-center px-0.5">
+                    <span class="font-black text-rose-900 text-[8.2px] leading-tight whitespace-nowrap">10,050 ฿</span>
+                    <span class="text-[6.5px] font-bold text-rose-700 leading-none mt-0.5">(เก็บ)</span>
+                  </div>
+                  <div class="flex-1 text-center flex items-center justify-center overflow-hidden"><span class="sig-canvas text-[13px] text-rose-900">Monthira K.</span></div>
+                </div>
+              </td>
+              <td class="border border-slate-300 px-1 py-0.5 bg-emerald-50/50" title="ผจก.เป็นผู้จ่ายชดเชยค่ามัดจำ พนักงานกะดึกเป็นผู้รับเงิน">
+                <div class="flex items-center h-[23px] w-full">
+                  <div class="flex-1 text-center flex items-center justify-center overflow-hidden"><span class="sig-canvas text-[13px] text-slate-700">Monthira K.</span></div>
+                  <div class="w-[38px] shrink-0 border-x border-emerald-300 text-center flex flex-col justify-center items-center px-0.5">
+                    <span class="font-black text-emerald-800 text-[8.2px] leading-tight whitespace-nowrap">+400 ฿</span>
+                    <span class="text-[6.5px] font-bold text-emerald-700 leading-none mt-0.5">(เบิก)</span>
+                  </div>
+                  <div class="flex-1 text-center flex items-center justify-center overflow-hidden"><span class="sig-canvas text-[13px] text-emerald-900">Bee S.</span></div>
+                </div>
+              </td>
+              <td class="border border-slate-300 px-0.5 py-0.5 text-center bg-rose-50">
+                <div class="font-black text-rose-900 text-[9.5px]">9,650 ฿</div>
+                <div class="text-[7.5px] text-rose-800 font-bold mt-0.5">เก็บส่งปิดกะ</div>
+              </td>
+            </tr>
+            <!-- แถวที่ 3: ลายเซ็น ส่งมอบเงินกะถัดไป (โยงข้อ 13) -->
+            <tr class="text-[7.6px] border-b-2 border-slate-400">
+              <td class="border border-slate-300 px-1 py-1 font-black text-blue-950 bg-blue-50/70 text-center text-[9px] leading-snug whitespace-nowrap">
+                <span class="font-black text-blue-950 text-[9.2px] whitespace-nowrap leading-none">(13) ลายเซ็น ส่งมอบเงินกะถัดไป</span>
+              </td>
+              <td class="border border-slate-300 px-1 py-0.5 bg-amber-50/60">
+                <div class="flex items-center h-[23px] w-full">
+                  <div class="flex-1 text-center flex items-center justify-center overflow-hidden"><span class="sig-canvas text-[13px]">May P.</span></div>
+                  <div class="w-[38px] shrink-0 border-x border-amber-300 text-center flex flex-col justify-center items-center px-0.5">
+                    <span class="font-black text-emerald-700 text-[8.2px] leading-tight whitespace-nowrap">2,900 ฿</span>
+                    <span class="text-[6.5px] font-bold text-slate-500 leading-none mt-0.5">(ส่งต่อ)</span>
+                  </div>
+                  <div class="flex-1 text-center flex items-center justify-center overflow-hidden"><span class="sig-canvas text-[13px] text-amber-900">Ann T.</span></div>
+                </div>
+              </td>
+              <td class="border border-slate-300 px-1 py-0.5 bg-slate-50 text-slate-400">
+                <div class="flex items-center h-[23px] w-full text-center justify-center">
+                  <span class="text-[8.5px] font-bold text-slate-400 italic">ไม่มีการส่งมอบ (-)</span>
+                </div>
+              </td>
+              <td class="border border-slate-300 px-1 py-0.5 bg-slate-50 text-slate-400">
+                <div class="flex items-center h-[23px] w-full text-center justify-center">
+                  <span class="text-[8.5px] font-bold text-slate-400 italic">ไม่มีการส่งมอบ (-)</span>
+                </div>
+              </td>
+              <td class="border border-slate-300 px-0.5 py-0.5 text-center bg-slate-100">
+                <div class="font-black text-slate-700 text-[9.5px]">0 ฿</div>
+                <div class="text-[7.5px] text-slate-600 font-bold mt-0.5">ทอนยกไป</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ส่วนกระทบยอดเงินสดสะสมผู้จัดการ • เบิกจ่ายค่าใช้จ่าย (เชื่อมงบกำไร-ขาดทุน P&L) • นำฝากธนาคาร -->
+      <div class="mt-1 bg-white border border-slate-300 rounded p-1 shadow-xs text-[8px]">
+        <div class="grid grid-cols-12 gap-1.5 items-stretch">
+          <!-- ฝั่งซ้าย (6 ส่วน): สมการกระทบยอดเงินสดสะสมในมือผู้จัดการ (ขยายขนาดตัวอักษรและตัวเลขตามสัดส่วนเดิม) -->
+          <div class="col-span-6 bg-slate-50 rounded border border-slate-200 p-1 flex flex-col justify-between">
+            <div class="grid grid-cols-5 gap-0.5 text-center">
+              <div class="bg-white p-1 rounded border border-slate-200 flex flex-col justify-center">
+                <div class="text-[8.5px] text-slate-600 font-bold whitespace-nowrap">1. สะสมยกมา</div>
+                <div class="text-[12.5px] font-black text-slate-800 mt-0.5 whitespace-nowrap">15,000 ฿</div>
+              </div>
+              <div class="bg-emerald-50/70 p-1 rounded border border-emerald-200 flex flex-col justify-center">
+                <div class="text-[8.5px] text-emerald-900 font-bold whitespace-nowrap">2. + รับสุทธิจากกะ</div>
+                <div class="text-[12.5px] font-black text-emerald-700 mt-0.5 whitespace-nowrap">+12,150 ฿</div>
+              </div>
+              <div class="bg-rose-50/70 p-1 rounded border border-rose-200 flex flex-col justify-center">
+                <div class="text-[8.5px] text-rose-900 font-bold whitespace-nowrap">3. - ผจก.จ่ายนอกกะ</div>
+                <div class="text-[12.5px] font-black text-rose-700 mt-0.5 whitespace-nowrap">-1,500 ฿</div>
+              </div>
+              <div class="bg-blue-50/70 p-1 rounded border border-blue-200 flex flex-col justify-center">
+                <div class="text-[8.5px] text-blue-900 font-bold whitespace-nowrap">4. - นำฝากธนาคาร</div>
+                <div class="text-[12.5px] font-black text-blue-800 mt-0.5 whitespace-nowrap">-18,000 ฿</div>
+              </div>
+              <div class="bg-amber-50 p-1 rounded border border-amber-300 flex flex-col justify-center">
+                <div class="text-[8.5px] text-amber-950 font-black whitespace-nowrap">5. = สะสมยกไป</div>
+                <div class="text-[12.5px] font-black text-amber-900 mt-0.5 whitespace-nowrap">7,650 ฿</div>
+              </div>
+            </div></div>
+                <div class="text-[7.2px] text-amber-800 font-medium whitespace-nowrap">ถือสดยกไปวันถัดไป</div>
+              </div>
+            </div>
+          </div>
+          <!-- ฝั่งขวา (6 ส่วน): รายละเอียดการนำเงินสดไปจ่ายค่าใช้จ่ายทั้งในกะและนอกกะ (บรรทัดเดียว ไม่ขึ้นบรรทัดใหม่) -->
+          <div class="col-span-6 bg-rose-50/40 rounded border border-rose-200 p-1 flex flex-col justify-start text-[7.8px]">
+            <div class="flex justify-between items-center font-bold text-rose-950 border-b border-rose-200 pb-0.5 whitespace-nowrap text-[9.5px]">
+              <span>📝 รายการจ่ายค่าใช้จ่ายเงินสดวันนี้:</span>
+              <span class="font-black text-rose-700 text-[9.5px]">รวม -1,670 ฿</span>
+            </div>
+            <div class="mt-0.5 space-y-0.5">
+              <div class="flex justify-between items-center whitespace-nowrap">
+                <span>• <b>[จ่ายในกะ]</b> ค่าน้ำแข็ง 50 ฿ + ซื้อหลอดไฟ LED 120 ฿:</span>
+                <span class="font-black text-rose-800 text-[8.5px] ml-1 shrink-0">-170 ฿</span>
+              </div>
+              <div class="flex justify-between items-center whitespace-nowrap">
+                <span>• <b>[จ่ายนอกกะ]</b> ค่าน้ำประปา 1,200 ฿ + ถุงขยะแม่บ้าน 300 ฿:</span>
+                <span class="font-black text-rose-800 text-[8.5px] ml-1 shrink-0">-1,500 ฿</span>
+              </div>
+            </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    <!-- ตารางบันทึกประจำวัน 15 คอลัมน์ (จองล่วงหน้าไม่นับเป็นรายได้ ขีดช่องเรียกเก็บ ลง จ.+ยอดมัดจำ) -->
+    <div class="overflow-x-auto">
+      <table class="audit-table">
+        <thead>
+          <tr>
+            <th rowspan="2" style="width: 3.2%;">#</th>
+            <!-- คอลัมน์เช็คอิน / จอง -->
+            <th rowspan="2" style="width: 15.7%;" class="bg-blue-100/70 text-blue-950 font-black border-slate-500">เช็คอิน / จอง</th>
+            <th rowspan="2" style="width: 3.75%;" title="ลดความกว้างลง 1/4">ห้อง</th>
+            <th rowspan="2" style="width: 3.9%;" title="ลดความกว้างลง 1/4">พนง.</th>
+            <th colspan="5" class="bg-blue-50 text-blue-950 border-b border-slate-400">รายการเรียกเก็บ (รายได้วันนี้)</th>
+            <th colspan="2" class="bg-emerald-100/90 text-emerald-950 font-black border-b border-slate-400" style="border-left: 1.8px solid #334155;">ชำระเงิน</th>
+            <th colspan="2" class="bg-indigo-100/90 text-indigo-950 font-black border-b border-slate-400" style="border-left: 2px solid #312e81; border-right: 1.8px solid #334155;">เครดิต</th>
+            <!-- ช่วงการใช้ไฟจริง -->
+            <th rowspan="2" style="width: 12.2%;" class="bg-amber-50 text-amber-950">ช่วงการใช้ไฟจริง</th>
+            <!-- คอลัมน์ตรวจ -->
+            <th rowspan="2" style="width: 3.2%; padding: 2px 0;" class="bg-slate-100 text-slate-900 text-center align-middle font-black">
+              <div class="flex flex-col items-center justify-center gap-0.5">
+                <span class="text-[10px] leading-none text-slate-700">☑</span>
+                <span class="text-[6.5px] leading-tight font-bold">ตรวจ</span>
+              </div>
+            </th>
+          </tr>
+          <tr>
+            <th class="bg-blue-50/60" style="width: 2.6%;" title="ลดความกว้างลงอีก 1/4">ค่าห้อง</th>
+            <th class="bg-blue-50/60 text-slate-900" style="width: 2.4%;" title="ปรับเพิ่ม/ลดราคาห้อง: ผู้จัดการใส่วงเล็บ เช่น (-100) | พนักงานไม่มีวงเล็บ เช่น -100">เพิ่ม/ลด</th>
+            <th class="bg-blue-50/60" style="width: 6.0%;">เสริม</th>
+            <th class="bg-blue-50/60" style="width: 3.9%;" title="ลดความกว้างลง 1/4 จาก 5.2%">มินิบาร์</th>
+            <th class="bg-blue-100/80 font-black text-blue-950" style="width: 4.95%;">รวมเงิน</th>
+            <th class="bg-emerald-50/80 text-emerald-950" style="width: 10.5%; border-left: 1.8px solid #334155;">เงินสด</th>
+            <th class="bg-emerald-50/80 text-emerald-950" style="width: 10.5%;">โอน / บัตร</th>
+            <th class="bg-indigo-100/60 text-indigo-950 font-extrabold" style="width: 2.05%; border-left: 2px solid #312e81;" title="ลดความกว้างลง 1/4 จาก 5.5%">รับจอง</th>
+            <th class="bg-indigo-100/60 text-indigo-950 font-extrabold" style="width: 2.05%; border-right: 1.8px solid #334155;" title="ลดความกว้างลง 1/4 จาก 5.5%">ล่วงหน้า</th>
+          </tr>
+        </thead>
+        <tbody class="text-slate-800">
+
+          <!-- ================= 1. ส่วนกะเช้า (07:00 - 15:00 น.) ================= -->
+          <!-- 1. ส่วนกะเช้า (07:00 - 15:00 น.) -->
+          <tr class="item-checkin">
+            <td class="text-center font-bold">1</td>
+            <td class="text-center">08/11 14:00 <span class="font-bold text-indigo-700">(3/3)</span></td>
+            <td class="text-center font-black">101</td>
+            <td class="text-center">เมย์</td>
+            <td class="text-right">600</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">600</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center font-bold text-rose-700 bg-rose-50/40">-600</td>
+            <td class="text-center">ต่อเนื่องทั้งวัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">2</td>
+            <td class="text-center">08/11 15:20 <span class="font-bold text-indigo-700">(2/2)</span></td>
+            <td class="text-center font-black">105</td>
+            <td class="text-center">เมย์</td>
+            <td class="text-right">600</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">600</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center font-bold text-rose-700 bg-rose-50/40">-600</td>
+            <td class="text-center">ต่อเนื่องทั้งวัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">3</td>
+            <td class="text-center">08/11 18:00 <span class="font-bold text-indigo-700">(2/5)</span></td>
+            <td class="text-center font-black">107</td>
+            <td class="text-center">เมย์</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center font-bold text-rose-700 bg-rose-50/40">-700</td>
+            <td class="text-center">ต่อเนื่องทั้งวัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">4</td>
+            <td class="text-center">11:15 <span class="font-bold text-indigo-700">(1/2)</span></td>
+            <td class="text-center font-black">102</td>
+            <td class="text-center">เมย์</td>
+            <td class="text-right">600</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">600</td>
+            <td class="text-center font-bold">200-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center font-bold text-rose-700 bg-rose-50/40">-1,200</td>
+            <td class="text-center font-bold text-emerald-800 bg-emerald-50/50">+600</td>
+            <td class="text-center">11:16 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">5</td>
+            <td class="text-center">11:40 <span class="font-bold text-indigo-700">(3 ชม.)</span></td>
+            <td class="text-center font-black">103</td>
+            <td class="text-center">เมย์</td>
+            <td class="text-right">360</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">360</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center font-bold text-purple-700">S 360</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">11:41 - 14:40</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">6</td>
+            <td class="text-center">12:05</td>
+            <td class="text-center font-black">104</td>
+            <td class="text-center">เมย์</td>
+            <td class="text-right">600</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">600</td>
+            <td class="text-center font-bold">800-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">12:08 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">7</td>
+            <td class="text-center">12:20</td>
+            <td class="text-center font-black">106</td>
+            <td class="text-center">เมย์</td>
+            <td class="text-right">800</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">800</td>
+            <td class="text-center font-bold text-rose-700">-200</td>
+            <td class="text-center font-bold text-emerald-700">K 1,000</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">12:22 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">8</td>
+            <td class="text-center">12:50</td>
+            <td class="text-center font-black">108</td>
+            <td class="text-center">เมย์</td>
+            <td class="text-right">600</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">600</td>
+            <td class="text-center font-bold">800-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">12:52 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">9</td>
+            <td class="text-center">13:10</td>
+            <td class="text-center font-black">110</td>
+            <td class="text-center">เมย์</td>
+            <td class="text-right">600</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">600</td>
+            <td class="text-center font-bold">200-200</td>
+            <td class="text-center font-bold text-blue-800">Cr 600</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">13:12 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">10</td>
+            <td class="text-center">13:30</td>
+            <td class="text-center font-black">111</td>
+            <td class="text-center">เมย์</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center font-bold">900-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">13:31 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">11</td>
+            <td class="text-center">13:55</td>
+            <td class="text-center font-black">112</td>
+            <td class="text-center">เมย์</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center font-bold text-rose-700">-200</td>
+            <td class="text-center font-bold text-emerald-700">K 900</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">13:58 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+
+                    <!-- แทรกรายการห้องผิดปกติ 213-1 ในกะเช้า เรียงตามเวลาเริ่มต้นใช้ไฟจริง 14:10 น. (ระหว่าง 13:55 และ 14:15 น.) -->
+          <tr class="bg-rose-200 border-y border-rose-400 font-bold text-rose-950 item-anomaly">
+            <td class="text-center font-black text-rose-950">213-1</td>
+            <td class="text-right pr-1.5 font-black text-rose-950">⚠️ ไม่มีเช็คอิน</td>
+            <td class="text-center font-black text-rose-950">213</td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800 font-black"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center font-black text-rose-950">14:10–15:00 (0.50)</td>
+            <td class="text-center"></td>
+          </tr>
+
+          <tr class="item-checkin">
+            <td class="text-center font-bold">12</td>
+            <td class="text-center">14:15</td>
+            <td class="text-center font-black">114</td>
+            <td class="text-center">เมย์</td>
+            <td class="text-right">800</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">800</td>
+            <td class="text-center font-bold">1,000-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">14:18 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">13</td>
+            <td class="text-center">14:35</td>
+            <td class="text-center font-black">115</td>
+            <td class="text-center">เมย์</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center font-bold">900-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">14:36 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+
+          <!-- แทรกรายการจองล่วงหน้า กะเช้า (R1): ช่องเรียกเก็บขีดทั้งหมด ช่องชำระลง K500 ช่องจองลง -500 (ตกลง 700) -->
+          <tr class="bg-indigo-50/60 border-y border-indigo-200 item-booking">
+            <td class="text-center font-bold text-indigo-900">R1</td>
+            <td class="text-center font-black text-indigo-950 bg-indigo-100/70">จอง (09-20/11) <span class="text-indigo-700 font-bold">(12 คืน)</span></td>
+            <td class="text-center font-black text-indigo-950">201</td>
+            <td class="text-center">เมย์</td>
+            <!-- รวม 5 คอลัมน์รายการเรียกเก็บเป็นคอลัมน์เดียวตามสั่งสำหรับรายการจอง -->
+            <td colspan="5" class="text-center font-bold text-indigo-950 bg-indigo-50/70 text-[6.6px]">
+              คืนละ 700 ฿ = 8,400 ฿ - 500 ฿ = <span class="text-rose-700 font-black">7,900 ฿</span>
+            </td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center font-bold text-emerald-700">K 500</td>
+            <td class="text-center font-black text-emerald-800 bg-emerald-100/70">+500</td><td class="text-center text-slate-400"></td>
+            <td class="text-center px-1 text-indigo-950 bg-indigo-50/50 text-[6.4px] max-w-[85px] truncate" title="เข้า ~18:00 น.">เข้า ~18:00 น.</td>
+            <td class="text-center"></td>
+          </tr>
+
+          <!-- ยอดรวมกะเช้า -->
+          <tr class="bg-amber-100/70 font-bold text-[8.5px] leading-tight border-b-2 border-slate-400 section-row" style="height: 18px;">
+            <td colspan="4" class="text-center text-amber-950 py-0.5">🌅 รวมกะที่ 1 (07:00 – 15:00 น.):</td>
+            <td class="text-right text-amber-950 py-0.5">8,360</td>
+            <td class="text-center text-slate-400 py-0.5"></td>
+            <td class="text-center text-slate-400 py-0.5"></td>
+            <td class="text-center text-slate-400 py-0.5"></td>
+            <td class="text-right font-black text-amber-950 bg-amber-200/50 py-0.5">8,360</td>
+            <td class="text-right font-black text-emerald-900 py-0.5" style="border-left: 1.8px solid #334155 !important;">3,000</td>
+            <td class="text-right font-bold text-blue-900 py-0.5">3,360</td>
+            <td class="text-center font-bold text-rose-700 py-0.5" style="border-left: 2px solid #312e81 !important;" title="รับจองใหม่ +500 (R1) หักใช้จองเดิม -1,200 (102)">-700</td>
+            <td class="text-center font-bold text-rose-700 py-0.5" style="border-right: 1.8px solid #334155 !important;" title="ตั้งพักใหม่ +600 (102) หักใช้ล่วงหน้าเดิม -1,900 (101,105,107)">-1,300</td>
+            <td colspan="2" class="text-center text-[7.2px] font-semibold text-slate-700 py-0.5 whitespace-nowrap">13 เข้าพัก + 1 ผิดปกติ + 1 จอง</td>
+          </tr>
+
+          <!-- ================= 2. ส่วนกะบ่าย (15:00 - 23:00 น.) ================= -->
+          <!-- 2. ส่วนกะบ่าย (15:00 - 23:00 น.) -->
+          <tr class="item-checkin">
+            <td class="text-center font-bold">14</td>
+            <td class="text-center">15:00 <span class="font-bold text-indigo-700">(3 ชม.)</span></td>
+            <td class="text-center font-black">103</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">360</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">360</td>
+            <td class="text-center font-bold">360</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">15:02 - 18:00</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">15</td>
+            <td class="text-center">15:25</td>
+            <td class="text-center font-black">201</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">600</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="px-1 text-[7px] bg-indigo-50/20">
+              <div class="flex justify-between items-center w-full">
+                <span class="text-indigo-900 font-semibold text-[6.8px]">เพิ่มหมอน</span>
+                <span class="font-bold text-indigo-950 text-[8.5px]">60</span>
+              </div>
+            </td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">660</td>
+            <td class="text-center font-bold">860-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">15:28 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">16</td>
+            <td class="text-center">15:45 <span class="font-bold text-indigo-700">(1/2)</span></td>
+            <td class="text-center font-black">202</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">600</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">600</td>
+            <td class="text-center font-bold">200-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center font-bold text-rose-700 bg-rose-50/40">-1,200</td>
+            <td class="text-center font-bold text-emerald-800 bg-emerald-50/50">+600</td>
+            <td class="text-center">15:46 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">17</td>
+            <td class="text-center">16:10</td>
+            <td class="text-center font-black">203</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center font-bold text-rose-700">-200</td>
+            <td class="text-center font-bold text-purple-700">S 900</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">16:12 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">18</td>
+            <td class="text-center">16:30</td>
+            <td class="text-center font-black">204</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">600</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="px-1 text-[7px] bg-indigo-50/20">
+              <div class="flex justify-between items-center w-full">
+                <span class="text-indigo-900 font-semibold text-[6.8px]">ผ้าห่ม</span>
+                <span class="font-bold text-indigo-950 text-[8.5px]">50</span>
+              </div>
+            </td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">650</td>
+            <td class="text-center font-bold">850-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">16:35 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">19</td>
+            <td class="text-center">16:50</td>
+            <td class="text-center font-black">113</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center font-bold text-rose-700">-200</td>
+            <td class="text-center font-bold text-emerald-700">K 900</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">16:52 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">20</td>
+            <td class="text-center">17:15</td>
+            <td class="text-center font-black">116</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center font-bold">900-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">17:16 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">21</td>
+            <td class="text-center">17:40</td>
+            <td class="text-center font-black">117</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center font-bold">900-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">17:42 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">22</td>
+            <td class="text-center">18:00</td>
+            <td class="text-center font-black">118</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center font-bold text-rose-700">-200</td>
+            <td class="text-center font-bold text-purple-700">S 900</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">18:02 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">23</td>
+            <td class="text-center">18:20</td>
+            <td class="text-center font-black">119</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center font-bold">900-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">18:22 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+
+          <!-- แทรกรายการห้องผิดปกติ 213 (รอบ 2: 18:40 - 20:15 น. ใช้ไฟ 1.9 kWh แต่ไม่มีเช็คอิน) -->
+          <tr class="bg-rose-200 border-y border-rose-400 font-bold text-rose-950 item-anomaly">
+            <td class="text-center font-black text-rose-950">213-2</td>
+            <td class="text-right pr-1.5 font-black text-rose-950">⚠️ ไม่มีเช็คอิน</td>
+            <td class="text-center font-black text-rose-950">213</td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800 font-black"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center font-black text-rose-950">18:40–20:15 (1.35)</td>
+            <td class="text-center"></td>
+          </tr>
+
+          <tr class="item-checkin">
+            <td class="text-center font-bold">24</td>
+            <td class="text-center">18:45</td>
+            <td class="text-center font-black">120</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center font-bold">200-200</td>
+            <td class="text-center font-bold text-blue-800">Cr 700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">18:48 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">25</td>
+            <td class="text-center">19:05</td>
+            <td class="text-center font-black">205</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">600</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">600</td>
+            <td class="text-center font-bold">800-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">19:07 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">26</td>
+            <td class="text-center">19:25</td>
+            <td class="text-center font-black">206</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">600</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">600</td>
+            <td class="text-center font-bold text-rose-700">-200</td>
+            <td class="text-center font-bold text-emerald-700">K 800</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">19:26 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">27</td>
+            <td class="text-center">19:50</td>
+            <td class="text-center font-black">207</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">600</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">600</td>
+            <td class="text-center font-bold">800-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">19:52 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">28</td>
+            <td class="text-center">20:10</td>
+            <td class="text-center font-black">208</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">600</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="px-1 text-[7px] bg-indigo-50/20">
+              <div class="flex justify-between items-center w-full">
+                <span class="text-indigo-900 font-semibold text-[6.8px]">ผ้าเช็ดตัว</span>
+                <span class="font-bold text-indigo-950 text-[8px]">80</span>
+              </div>
+            </td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">680</td>
+            <td class="text-center font-bold text-rose-700">-200</td>
+            <td class="text-center font-bold text-purple-700">S 880</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">20:12 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">29</td>
+            <td class="text-center">20:30</td>
+            <td class="text-center font-black">209</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center font-bold">900-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">20:31 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">30</td>
+            <td class="text-center">20:50</td>
+            <td class="text-center font-black">210</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center font-bold">900-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">20:52 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">31</td>
+            <td class="text-center">21:10</td>
+            <td class="text-center font-black">211</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center font-bold text-rose-700">-200</td>
+            <td class="text-center font-bold text-emerald-700">K 900</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">21:12 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">32</td>
+            <td class="text-center">21:30</td>
+            <td class="text-center font-black">212</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center font-bold">900-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">21:32 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">33</td>
+            <td class="text-center">21:45</td>
+            <td class="text-center font-black">214</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center font-bold">900-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">21:48 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">34</td>
+            <td class="text-center">22:00</td>
+            <td class="text-center font-black">215</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center font-bold">900-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">22:02 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">35</td>
+            <td class="text-center">22:15</td>
+            <td class="text-center font-black">216</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center font-bold">900-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">22:18 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">36</td>
+            <td class="text-center">22:30</td>
+            <td class="text-center font-black">217</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center font-bold">900-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">22:32 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">37</td>
+            <td class="text-center">22:45</td>
+            <td class="text-center font-black">218</td>
+            <td class="text-center">แอน</td>
+            <td class="text-right">600</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">600</td>
+            <td class="text-center font-bold">800-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">22:46 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+
+                    <!-- แทรกรายการห้อง 109 เรียงตามเวลาเช็คอินจริง 22:50 น. (ไฟขึ้นก่อน 21:30 น. + ค้างชำระ 600 ฿) -->
+          <tr class="bg-rose-200 border-y border-rose-400 font-bold text-rose-950 item-anomaly">
+            <td class="text-center font-black text-rose-950">109</td>
+            <td class="text-center font-black text-rose-950">22:50 <span class="bg-rose-300 text-rose-950 px-1 py-0.2 rounded font-black text-[6.2px] border border-rose-400">ค้างชำระ</span> (ไฟขึ้นก่อน)</td>
+            <td class="text-center font-black text-rose-950">109</td>
+            <td class="text-center text-rose-950 font-bold">แอน</td>
+            <td class="text-right font-black text-rose-950">600</td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-right font-black text-rose-950">600</td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center text-rose-800"></td>
+            <td class="text-center font-black text-rose-950">21:30–ปัจจุบัน (9.30)</td>
+            <td class="text-center"></td>
+          </tr>
+
+          <!-- แทรกรายการจองล่วงหน้า กะบ่าย (R2-1 & R2-2 เป็นการจองเดียวกัน 2 ห้อง 208-209 และ R3): -->
+          <tr class="bg-indigo-50/60 border-t border-indigo-200 item-booking">
+            <td class="text-center font-bold text-indigo-900">R2-1</td>
+            <td class="text-center font-black text-indigo-950 bg-indigo-100/70">จอง (10/11)</td>
+            <td class="text-center font-black text-indigo-950">208</td>
+            <td class="text-center">แอน</td>
+            <!-- รวม 5 คอลัมน์รายการเรียกเก็บเป็นคอลัมน์เดียวตามสั่ง -->
+            <td colspan="5" class="text-center font-bold text-indigo-950 bg-indigo-50/70 text-[6.6px]">
+              600 ฿ - 300 ฿ = <span class="text-rose-700 font-black">300 ฿</span>
+            </td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center font-bold text-purple-700">S 300</td>
+            <td class="text-center font-black text-emerald-800 bg-emerald-100/70">+300</td><td class="text-center text-slate-400"></td>
+            <td class="text-center px-1 text-indigo-950 bg-indigo-50/50 text-[6.4px] max-w-[85px] truncate" title="เข้า ~14:00 น. (คู่ 209)">เข้า ~14:00 (คู่ 209)</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="bg-indigo-50/60 border-b border-indigo-200 item-booking">
+            <td class="text-center font-bold text-indigo-900">R2-2</td>
+            <td class="text-center font-black text-indigo-950 bg-indigo-100/70">จอง (10/11)</td>
+            <td class="text-center font-black text-indigo-950">209</td>
+            <td class="text-center">แอน</td>
+            <!-- รวม 5 คอลัมน์รายการเรียกเก็บเป็นคอลัมน์เดียวตามสั่ง -->
+            <td colspan="5" class="text-center font-bold text-indigo-950 bg-indigo-50/70 text-[6.6px]">
+              600 ฿ - 300 ฿ = <span class="text-rose-700 font-black">300 ฿</span>
+            </td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center font-bold text-purple-700">S 300</td>
+            <td class="text-center font-black text-emerald-800 bg-emerald-100/70">+300</td><td class="text-center text-slate-400"></td>
+            <td class="text-center px-1 text-indigo-950 bg-indigo-50/50 text-[6.4px] max-w-[85px] truncate" title="เข้า ~14:00 น. (คู่ 208)">เข้า ~14:00 (คู่ 208)</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="bg-indigo-50/60 border-y border-indigo-200 item-booking">
+            <td class="text-center font-bold text-indigo-900">R3</td>
+            <td class="text-center font-black text-indigo-950 bg-indigo-100/70">จอง (12-14/11) <span class="text-indigo-700 font-bold">(3 คืน)</span></td>
+            <td class="text-center font-black text-indigo-950">104</td>
+            <td class="text-center">แอน</td>
+            <!-- รวม 5 คอลัมน์รายการเรียกเก็บเป็นคอลัมน์เดียวตามสั่ง -->
+            <td colspan="5" class="text-center font-bold text-indigo-950 bg-indigo-50/70 text-[6.6px]">
+              800/700/600 ฿ = 2,100 ฿ - 500 ฿ = <span class="text-rose-700 font-black">1,600 ฿</span>
+            </td>
+            <td class="text-right font-bold text-blue-900 bg-emerald-50/70">500</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center font-black text-emerald-800 bg-emerald-100/70">+500</td><td class="text-center text-slate-400"></td>
+            <td class="text-center px-1 text-indigo-950 bg-indigo-50/50 text-[6.4px] max-w-[85px] truncate" title="เข้า ~20:30 น. (ขอหมอนเพิ่ม)">เข้า ~20:30 หมอนเพิ่ม</td>
+            <td class="text-center"></td>
+          </tr>
+
+          <!-- ยอดรวมกะบ่าย -->
+          <tr class="bg-amber-100/70 font-bold text-[8px] leading-tight border-b-2 border-slate-400 section-row" style="height: 18px;">
+            <td colspan="4" class="text-center text-amber-950 py-0.5">🌇 รวมกะที่ 2 (15:00 – 23:00 น.):</td>
+            <td class="text-right text-amber-950 py-0.5">16,260</td>
+            <td class="text-center text-slate-400 py-0.5"></td>
+            <td class="text-right text-amber-950 font-bold py-0.5">190</td>
+            <td class="text-center text-slate-400 py-0.5"></td>
+            <td class="text-right font-black text-amber-950 bg-amber-200/50 py-0.5">16,450</td>
+            <td class="text-right font-black text-emerald-900 py-0.5" style="border-left: 1.8px solid #334155 !important;">9,770</td>
+            <td class="text-right font-bold text-blue-900 py-0.5">6,580</td>
+            <td class="text-center font-bold text-rose-700 py-0.5" style="border-left: 2px solid #312e81 !important;" title="รับจองใหม่ +1,100 (R2,R3) หักใช้จองเดิม -1,200 (202)">-100</td>
+            <td class="text-center font-bold text-emerald-800 py-0.5" style="border-right: 1.8px solid #334155 !important;" title="รับตั้งพักล่วงหน้าคืนที่ 2 ห้อง 202 (+600)">+600</td>
+            <td colspan="2" class="text-center text-[7.2px] font-semibold text-slate-700 py-0.5 whitespace-nowrap">25 เข้าพัก + 1 ผิดปกติ + 2 จอง</td>
+          </tr>
+
+          <!-- ================= 3. ส่วนกะดึก (23:00 - 07:00 น.) ================= -->
+          <!-- 3. ส่วนกะดึก (23:00 - 07:00 น.) -->
+          <tr class="item-checkin">
+            <td class="text-center font-bold">38</td>
+            <td class="text-center">23:05</td>
+            <td class="text-center font-black">219</td>
+            <td class="text-center">บี</td>
+            <td class="text-right">700</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">700</td>
+            <td class="text-center font-bold">900-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">23:08 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+          <tr class="item-checkin">
+            <td class="text-center font-bold">39</td>
+            <td class="text-center">01:15</td>
+            <td class="text-center font-black">220</td>
+            <td class="text-center">บี</td>
+            <td class="text-right">600</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-bold bg-blue-50/30">600</td>
+            <td class="text-center font-bold">800-200</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center">01:17 - ปัจจุบัน</td>
+            <td class="text-center"></td>
+          </tr>
+                    <!-- รายการที่ 40: รับชำระหนี้ค้างห้อง 109 ในกะดึก -->
+          <tr class="item-checkin bg-emerald-50/60 border border-emerald-200">
+            <td class="text-center font-bold text-emerald-900">40</td>
+            <td class="text-center font-bold text-emerald-800">02:30 <span class="text-[6.2px] bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded font-bold">รับชำระค้าง (08/11 กะบ่าย)</span></td>
+            <td class="text-center font-black text-emerald-950">109</td>
+            <td class="text-center">บี</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-right font-black text-emerald-900 bg-emerald-100/70">600</td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center text-slate-400"></td>
+            <td class="text-center"></td>
+          </tr>
+
+          <!-- ยอดรวมกะดึก -->
+          <tr class="bg-amber-100/70 font-bold text-[8px] leading-tight border-b-2 border-slate-400 section-row" style="height: 18px;">
+            <td colspan="4" class="text-center text-amber-950 py-0.5">🌙 รวมกะที่ 3 (23:00 – 07:00 น.):</td>
+            <td class="text-right text-amber-950 py-0.5">1,300</td>
+            <td class="text-center text-slate-400 py-0.5"></td>
+            <td class="text-center text-slate-400 py-0.5"></td>
+            <td class="text-center text-slate-400 py-0.5"></td>
+            <td class="text-right font-black text-amber-950 bg-amber-200/50 py-0.5">1,300</td>
+            <td class="text-right font-black text-rose-700 py-0.5" style="border-left: 1.8px solid #334155 !important;">-400</td>
+            <td class="text-right font-bold text-blue-900 py-0.5">2,300</td>
+            <td class="text-center text-slate-400 py-0.5" style="border-left: 2px solid #312e81 !important;"></td>
+            <td class="text-center text-slate-400 py-0.5" style="border-right: 1.8px solid #334155 !important;"></td>
+            <td colspan="2" class="text-center text-[7.2px] font-semibold text-slate-700 py-0.5 whitespace-nowrap">2 เข้าพัก + 1 รับชำระหนี้ค้าง</td>
+          </tr>
+
+        </tbody>
+        <tfoot>
+          <!-- แถบลงชื่อผู้ตรวจ และสรุปรวมทั้งสิ้น 24 ชม. (รายได้ค่าห้องจริง 25,920 + มินิบาร์ 190 = 26,110 | รับชำระเงินสด 14,670 + โอน 9,940 + จอง/ล่วงหน้า 1,500) -->
+          <tr class="bg-slate-900 text-white font-black text-[8.5px] section-row" style="height: 22px;">
+            <td colspan="4" class="px-2 bg-slate-900 text-white font-bold" style="height: 22px;">
+              <div class="flex justify-between items-center w-full text-[8.2px]">
+                <span>ลงชื่อ..................................</span>
+                <span>ผู้ตรวจ</span>
+              </div>
+            </td>
+            <td class="text-right bg-slate-900 text-amber-300 font-black text-[9.8px]">25,920</td>
+            <td class="text-center bg-slate-900 text-slate-400"></td>
+            <td class="text-right bg-slate-900 text-amber-300 font-black text-[9.8px]">190</td>
+            <td class="text-center bg-slate-900 text-slate-400"></td>
+            <td class="text-right bg-blue-950 text-amber-400 font-black text-[10.2px]">26,110</td>
+            <td class="text-right bg-emerald-950 text-emerald-300 font-black text-[10.2px]" style="border-left: 1.8px solid #334155 !important;">14,670</td>
+            <td class="text-right bg-blue-950 text-blue-300 font-black text-[9.8px]">9,940</td>
+            <td class="text-center bg-slate-900 text-rose-300 font-bold text-[9.2px]" style="border-left: 2px solid #312e81 !important;" title="รับจองใหม่ +1,600 หักใช้จองเดิม -2,400">-800</td>
+            <td class="text-center bg-slate-900 text-rose-300 font-bold text-[9.2px]" style="border-right: 1.8px solid #334155 !important;" title="ตั้งพักล่วงหน้าใหม่ +1,200 หักใช้ล่วงหน้าเดิม -1,900">-700</td>
+            <td colspan="2" class="text-center bg-slate-900 text-slate-400"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- แถบจำลองสถานการณ์เงินขาด/เกิน และเติมเงินทอน -->
+      <div id="demo-explanation" class="hidden mt-1 p-1 bg-amber-50 border border-amber-300 rounded text-[6.5px] text-amber-950">
+        <strong>⚡ โหมดจำลอง Audit:</strong> หากกะบ่ายมีลูกค้าโอนเงินแต่ต้องทอนเงินสดจนลิ้นชักติดลบ
+        ผจก.จะทำการ <strong>"เติมเงินทอนเข้าลิ้นชัก (+2,000 ฿)"</strong> และหากนับจริงขาดไป 20 ฿
+        ระบบจะลงบันทึกในช่อง <em>"ขาด/เกิน"</em> ของกะบ่ายเป็น <strong>"นับจริง 3,680 ฿ (ขาด 20.00 ฿ ⚠️)"</strong> โดยอัตโนมัติ
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    // ฟังก์ชันกรองมุมมอง Interactive
+    function filterView(type) {
+      const allRows = document.querySelectorAll('.item-checkin, .item-anomaly, .item-booking');
+      const buttons = ['all', 'checkin', 'anomaly', 'booking'];
+      buttons.forEach(b => {
+        const btn = document.getElementById('btn-' + b);
+        if (b === type) {
+          btn.className = 'px-2 py-0.5 rounded bg-blue-600 font-bold text-white';
+        } else {
+          btn.className = 'px-2 py-0.5 rounded bg-slate-700 text-slate-200 hover:bg-slate-600';
+        }
+      });
+
+      allRows.forEach(row => {
+        if (type === 'all') {
+          row.style.display = '';
+        } else if (type === 'checkin') {
+          row.style.display = row.classList.contains('item-checkin') ? '' : 'none';
+        } else if (type === 'anomaly') {
+          row.style.display = row.classList.contains('item-anomaly') ? '' : 'none';
+        } else if (type === 'booking') {
+          row.style.display = row.classList.contains('item-booking') ? '' : 'none';
+        }
+      });
+    }
+
+    // ฟังก์ชันจำลองเงินขาด/เกิน และเติมเงินทอน
+    let isDemoActive = false;
+    function toggleShortOverDemo() {
+      isDemoActive = !isDemoActive;
+      const counted = document.getElementById('s2-counted');
+      const diff = document.getElementById('s2-diff');
+      const grandCounted = document.getElementById('grand-counted');
+      const grandDiff = document.getElementById('grand-diff');
+      const exp = document.getElementById('demo-explanation');
+      const btn = document.getElementById('btn-demo');
+
+      if (isDemoActive) {
+        counted.innerHTML = 'นับจริง: <b class="text-rose-700">3,680 ฿</b>';
+        diff.innerHTML = 'ขาด/เกิน: <b class="text-rose-700">-20.00 ฿ (เงินขาด)</b>';
+        if (grandCounted) grandCounted.innerHTML = '<span class="text-rose-700">11,580 ฿</span>';
+        if (grandDiff) grandDiff.className = 'bg-rose-100 text-rose-900 px-1.5 py-0.5 rounded font-black border border-rose-300';
+        if (grandDiff) grandDiff.innerHTML = '⚠️ ผลต่าง (ขาด/เกิน): -20.00 ฿ (เงินขาดในกะบ่าย)';
+        exp.classList.remove('hidden');
+        btn.className = 'ml-1 px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 font-bold text-white';
+      } else {
+        counted.innerHTML = 'นับจริง: <b>3,700 ฿</b>';
+        diff.innerHTML = 'ขาด/เกิน: <b class="text-emerald-700">0.00 ฿ (ตรง)</b>';
+        if (grandCounted) grandCounted.innerHTML = '11,600 ฿';
+        if (grandDiff) grandDiff.className = 'bg-emerald-100 text-emerald-900 px-1.5 py-0.5 rounded font-black border border-emerald-300';
+        if (grandDiff) grandDiff.innerHTML = '✅ ผลต่าง (ขาด/เกิน): 0.00 ฿ (ตรงตามระบบ)';
+        exp.classList.add('hidden');
+        btn.className = 'ml-1 px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 font-bold text-white';
+      }
+    }
+
+    let currentLocation = 'soi1';
+
+    // ฟังก์ชันเลือกสถานที่และตรวจสอบสถานะการปิดวัน
+    function selectLocation(loc) {
+      currentLocation = loc;
+      const locations = ['soi1', 'soi2', 'samy', 'all'];
+      const titleElem = document.getElementById('location-title');
+      const badgeElem = document.getElementById('location-status-badge');
+      const printBtn = document.getElementById('btn-print-main');
+
+      locations.forEach(l => {
+        const btn = document.getElementById('loc-btn-' + l);
+        if (!btn) return;
+        if (l === loc) {
+          btn.classList.add('ring-2', 'ring-emerald-400', 'shadow');
+          btn.classList.remove('opacity-70');
+        } else {
+          btn.classList.remove('ring-2', 'ring-emerald-400', 'shadow');
+          btn.classList.add('opacity-70');
+        }
+      });
+
+      if (loc === 'soi1') {
+        if (titleElem) titleElem.innerText = 'ซอย 1';
+        if (badgeElem) {
+          badgeElem.className = 'px-1.5 py-0.2 rounded font-black text-[7.8px] bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1';
+          badgeElem.innerHTML = '✅ ปิดวันสมบูรณ์ (พร้อมพิมพ์)';
+        }
+        if (printBtn) {
+          printBtn.className = 'ml-1 px-2.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 font-black text-white text-[9.5px] shadow flex items-center gap-1 cursor-pointer';
+          printBtn.title = 'พิมพ์รายงานการเงิน ซอย 1 (A4)';
+        }
+      } else if (loc === 'soi2') {
+        if (titleElem) titleElem.innerText = 'ซอย 2';
+        if (badgeElem) {
+          badgeElem.className = 'px-1.5 py-0.2 rounded font-black text-[7.8px] bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1';
+          badgeElem.innerHTML = '✅ ปิดวันสมบูรณ์ (พร้อมพิมพ์)';
+        }
+        if (printBtn) {
+          printBtn.className = 'ml-1 px-2.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 font-black text-white text-[9.5px] shadow flex items-center gap-1 cursor-pointer';
+          printBtn.title = 'พิมพ์รายงานการเงิน ซอย 2 (A4)';
+        }
+      } else if (loc === 'samy') {
+        if (titleElem) titleElem.innerText = 'ซามิย่า';
+        if (badgeElem) {
+          badgeElem.className = 'px-1.5 py-0.2 rounded font-black text-[7.8px] bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 animate-pulse';
+          badgeElem.innerHTML = '⏳ อยู่ระหว่างกะ 3 (ยังไม่ปิดวัน - ล็อคการพิมพ์)';
+        }
+        if (printBtn) {
+          printBtn.className = 'ml-1 px-2.5 py-0.5 rounded bg-slate-600 font-bold text-slate-300 text-[9.5px] shadow flex items-center gap-1 cursor-not-allowed opacity-60';
+          printBtn.title = '⚠️ ยังไม่ปิดวัน ไม่สามารถพิมพ์ได้';
+        }
+      } else if (loc === 'all') {
+        if (titleElem) titleElem.innerText = 'รวมทุกสถานที่ (Consolidated)';
+        if (badgeElem) {
+          badgeElem.className = 'px-1.5 py-0.2 rounded font-black text-[7.8px] bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1';
+          badgeElem.innerHTML = '⏳ รอซามิย่าปิดวัน (ปิดแล้ว 2/3 สาขา)';
+        }
+        if (printBtn) {
+          printBtn.className = 'ml-1 px-2.5 py-0.5 rounded bg-slate-600 font-bold text-slate-300 text-[9.5px] shadow flex items-center gap-1 cursor-not-allowed opacity-60';
+          printBtn.title = '⚠️ รอทุกสาขาปิดวันครบก่อนจึงจะพิมพ์ยอดรวมได้';
+        }
+      }
+    }
+
+    // ฟังก์ชันสั่งพิมพ์รายงานการเงิน (ตรวจสอบสิทธิ์ปิดวันก่อนพิมพ์)
+    function triggerPrintReport() {
+      if (currentLocation === 'samy') {
+        alert('⚠️ สาขาซามิย่ายังไม่สามารถพิมพ์รายงานการเงินฉบับปิดวันได้ เนื่องจากสถานะปัจจุบันยังเปิดกะ 3 อยู่ (ยังไม่ปิดวัน)\n\nกรุณาปิดกะ 3 และส่งมอบปิดวันให้เสร็จสิ้นก่อนสั่งพิมพ์');
+        return;
+      }
+      if (currentLocation === 'all') {
+        alert('⚠️ รายงานการเงินรวมทุกสถานที่ ยังไม่สามารถปิดยอด 100% ได้ เนื่องจากสาขาซามิย่ายังไม่ปิดวัน\n\nสามารถเลือกพิมพ์เฉพาะสาขาที่ปิดวันแล้วได้ (ซอย 1 หรือ ซอย 2)');
+        return;
+      }
+      window.print();
+    }
+
+    // ฟังก์ชันเปิด/พิมพ์ใบตรวจสอบยอดโอนและบัตรเครดิต (A4)
+    function openTransferAuditSheet() {
+      window.open('accounting_transfer_report_prototype.html', '_blank');
+    }
+  </script>
+</body>
+</html>

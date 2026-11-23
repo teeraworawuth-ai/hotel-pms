@@ -1,5 +1,7 @@
 "use client";
 
+import FinancialReportType2View from "./FinancialReportType2View";
+
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { Shift, useShift } from "@/contexts/ShiftContext";
@@ -1476,6 +1478,22 @@ export default function DailyReport({
   } = activeReport;
 
   // สรุปตัวเลขคอลัมน์ซ้าย (ฝั่งรายได้) — ธรรมชาติเป็นบวก (+)
+  
+  const canPrintCurrentLocation =
+    selectedLocation === "ALL"
+      ? isCashComplete
+      : Boolean(reportsByLocation[selectedLocation]?.isDayClosed);
+
+  const handlePrintLocationFinancialReport = () => {
+    if (!canPrintCurrentLocation) {
+      alert(
+        `⚠️ สาขา ${selectedLocation === "ALL" ? "รวมทุกสาขา" : selectedLocation} ยังไม่สามารถพิมพ์รายงานการเงินฉบับปิดวันได้\n\nเนื่องจากสถานะปัจจุบันยังไม่ปิดวัน (ต้องปิดกะสุดท้ายและส่งมอบปิดวันให้เสร็จสิ้นก่อน)`
+      );
+      return;
+    }
+    window.open(`/financial-report.html?loc=${encodeURIComponent(selectedLocation)}&date=${encodeURIComponent(businessDateStr)}`, '_blank');
+  };
+
   const roomExtraTotal = earlyLateTotal + upsellTotal; // 1.2 รายได้ส่วนเพิ่ม (1.2.1 + 1.2.2)
   const netRoomRevenue = roomTargetTotal + roomExtraTotal - roomDiscountTotal; // 1. รายได้ค่าห้อง (สุทธิ)
   const grossTotalRevenue =
@@ -1649,7 +1667,7 @@ export default function DailyReport({
 
   return (
     <div className="space-y-6">
-      {/* แถบเลือกสถานที่ (รวมทั้งหมด / ซอย1 / ซอย2 / ซามีญ่า) + ปุ่มใบตรวจยอดโอน & บัตรเครดิต (พิมพ์ A4) */}
+      {/* แถบเลือกสถานที่ (รวมทั้งหมด / ซอย1 / ซอย2 / ซามีญ่า) พร้อมสถานะปิดวัน + ปุ่มพิมพ์รายงานการเงิน */}
       <div className="bg-white rounded-2xl border-2 border-slate-200 p-3.5 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-black text-slate-500 uppercase tracking-wider mr-1">
@@ -1678,20 +1696,31 @@ export default function DailyReport({
                 locRep.fineRevenue +
                 locRep.otherRevenue
               : 0;
-            const locOpenCount = locRep ? locRep.dayShifts.filter((s) => s.status === "open").length : 0;
+            const locClosed = locRep?.isDayClosed;
             const isSelected = selectedLocation === loc;
             return (
               <button
                 key={loc}
                 type="button"
                 onClick={() => setSelectedLocation(loc)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 border ${
                   isSelected
-                    ? "bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-600/30"
-                    : "bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-800 border border-slate-200/80"
+                    ? "bg-indigo-700 text-white shadow-sm ring-2 ring-indigo-400 border-indigo-700"
+                    : locClosed
+                    ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-300"
+                    : "bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300"
                 }`}
               >
                 <span>📍 {loc}</span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-md text-[9px] font-bold ${
+                    locClosed
+                      ? "bg-emerald-200 text-emerald-950"
+                      : "bg-amber-200 text-amber-950"
+                  }`}
+                >
+                  {locClosed ? "ปิดวันแล้ว ✅" : "เปิดกะ ⏳ ยังไม่ปิดวัน"}
+                </span>
                 <span
                   className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
                     isSelected ? "bg-indigo-800 text-indigo-100" : "bg-white text-slate-600"
@@ -1699,27 +1728,39 @@ export default function DailyReport({
                 >
                   {fmt(locNetRev)}
                 </span>
-                {locOpenCount > 0 && (
-                  <span
-                    className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"
-                    title={`มีกะเปิดอยู่ ${locOpenCount} กะ`}
-                  />
-                )}
               </button>
             );
           })}
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowTransferCardModal(true)}
-          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white font-black text-xs shadow-sm flex items-center justify-center gap-2 shrink-0 transition-all"
-        >
-          <span>🖨️ ใบตรวจยอดโอน & บัตรเครดิต (พิมพ์ A4)</span>
-          <span className="px-2 py-0.5 rounded-full bg-white/20 text-white text-[11px] font-black">
-            {transferCardItems.length} รายการ
-          </span>
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={handlePrintLocationFinancialReport}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black shadow-xs flex items-center gap-1.5 transition-all ${
+              canPrintCurrentLocation
+                ? "bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
+                : "bg-slate-300 text-slate-500 cursor-not-allowed opacity-75"
+            }`}
+            title={
+              canPrintCurrentLocation
+                ? `พิมพ์รายงานการเงิน (${selectedLocation === "ALL" ? "รวมทุกสถานที่" : selectedLocation}) A4`
+                : "⚠️ ยังไม่ปิดวัน ไม่สามารถพิมพ์ได้"
+            }
+          >
+            <span>🖨️ พิมพ์รายงานการเงิน A4</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowTransferCardModal(true)}
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white font-black text-xs shadow-sm flex items-center justify-center gap-2 shrink-0 transition-all"
+          >
+            <span>💳 ใบตรวจยอดโอน &amp; บัตรเครดิต (พิมพ์ A4)</span>
+            <span className="px-2 py-0.5 rounded-full bg-white/20 text-white text-[11px] font-black">
+              {transferCardItems.length} รายการ
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* แถบสรุปเปรียบเทียบแยกตามสถานที่ (แสดงเมื่อดู "รวมทั้งหมด") */}
@@ -1972,675 +2013,21 @@ export default function DailyReport({
         </div>
       )}
 
-      {/* โครงสร้างหลัก 3 คอลัมน์ตามต้นฉบับ */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-        {/* ==================== คอลัมน์ซ้าย: ฝั่งรายได้ (5 ส่วน) ==================== */}
-        <div className="lg:col-span-5 bg-white rounded-2xl border-2 border-slate-200 shadow-sm flex flex-col overflow-hidden">
-          <div className="px-5 py-3.5 bg-slate-800 text-white flex flex-wrap justify-between items-center gap-2">
-            <h3 className="font-black text-base tracking-wide">ฝั่งรายได้ (Revenue)</h3>
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setShowZeroRevenueItems((v) => !v)}
-                className="text-[11px] bg-slate-700 hover:bg-slate-600 text-slate-200 px-2.5 py-0.5 rounded-full font-bold transition-colors cursor-pointer"
-              >
-                {showZeroRevenueItems ? "🙈 ซ่อนรายการ ฿0" : "👁️ แสดงรายการ ฿0"}
-              </button>
-              <span className="text-[11px] bg-slate-700 text-slate-200 px-2.5 py-0.5 rounded-full font-bold">
-                ไม่รวมมัดจำกุญแจ
-              </span>
-            </div>
-          </div>
-
-          <div className="p-5 flex-1 space-y-3 text-sm">
-            {/* 1. รายได้ค่าห้อง */}
-            <div className="bg-slate-50/80 border border-slate-200/90 rounded-xl p-3.5 space-y-2">
-              <div className="flex justify-between items-center font-black text-slate-900 text-base border-b border-slate-200 pb-2">
-                <span>1. รายได้ค่าห้อง</span>
-                <span className="text-indigo-700">{fmt(netRoomRevenue)}</span>
-              </div>
-
-              {/* 1.1 รายได้ค่าห้อง (ตามราคาเป้าหมาย) */}
-              <div className="pl-3 space-y-1">
-                <div className="flex justify-between items-center text-slate-700 font-semibold">
-                  <span>1.1 รายได้ค่าห้อง (ตามราคาเป้าหมาย)</span>
-                  <span className="font-bold text-slate-900">{fmt(roomTargetTotal)}</span>
-                </div>
-                {(showZeroRevenueItems || roomTargetOvernight > 0 || (roomTargetOvernight === 0 && roomTargetShortStay === 0)) && (
-                  <div className="flex justify-between items-center pl-4 text-xs text-slate-600">
-                    <span>1.1.1 ค้างคืน</span>
-                    <span className="font-bold text-slate-700">{fmt(roomTargetOvernight)}</span>
-                  </div>
-                )}
-                {(showZeroRevenueItems || roomTargetShortStay > 0) && (
-                  <div className="flex justify-between items-center pl-4 text-xs text-slate-600">
-                    <span>1.1.2 ชั่วคราว</span>
-                    <span className="font-bold text-slate-700">{fmt(roomTargetShortStay)}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* 1.2 รายได้ส่วนเพิ่ม */}
-              {(showZeroRevenueItems || roomExtraTotal > 0 || earlyLateTotal > 0 || upsellTotal > 0) && (
-                <div className="pl-3 space-y-1">
-                  <div className="flex justify-between items-center text-slate-700 font-semibold">
-                    <span>1.2 รายได้ส่วนเพิ่ม</span>
-                    <span className="font-bold text-emerald-700">+{fmt(roomExtraTotal)}</span>
-                  </div>
-                  {(showZeroRevenueItems || earlyLateTotal > 0) && (
-                    <div className="flex justify-between items-center pl-4 text-xs text-slate-600">
-                      <span>1.2.1 เข้าก่อน/ออกช้า (Early-Late)</span>
-                      <span className="font-bold text-slate-700">{fmt(earlyLateTotal)}</span>
-                    </div>
-                  )}
-                  {(showZeroRevenueItems || upsellTotal > 0) && (
-                    <div className="flex justify-between items-center pl-4 text-xs text-slate-600">
-                      <span>1.2.2 ส่วนเพิ่มค่าห้อง</span>
-                      <span className="font-bold text-slate-700">{fmt(upsellTotal)}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* 1.3 ส่วนลด */}
-              {(showZeroRevenueItems || roomDiscountTotal > 0) && (
-                <div className="flex justify-between items-center pl-3 text-rose-600 font-semibold pt-1 border-t border-slate-200/60">
-                  <span>1.3 ส่วนลด (ต่ำกว่าราคาเป้าหมาย)</span>
-                  <span className="font-bold">-{fmt(roomDiscountTotal)}</span>
-                </div>
-              )}
-            </div>
-
-            {/* 2 - 6 หมวดรายได้อื่นๆ */}
-            <div className="space-y-2.5 pt-1 px-1">
-              {(showZeroRevenueItems || addonRevenue > 0) && (
-                <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                  <span className="font-bold text-slate-700">2. ค่าส่วนเสริม (เตียงเสริม/ผ้าห่ม/หมอน)</span>
-                  <span className="font-black text-slate-900">{fmt(addonRevenue)}</span>
-                </div>
-              )}
-              {(showZeroRevenueItems || minibarRevenue > 0) && (
-                <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                  <span className="font-bold text-slate-700">3. ค่ามินิบาร์ (อาหาร/เครื่องดื่ม)</span>
-                  <span className="font-black text-slate-900">{fmt(minibarRevenue)}</span>
-                </div>
-              )}
-              {(showZeroRevenueItems || fineRevenue > 0) && (
-                <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                  <span className="font-bold text-slate-700">4. ค่าปรับ (เสียหาย/สูบบุหรี่/ริบมัดจำ)</span>
-                  <span className="font-black text-slate-900">{fmt(fineRevenue)}</span>
-                </div>
-              )}
-              {(showZeroRevenueItems || otherRevenue > 0) && (
-                <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                  <span className="font-bold text-slate-700">5. ค่าบริการอื่นๆ</span>
-                  <span className="font-black text-slate-900">{fmt(otherRevenue)}</span>
-                </div>
-              )}
-              {(showZeroRevenueItems || voidedRevenue > 0) && (
-                <div className="flex justify-between items-center py-1.5 text-slate-400">
-                  <span className="font-semibold">6. ยกเลิก (Voided)</span>
-                  <span className="font-bold">{fmt(voidedRevenue)}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* สรุปท้ายคอลัมน์ซ้าย */}
-          <div className="p-4 bg-slate-50 border-t-2 border-slate-200 space-y-1.5 text-sm">
-            {(showZeroRevenueItems || roomDiscountTotal > 0) && (
-              <>
-                <div className="flex justify-between text-slate-600 font-semibold">
-                  <span>รวมรายได้ทั้งหมด (ก่อนหักส่วนลด)</span>
-                  <span>{fmt(grossTotalRevenue)}</span>
-                </div>
-                <div className="flex justify-between text-rose-600 font-semibold">
-                  <span>หัก ส่วนลดค่าห้อง</span>
-                  <span>-{fmt(roomDiscountTotal)}</span>
-                </div>
-              </>
-            )}
-            <div className="flex justify-between items-center pt-2 border-t border-slate-200 font-black text-base text-slate-900">
-              <span>รวมรายได้สุทธิ</span>
-              <span className="text-xl text-indigo-700">{fmt(netTotalRevenue)}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* ==================== คอลัมน์กลาง: ฝั่งรับชำระเงิน (รับเงิน = ลบ / คืนเงิน & กันมัดจำ = บวก) ==================== */}
-        <div className="lg:col-span-4 bg-white rounded-2xl border-2 border-slate-200 shadow-sm flex flex-col overflow-hidden">
-          <div className="px-5 py-3.5 bg-emerald-800 text-white flex justify-between items-center">
-            <h3 className="font-black text-base tracking-wide">ฝั่งรับชำระเงิน (Payments)</h3>
-            <span className="text-[11px] bg-emerald-700 text-emerald-100 px-2.5 py-0.5 rounded-full font-bold">
-              รับเงิน = ลบ (−)
-            </span>
-          </div>
-
-          <div className="p-5 flex-1 space-y-3 text-sm">
-            {/* เงินสด */}
-            <div className="flex justify-between items-center p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/80">
-              <span className="font-black text-emerald-950 flex items-center gap-2">
-                <span>💵</span> เงินสด
-              </span>
-              <span className="font-black text-base text-emerald-700">{fmtSigned(-payCash)}</span>
-            </div>
-
-            {/* โอน (พร้อมแจกแจงรายบัญชีธนาคาร) */}
-            <div className="p-3 rounded-xl bg-blue-50/60 border border-blue-200/80 space-y-2">
-              <div className="flex justify-between items-center border-b border-blue-200/60 pb-1.5">
-                <span className="font-black text-blue-950 flex items-center gap-2">
-                  <span>📱</span> โอนเงิน (รวมทุกบัญชี)
-                </span>
-                <span className="font-black text-base text-blue-700">{fmtSigned(-payTransferTotal)}</span>
-              </div>
-              <div className="space-y-1 pl-3">
-                {Array.from(new Set([...bankAccounts, ...Object.keys(payTransferByBank)])).map((bank) => (
-                  <div key={bank} className="flex justify-between items-center text-xs text-slate-600">
-                    <span className="font-bold text-blue-900">• บัญชี {bank}</span>
-                    <span className="font-black text-slate-800">{fmtSigned(-(payTransferByBank[bank] || 0))}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* บัตรเครดิต */}
-            <div className="flex justify-between items-center p-3 rounded-xl bg-purple-50/60 border border-purple-200/80">
-              <span className="font-black text-purple-950 flex items-center gap-2">
-                <span>💳</span> บัตรเครดิต
-              </span>
-              <span className="font-black text-base text-purple-700">{fmtSigned(-payCredit)}</span>
-            </div>
-
-            {/* ปุ่มเปิดใบตรวจยอดโอน & บัตรเครดิต (ฝ่ายบัญชี + พิมพ์ A4) */}
-            <button
-              type="button"
-              onClick={() => setShowTransferCardModal(true)}
-              className="w-full py-2.5 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-900 font-black text-xs flex items-center justify-between transition-colors shadow-2xs"
-            >
-              <span className="flex items-center gap-1.5">
-                <span>🧾</span>
-                <span>เปิดใบตรวจยอดโอน & บัตร (เรียงตามเวลาโอนจริง)</span>
-              </span>
-              <span className="px-2 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] font-black">
-                พิมพ์ A4 ({transferCardItems.length})
-              </span>
-            </button>
-
-            {/* คืนเงินสดให้ลูกค้า */}
-            <div className="flex justify-between items-center px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-600">
-              <span className="font-bold">↩️ คืนเงินสด / คืนเงินทอน</span>
-              <span className="font-bold text-slate-800">{fmtSigned(payVoidRefund)}</span>
-            </div>
-
-            {/* กันเงินมัดจำกุญแจ */}
-            <div className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 space-y-1">
-              <div className="flex justify-between items-center text-amber-900">
-                <span className="font-bold">🔑 กันเงินมัดจำกุญแจ (ห้องเช็คอิน/วางมัดจำวันนี้)</span>
-                <span className="font-black">{fmtSigned(keyDepositBox.placedToday)}</span>
-              </div>
-              {keyDepositBox.forfeitedToday > 0 && (
-                <div className="flex justify-between items-center text-rose-700 text-xs">
-                  <span className="font-bold">🔑 ริบมัดจำกุญแจเป็นค่าปรับ (โอนเข้ารายได้หมวด 4)</span>
-                  <span className="font-black">{fmtSigned(-keyDepositBox.forfeitedToday)}</span>
-                </div>
-              )}
-              <div className="text-[10px] text-amber-700">
-                แยกเงินมัดจำออกจากเงินรับชำระ เพื่อกันเป็นเงินสดไว้คืนลูกค้าตอนเช็คเอาท์
-              </div>
-            </div>
-          </div>
-
-          {/* สรุปท้ายคอลัมน์กลาง */}
-          <div className="p-4 bg-slate-50 border-t-2 border-slate-200 space-y-1.5 text-sm">
-            <div className="flex justify-between text-slate-700 font-bold">
-              <span>รวมรับชำระ (ก่อนหักคืน/กันมัดจำ)</span>
-              <span>{fmtSigned(-grossPaymentsReceived)}</span>
-            </div>
-            <div className="flex justify-between text-amber-700 font-semibold">
-              <span>คืนเงิน + กันมัดจำกุญแจสุทธิ</span>
-              <span>{fmtSigned(payVoidRefund + keyDepositBox.placedToday - keyDepositBox.forfeitedToday)}</span>
-            </div>
-            <div className="flex justify-between items-center pt-2 border-t border-slate-200 font-black text-base text-slate-900">
-              <span>รวมรับชำระสุทธิ</span>
-              <span className="text-xl text-emerald-700">{fmtSigned(netPaymentSide)}</span>
-            </div>
-            <div className="text-[10px] text-slate-500">* ค่าใช้จ่ายเงินสดแสดงแยกในกล่องเงินสดด้านล่างเท่านั้น</div>
-          </div>
-        </div>
-
-        {/* ==================== คอลัมน์ขวา: จ่ายล่วงหน้า & รับจอง (3 ส่วน) ==================== */}
-        <div className="lg:col-span-3 flex flex-col gap-5">
-          {/* กล่องที่ 1: จ่ายล่วงหน้า (Advance Payment - ลูกค้าเช็คอินแล้วจ่ายหลายคืน) */}
-          <div className="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
-            <div className="px-4 py-3 bg-sky-800 text-white">
-              <h3 className="font-black text-sm">🏨 จ่ายล่วงหน้า (พักหลายคืน)</h3>
-              <p className="text-[11px] text-sky-200">ลูกค้าเช็คอินแล้ว ชำระล่วงหน้าสำหรับคืนถัดไป</p>
-            </div>
-            <div className="p-4 flex-1 flex flex-col justify-between text-sm space-y-2.5">
-              <div className="space-y-2">
-                <div className="flex justify-between items-center text-slate-600">
-                  <span>ยอดยกมา</span>
-                  <span className="font-bold text-slate-800">{fmt(advanceBox.broughtForward)}</span>
-                </div>
-
-                {/* แถวสรุปยอดรวมรับ-ใช้วันนี้ (คลิกเพื่อกางดู +รับ / -ใช้ และรายชื่อห้อง) */}
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setShowAdvanceChangeDetails((prev) => !prev)}
-                    className="w-full py-2 px-2.5 rounded-xl bg-sky-50/80 hover:bg-sky-100/80 border border-sky-200 flex justify-between items-center transition-colors text-left"
-                  >
-                    <span className="font-bold text-sky-950 text-xs flex items-center gap-1">
-                      <span>{showAdvanceChangeDetails ? "▾" : "▸"}</span>
-                      <span>ยอดรวมรับ-ใช้วันนี้</span>
-                      <span className="text-[10px] font-semibold text-sky-600 underline">
-                        (คลิกดู)
-                      </span>
-                    </span>
-                    <span
-                      className={`font-black text-sm ${
-                        netAdvanceToday > 0
-                          ? "text-emerald-700"
-                          : netAdvanceToday < 0
-                          ? "text-rose-600"
-                          : "text-slate-700"
-                      }`}
-                    >
-                      {fmtSigned(netAdvanceToday)}
-                    </span>
-                  </button>
-
-                  {showAdvanceChangeDetails && (
-                    <div className="mt-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5 text-xs">
-                      <div className="flex justify-between text-emerald-700">
-                        <span>+ ยอดที่รับเพิ่มวันนี้</span>
-                        <span className="font-bold">+{fmt(advanceBox.addedToday)}</span>
-                      </div>
-                      <div className="flex justify-between text-rose-600">
-                        <span>- ยอดที่ใช้ไปวันนี้ (ตัดค่าห้อง/บริการ)</span>
-                        <span className="font-bold">-{fmt(advanceBox.usedToday)}</span>
-                      </div>
-
-                      <div className="pt-1.5 border-t border-slate-200">
-                        <button
-                          type="button"
-                          onClick={() => setShowAdvanceDetails((prev) => !prev)}
-                          className="w-full py-1 px-2 rounded-lg bg-white hover:bg-sky-50 text-sky-800 border border-sky-200 text-[11px] font-bold flex items-center justify-between transition-colors"
-                        >
-                          <span>🔍 ดูรายชื่อห้อง ({advanceBreakdown.length} ห้อง)</span>
-                          <span>{showAdvanceDetails ? "▲ ซ่อนรายชื่อ" : "▼ แสดงรายชื่อ"}</span>
-                        </button>
-
-                        {showAdvanceDetails && (
-                          <div className="mt-2 space-y-1.5 max-h-56 overflow-y-auto pr-1">
-                            {advanceBreakdown.length === 0 ? (
-                              <div className="text-[11px] text-slate-400 text-center py-2 bg-white rounded-lg">
-                                ไม่มีรายการจ่ายล่วงหน้าในวันนี้
-                              </div>
-                            ) : (
-                              advanceBreakdown.map((item) => (
-                                <div
-                                  key={item.bookingId}
-                                  className="p-2 rounded-lg bg-white border border-slate-200 text-[11px] space-y-1"
-                                >
-                                  <div className="flex justify-between items-center font-bold text-slate-800">
-                                    <span>
-                                      ห้อง {item.roomNo} • {item.guestName}
-                                    </span>
-                                    <span className="text-sky-700 font-black">
-                                      ยกไป {fmt(item.carriedForward)}
-                                    </span>
-                                  </div>
-                                  <div className="grid grid-cols-3 gap-1 text-[10px] text-slate-600">
-                                    <span>ยกมา: {fmt(item.broughtForward)}</span>
-                                    <span className="text-emerald-700">+เพิ่ม: {fmt(item.addedToday)}</span>
-                                    <span className="text-rose-600">-ใช้ไป: {fmt(item.usedToday)}</span>
-                                  </div>
-                                  {item.note && (
-                                    <div className="text-[10px] text-slate-500 italic">{item.note}</div>
-                                  )}
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="pt-2.5 border-t-2 border-slate-100 flex justify-between items-center font-black text-slate-900">
-                <span>ยอดคงเหลือยกไป</span>
-                <span className="text-base text-sky-700">{fmt(advanceBox.carriedForward)}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* กล่องที่ 2: รับจอง (Reservation Deposits - ลูกค้าจองล่วงหน้ายังไม่เช็คอิน) */}
-          <div className="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
-            <div className="px-4 py-3 bg-purple-800 text-white">
-              <h3 className="font-black text-sm">📅 เงินรับจองล่วงหน้า</h3>
-              <p className="text-[11px] text-purple-200">ลูกค้าโอนจองล่วงหน้า ยังไม่เช็คอินเข้าพัก</p>
-            </div>
-            <div className="p-4 flex-1 flex flex-col justify-between text-sm space-y-2.5">
-              <div className="space-y-2">
-                <div className="flex justify-between items-center text-slate-600">
-                  <span>ยอดยกมา</span>
-                  <span className="font-bold text-slate-800">{fmt(reservationBox.broughtForward)}</span>
-                </div>
-
-                {/* แถวสรุปยอดรวมรับ-ใช้วันนี้ (คลิกเพื่อกางดู +รับจอง / -ใช้ไป และรายชื่อห้อง) */}
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setShowReservationChangeDetails((prev) => !prev)}
-                    className="w-full py-2 px-2.5 rounded-xl bg-purple-50/80 hover:bg-purple-100/80 border border-purple-200 flex justify-between items-center transition-colors text-left"
-                  >
-                    <span className="font-bold text-purple-950 text-xs flex items-center gap-1">
-                      <span>{showReservationChangeDetails ? "▾" : "▸"}</span>
-                      <span>ยอดรวมรับ-ใช้วันนี้</span>
-                      <span className="text-[10px] font-semibold text-purple-600 underline">
-                        (คลิกดู)
-                      </span>
-                    </span>
-                    <span
-                      className={`font-black text-sm ${
-                        netReservationToday > 0
-                          ? "text-emerald-700"
-                          : netReservationToday < 0
-                          ? "text-rose-600"
-                          : "text-slate-700"
-                      }`}
-                    >
-                      {fmtSigned(netReservationToday)}
-                    </span>
-                  </button>
-
-                  {showReservationChangeDetails && (
-                    <div className="mt-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5 text-xs">
-                      <div className="flex justify-between text-emerald-700">
-                        <span>+ ยอดที่รับจองเพิ่มวันนี้</span>
-                        <span className="font-bold">+{fmt(reservationBox.addedToday)}</span>
-                      </div>
-                      <div className="flex justify-between text-rose-600">
-                        <span>- ยอดที่ใช้ไปวันนี้ (เข้าพักวันนี้)</span>
-                        <span className="font-bold">-{fmt(reservationBox.usedToday)}</span>
-                      </div>
-
-                      <div className="pt-1.5 border-t border-slate-200">
-                        <button
-                          type="button"
-                          onClick={() => setShowReservationDetails((prev) => !prev)}
-                          className="w-full py-1 px-2 rounded-lg bg-white hover:bg-purple-50 text-purple-800 border border-purple-200 text-[11px] font-bold flex items-center justify-between transition-colors"
-                        >
-                          <span>🔍 ดูรายชื่อห้อง ({reservationBreakdown.length} ห้อง)</span>
-                          <span>{showReservationDetails ? "▲ ซ่อนรายชื่อ" : "▼ แสดงรายชื่อ"}</span>
-                        </button>
-
-                        {showReservationDetails && (
-                          <div className="mt-2 space-y-1.5 max-h-56 overflow-y-auto pr-1">
-                            {reservationBreakdown.length === 0 ? (
-                              <div className="text-[11px] text-slate-400 text-center py-2 bg-white rounded-lg">
-                                ไม่มีรายการเงินรับจองล่วงหน้าในวันนี้
-                              </div>
-                            ) : (
-                              reservationBreakdown.map((item) => (
-                                <div
-                                  key={item.bookingId}
-                                  className="p-2 rounded-lg bg-white border border-slate-200 text-[11px] space-y-1"
-                                >
-                                  <div className="flex justify-between items-center font-bold text-slate-800">
-                                    <span>
-                                      ห้อง {item.roomNo} • {item.guestName}
-                                    </span>
-                                    <span className="text-purple-700 font-black">
-                                      ยกไป {fmt(item.carriedForward)}
-                                    </span>
-                                  </div>
-                                  <div className="grid grid-cols-3 gap-1 text-[10px] text-slate-600">
-                                    <span>ยกมา: {fmt(item.broughtForward)}</span>
-                                    <span className="text-emerald-700">+เพิ่ม: {fmt(item.addedToday)}</span>
-                                    <span className="text-rose-600">-ใช้ไป: {fmt(item.usedToday)}</span>
-                                  </div>
-                                  {item.note && (
-                                    <div className="text-[10px] text-slate-500 italic">{item.note}</div>
-                                  )}
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="pt-2.5 border-t-2 border-slate-100 flex justify-between items-center font-black text-slate-900">
-                <span>ยอดคงเหลือยกไป</span>
-                <span className="text-base text-purple-700">{fmt(reservationBox.carriedForward)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ==================== แถบสรุปความสมดุล (Balance) ด้านล่าง ==================== */}
-      <div className="bg-slate-900 text-white p-5 rounded-2xl shadow-md border-t-4 border-indigo-500 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-black text-sm tracking-wide">⚖️ ตรวจสอบความสมดุล: รายได้ (+) + รับชำระ (−) + จ่ายล่วงหน้า (±) + รับจอง (±) = 0</h3>
-          <span
-            className={`text-xs font-black px-3 py-1 rounded-full ${
-              isBalanced ? "bg-emerald-900/70 text-emerald-300" : "bg-amber-900/70 text-amber-300"
-            }`}
-          >
-            {isBalanced ? "✅ สมดุล ยอดตรงกัน" : `⚠️ ไม่สมดุล ต่าง ${fmtSigned(balanceTotal)}`}
-          </span>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <div className="bg-slate-800/90 p-3 rounded-xl border border-slate-700">
-            <div className="text-[11px] text-slate-400 font-bold">รายได้สุทธิ (ฝั่งซ้าย)</div>
-            <div className="text-xl font-black text-indigo-300 mt-0.5">{fmtSigned(netTotalRevenue)}</div>
-          </div>
-          <div className="bg-slate-800/90 p-3 rounded-xl border border-slate-700">
-            <div className="text-[11px] text-slate-400 font-bold">รับชำระสุทธิ (ฝั่งกลาง)</div>
-            <div className="text-xl font-black text-emerald-400 mt-0.5">{fmtSigned(netPaymentSide)}</div>
-          </div>
-          <div className="bg-slate-800/90 p-3 rounded-xl border border-slate-700">
-            <div className="text-[11px] text-slate-400 font-bold">จ่ายล่วงหน้าวันนี้ (+รับ −ใช้)</div>
-            <div className="text-xl font-black text-sky-300 mt-0.5">{fmtSigned(netAdvanceToday)}</div>
-          </div>
-          <div className="bg-slate-800/90 p-3 rounded-xl border border-slate-700">
-            <div className="text-[11px] text-slate-400 font-bold">รับจองวันนี้ (+รับ −ใช้)</div>
-            <div className="text-xl font-black text-purple-300 mt-0.5">{fmtSigned(netReservationToday)}</div>
-          </div>
-          <div
-            className={`p-3 rounded-xl border ${
-              isBalanced ? "bg-emerald-950/60 border-emerald-700" : "bg-amber-950/60 border-amber-600"
-            }`}
-          >
-            <div className="text-[11px] text-slate-300 font-bold">ผลรวมทุกฝั่ง (ต้องเท่ากับ 0)</div>
-            <div className={`text-xl font-black mt-0.5 ${isBalanced ? "text-emerald-400" : "text-amber-300"}`}>
-              {fmtSigned(isBalanced ? 0 : balanceTotal)}
-            </div>
-          </div>
-        </div>
-        {(Math.abs(receivableChange) >= 0.5 || receivableBox.end >= 0.5 || receivableBreakdown.length > 0) && (
-          <div className="bg-slate-800/90 border border-amber-500/40 rounded-xl overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setShowReceivableDetails((prev) => !prev)}
-              className="w-full text-left px-3.5 py-2.5 hover:bg-slate-800 transition-colors flex flex-wrap items-center justify-between gap-2 cursor-pointer"
-            >
-              <div className="text-xs text-amber-200 flex items-center gap-1.5 flex-wrap">
-                <span>ℹ️</span>
-                <span>
-                  {Math.abs(receivableChange) >= 0.5 ? (
-                    <>
-                      มียอดค้างชำระ (ลูกหนี้) {receivableChange > 0 ? "เพิ่มขึ้น" : "ลดลง"}{" "}
-                      <b className="text-amber-300">{fmt(Math.abs(receivableChange))}</b> วันนี้ (คงเหลือค้างชำระรวม{" "}
-                      <b className="text-rose-300">{fmt(receivableBox.end)}</b>) — นำมาปรับในผลรวมแล้ว
-                    </>
-                  ) : (
-                    <>
-                      มียอดลูกหนี้ค้างชำระคงเหลือสะสม <b className="text-rose-300">{fmt(receivableBox.end)}</b>{" "}
-                      (ไม่เปลี่ยนแปลงในวันนี้)
-                    </>
-                  )}
-                </span>
-                {receivableBreakdown.length > 0 && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-200 font-black text-[11px]">
-                    {receivableBreakdown
-                      .filter((r) => r.unpaidEnd >= 0.5)
-                      .map((r) => `${r.location} ห้อง ${r.roomNo} (${fmt(r.unpaidEnd)})`)
-                      .join(", ") || `${receivableBreakdown.length} ห้อง`}
-                  </span>
-                )}
-              </div>
-              <span className="text-[11px] font-black px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-200 shrink-0">
-                {showReceivableDetails
-                  ? "▲ ซ่อนรายละเอียดห้องค้างชำระ"
-                  : `🔍 กดดูห้องและรายการค่าใช้จ่ายที่ค้างชำระ (${receivableBreakdown.length} ห้อง)`}
-              </span>
-            </button>
-
-            {showReceivableDetails && (
-              <div className="p-3.5 bg-slate-950/80 border-t border-slate-700 space-y-2.5 text-xs">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-300 pb-2 border-b border-slate-800">
-                  <span className="font-bold text-amber-300">
-                    📋 รายละเอียดห้องที่มียอดค้างชำระ (ลูกหนี้) — ใช้ตรวจสอบและแจ้งเรียกเก็บเงินจากลูกค้าได้ทันที
-                  </span>
-                  <span>
-                    ค้างยกมาต้นวัน: <b>{fmt(receivableBox.start)}</b> • เปลี่ยนแปลงวันนี้:{" "}
-                    <b className={receivableChange > 0 ? "text-rose-400" : "text-emerald-400"}>
-                      {fmtSigned(receivableChange)}
-                    </b>{" "}
-                    • คงเหลือค้างชำระรวม: <b className="text-rose-300 text-xs">{fmt(receivableBox.end)}</b>
-                  </span>
-                </div>
-
-                {receivableBreakdown.length === 0 ? (
-                  <div className="text-center py-3 text-slate-400">ไม่มีรายการห้องที่ค้างชำระ</div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {receivableBreakdown.map((item) => {
-                      const totalBilledWithDeposit = item.totalCharges + item.depositPlaced;
-                      const statusLabel =
-                        item.status === "checked_in"
-                          ? "🟢 กำลังเข้าพัก"
-                          : item.status === "checked_out"
-                          ? "⚪ เช็คเอาท์แล้ว"
-                          : item.status === "reserved"
-                          ? "🟣 จองล่วงหน้า"
-                          : item.status;
-                      return (
-                        <div
-                          key={item.bookingId}
-                          className="rounded-xl bg-slate-900 border border-slate-700 p-3 space-y-2"
-                        >
-                          <div className="flex items-start justify-between gap-2 border-b border-slate-800 pb-2">
-                            <div>
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="px-2 py-0.5 rounded-md bg-indigo-600 text-white font-black text-xs">
-                                  📍 {item.location} • ห้อง {item.roomNo}
-                                </span>
-                                <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-200 font-bold text-[11px]">
-                                  {statusLabel}
-                                </span>
-                              </div>
-                              <div className="text-[11px] text-slate-300 mt-1">
-                                ลูกค้า: <b className="text-white">{item.guestName}</b>
-                                {item.guestPhone ? ` (${item.guestPhone})` : ""}
-                                {item.staffName ? ` • พนักงาน: ${item.staffName}` : ""}
-                                {item.checkInDateStr ? ` • เข้าพัก: ${item.checkInDateStr}` : ""}
-                              </div>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <div className="text-[10px] text-slate-400 font-bold">ยอดค้างชำระคงเหลือ</div>
-                              <div
-                                className={`text-base font-black ${
-                                  item.unpaidEnd > 0 ? "text-rose-400" : "text-emerald-400"
-                                }`}
-                              >
-                                {item.unpaidEnd > 0 ? fmt(item.unpaidEnd) : "ชำระครบแล้ว (฿0)"}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* แจกแจงรายการค่าใช้จ่ายที่เรียกเก็บ vs รายการที่ชำระแล้ว */}
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                            <div className="bg-slate-800/70 border border-slate-700/80 rounded-lg p-2 space-y-1">
-                              <div className="flex justify-between items-center font-black text-amber-300 border-b border-slate-700 pb-1">
-                                <span>🧾 รายการที่เรียกเก็บ</span>
-                                <span>{fmt(totalBilledWithDeposit)}</span>
-                              </div>
-                              {item.chargeItems.length === 0 ? (
-                                <div className="text-slate-400 text-[10px]">ไม่มีรายการเรียกเก็บ</div>
-                              ) : (
-                                item.chargeItems.map((ch, idx) => (
-                                  <div
-                                    key={idx}
-                                    className={`flex justify-between items-center gap-1 ${
-                                      ch.isDeposit ? "text-amber-200" : "text-slate-200"
-                                    }`}
-                                  >
-                                    <span className="truncate">{ch.label}</span>
-                                    <span className="font-bold shrink-0">{fmt(ch.amount)}</span>
-                                  </div>
-                                ))
-                              )}
-                            </div>
-
-                            <div className="bg-slate-800/70 border border-slate-700/80 rounded-lg p-2 space-y-1">
-                              <div className="flex justify-between items-center font-black text-emerald-300 border-b border-slate-700 pb-1">
-                                <span>💵 ชำระมาแล้วรวม</span>
-                                <span>{fmt(item.totalPaid)}</span>
-                              </div>
-                              {item.paymentItems.length === 0 ? (
-                                <div className="text-rose-300 text-[10px] font-semibold">
-                                  ยังไม่มีรายการรับชำระเงิน (฿0)
-                                </div>
-                              ) : (
-                                item.paymentItems.map((pm, idx) => (
-                                  <div key={idx} className="flex justify-between items-center gap-1 text-slate-200">
-                                    <span className="truncate">{pm.label}</span>
-                                    <span className="font-bold text-emerald-300 shrink-0">{fmt(pm.amount)}</span>
-                                  </div>
-                                ))
-                              )}
-                              {item.depositPlaced > 0 && (
-                                <div className="text-[10px] text-amber-300/90 pt-1 border-t border-slate-700/70">
-                                  * หักกันเป็นเงินมัดจำกุญแจ {fmt(item.depositPlaced)} เหลือตัดค่าห้อง/บริการ{" "}
-                                  <b>{fmt(Math.max(0, item.totalPaid - item.depositPlaced))}</b>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* แถบสรุปการเคลื่อนไหววันนี้ */}
-                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[10px] text-slate-300 border-t border-slate-800">
-                            <span>
-                              ค้างยกมาต้นวัน: <b>{fmt(item.unpaidStart)}</b> • ค้างเพิ่มวันนี้:{" "}
-                              <b className="text-rose-300">+{fmt(item.unpaidAddedToday)}</b> • รับชำระหนี้วันนี้:{" "}
-                              <b className="text-emerald-300">-{fmt(item.unpaidPaidToday)}</b>
-                            </span>
-                            {item.unpaidEnd > 0 && (
-                              <span className="px-2 py-0.5 rounded bg-rose-950/90 border border-rose-700 text-rose-200 font-black">
-                                ⚠️ ต้องเรียกเก็บเพิ่มจากลูกค้า {fmt(item.unpaidEnd)}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      {/* ================= รายงานการเงิน: ตารางสรุปการเงินรวม 1–13 และการบริหารเงินสดผู้จัดการ (Report 2 Layout) ================= */}
+      <FinancialReportType2View
+        selectedLocation={selectedLocation}
+        reportDateLabel={reportDateLabel}
+        activeReport={activeReport}
+        isDayClosed={isDayClosed}
+        dayShifts={dayShifts}
+        handovers={handovers}
+        dayExpenses={dayExpenses}
+        shiftDrawers={shiftDrawers}
+        fmt={fmt}
+        fmtSigned={fmtSigned}
+        onOpenTransferModal={() => setShowTransferCardModal(true)}
+        onPrintReport={handlePrintLocationFinancialReport}
+      />
 
       {/* ==================== กล่องเงินสดสำหรับเซ็นรับ-เก็บเงินประจำวัน ==================== */}
       <div className="bg-white border-2 border-emerald-300 rounded-2xl shadow-sm overflow-hidden">
