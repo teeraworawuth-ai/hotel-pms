@@ -1321,19 +1321,29 @@ export default function FinancialReportType2View({
         }
         @page {
           size: A4 portrait;
-          margin: 4mm 4mm;
+          margin: 2.5mm 3.5mm;
         }
         @media print {
           nav, header, .no-print {
             display: none !important;
           }
-          body, main {
+          html, body, main {
             background: #ffffff !important;
             padding: 0 !important;
             margin: 0 !important;
             max-width: 100% !important;
+            height: auto !important;
+            min-height: 0 !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
+          }
+          #audit-page-root, #audit-page-content, #daily-report-root, #financial-report-type2-root {
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          .space-y-6 > :not(:first-child),
+          .space-y-4 > :not(:first-child) {
+            margin-top: 0 !important;
           }
           #a4-financial-report-sheet {
             box-shadow: none !important;
@@ -1343,19 +1353,61 @@ export default function FinancialReportType2View({
             max-width: 100% !important;
             width: 100% !important;
           }
+          #a4-financial-report-sheet > div:first-child {
+            padding: 2px 3px !important;
+            margin-bottom: 2px !important;
+          }
+          #a4-financial-report-sheet > div:first-child > div:first-child {
+            padding-bottom: 2px !important;
+            margin-bottom: 2px !important;
+          }
+          #a4-financial-report-sheet #summary-type-2 table {
+            line-height: 1.1 !important;
+            font-size: 8.1px !important;
+          }
+          #a4-financial-report-sheet #summary-type-2 th,
+          #a4-financial-report-sheet #summary-type-2 td {
+            padding-top: 1px !important;
+            padding-bottom: 1px !important;
+          }
+          #a4-financial-report-sheet #summary-type-2 div[class*="h-[23px]"] {
+            height: 17px !important;
+          }
+          #a4-financial-report-sheet > div:first-child > div:last-child {
+            margin-top: 2px !important;
+            padding: 2px !important;
+          }
           #a4-financial-report-sheet table.audit-table {
             page-break-inside: auto !important;
           }
+          #a4-financial-report-sheet table.audit-table th,
+          #a4-financial-report-sheet table.audit-table td {
+            padding: 0.3px 1.2px !important;
+            font-size: 7.4px !important;
+            line-height: 1.03 !important;
+          }
           #a4-financial-report-sheet table.audit-table thead {
             display: table-header-group !important;
+          }
+          #a4-financial-report-sheet table.audit-table thead th {
+            padding: 1.5px 1px !important;
           }
           #a4-financial-report-sheet table.audit-table tfoot {
             display: table-row-group !important;
             page-break-inside: avoid !important;
           }
+          #a4-financial-report-sheet table.audit-table tfoot td {
+            padding: 1.5px 1.5px !important;
+          }
           #a4-financial-report-sheet table.audit-table tr {
             page-break-inside: avoid !important;
             page-break-after: auto !important;
+          }
+          #a4-financial-report-sheet table.audit-table tr.section-row {
+            height: 15px !important;
+          }
+          #a4-financial-report-sheet table.audit-table tfoot tr.section-row {
+            height: 19px !important;
           }
           #a4-financial-report-sheet tr.section-row {
             break-before: avoid !important;

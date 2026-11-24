@@ -38,7 +38,7 @@ export default function RootLayout({
               <ShiftLockBanner />
 
               {/* Main Content */}
-              <main className="flex-1 w-full max-w-7xl mx-auto px-2 py-3 sm:p-6 lg:p-8">
+              <main className="flex-1 w-full max-w-7xl mx-auto px-2 py-3 sm:p-6 lg:p-8 print:p-0 print:m-0 print:max-w-full">
                 {children}
               </main>
             </ShiftProvider>

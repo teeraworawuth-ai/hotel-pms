@@ -1911,7 +1911,7 @@ export default function DailyReport({
     dataMode === "prototype" ? PROTOTYPE_TRANSFER_CARD_ITEMS : transferCardItems;
 
   return (
-    <div className="space-y-4">
+    <div id="daily-report-root" className="space-y-4 print:space-y-0 print:m-0">
       <FinancialReportType2View
         selectedLocation={selectedLocation}
         onSelectLocation={setSelectedLocation}

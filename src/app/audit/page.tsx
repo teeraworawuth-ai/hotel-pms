@@ -38,7 +38,7 @@ export default function AuditPage() {
   });
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div id="audit-page-root" className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20 print:space-y-0 print:pb-0 print:m-0">
       <header className="no-print flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-800 tracking-tight">รายงานประจำวัน &amp; ตรวจสอบ (Daily Report &amp; Audit)</h1>
@@ -133,7 +133,7 @@ export default function AuditPage() {
       )}
 
       {/* Content */}
-      <div className="mt-6">
+      <div id="audit-page-content" className="mt-6 print:mt-0">
         {activeTab === "daily" && <DailyReport dateOffset={dateOffset} onChangeDateOffset={setDateOffset} />}
         {activeTab === "guest" && <GuestReport dateOffset={dateOffset} />}
         {activeTab === "anomaly" && <HousekeepingOvertime dateOffset={dateOffset} />}

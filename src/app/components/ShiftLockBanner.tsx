@@ -9,7 +9,7 @@ export default function ShiftLockBanner() {
 
   if (shiftLock.tempUnlocked) {
     return (
-      <div className="w-full bg-indigo-700 text-white text-xs sm:text-sm font-bold px-3 py-1.5 flex flex-wrap items-center justify-center gap-2 shadow-sm">
+      <div className="no-print print:hidden w-full bg-indigo-700 text-white text-xs sm:text-sm font-bold px-3 py-1.5 flex flex-wrap items-center justify-center gap-2 shadow-sm">
         <span>
           🔓 ปลดล็อกชั่วคราวอยู่ (เหลือเวลา <b>{shiftLock.tempUnlockRemainingMin} นาที</b>) — ทำรายการเช็คอิน/รับเงินของกะ{" "}
           {activeShift.staff_name} ได้ตามปกติ เมื่อเสร็จแล้วกรุณากด “ปิดกะ”
@@ -36,7 +36,7 @@ export default function ShiftLockBanner() {
 
   if (shiftLock.locked) {
     return (
-      <div className="w-full bg-rose-600 text-white text-xs sm:text-sm font-bold px-3 py-2 flex flex-wrap items-center justify-center gap-2.5 shadow-sm">
+      <div className="no-print print:hidden w-full bg-rose-600 text-white text-xs sm:text-sm font-bold px-3 py-2 flex flex-wrap items-center justify-center gap-2.5 shadow-sm">
         <span>
           🔒 เลยเวลาตัดรอบวันใหม่ (06:30 น.) — กะของ {activeShift.staff_name} ถูกล็อกการทำรายการชั่วคราวก่อนปิดกะ (Close Day)
         </span>
@@ -51,7 +51,7 @@ export default function ShiftLockBanner() {
     );
   }
   return (
-    <div className="w-full bg-amber-100 text-amber-900 border-b border-amber-200 text-xs sm:text-sm font-bold px-3 py-1.5 text-center">
+    <div className="no-print print:hidden w-full bg-amber-100 text-amber-900 border-b border-amber-200 text-xs sm:text-sm font-bold px-3 py-1.5 text-center">
       ⏰ ถึงเวลาปิดกะสุดท้ายของวันแล้ว (ตั้งแต่ 05:30 น.) — ระบบจะล็อกการทำรายการเวลา 06:30 น. กรุณาปิดกะให้ทันก่อน 06:45 น.
     </div>
   );
