@@ -2530,55 +2530,61 @@ export default function FinancialReportType2View({
             </table>
           </div>
 
-          {/* ================= ส่วนกระทบยอดเงินสดสะสมผู้จัดการ (ซ้าย) + รายการจ่ายค่าใช้จ่ายเงินสดวันนี้ (ขวา) : จัดอยู่แถวแนวเดียวกัน ================= */}
+          {/* ================= ส่วนกระทบยอดเงินสดสะสมผู้จัดการ (ซ้าย 1/3) + รายการจ่ายค่าใช้จ่ายเงินสดวันนี้ (ขวา 2/3) : จัดอยู่แถวแนวเดียวกัน ================= */}
           <div className="mt-1 bg-white border border-slate-300 rounded p-1 shadow-xs text-[8px]">
             <div className="flex gap-1 items-stretch">
-              {/* ฝั่งซ้าย: 5 กล่องสมการเงินสดสะสมผู้จัดการ (ไม่มีข้อความอธิบายด้านล่าง) */}
+              {/* ฝั่งซ้าย: 5 กล่องสมการเงินสดสะสมผู้จัดการ (ขนาดความกว้าง ~1/3 ของแถว) */}
               <div
-                className="bg-slate-50 rounded border border-slate-200 p-0.5 flex flex-col justify-center"
-                style={{ flex: "0 0 58%" }}
+                className="bg-slate-50 rounded border border-slate-200 p-[2px] flex flex-col justify-center"
+                style={{ flex: "0 0 34%" }}
               >
-                <div className="grid grid-cols-5 gap-0.5 text-center">
-                  <div className="bg-white px-0.5 py-1 rounded border border-slate-200 flex flex-col justify-center">
-                    <div className="text-[8.2px] text-slate-600 font-bold whitespace-nowrap">1. สะสมยกมา</div>
-                    <div className="text-[12px] font-black text-slate-800 mt-0.5 whitespace-nowrap">
+                <div className="grid grid-cols-5 gap-[2px] text-center">
+                  <div className="bg-white px-[1px] py-1 min-w-0 rounded border border-slate-200 flex flex-col justify-center">
+                    <div className="text-[7.4px] leading-tight text-slate-600 font-bold whitespace-nowrap">
+                      1. ยกมา
+                    </div>
+                    <div className="text-[10.8px] font-black text-slate-800 mt-0.5 tracking-tighter leading-none whitespace-nowrap">
                       {fmtNum(mgrBrought)} ฿
                     </div>
                   </div>
-                  <div className="bg-emerald-50/70 px-0.5 py-1 rounded border border-emerald-200 flex flex-col justify-center">
-                    <div className="text-[8.2px] text-emerald-900 font-bold whitespace-nowrap">
-                      2. + รับสุทธิจากกะ
+                  <div className="bg-emerald-50/70 px-[1px] py-1 min-w-0 rounded border border-emerald-200 flex flex-col justify-center">
+                    <div className="text-[7.4px] leading-tight text-emerald-900 font-bold whitespace-nowrap">
+                      2. รับสุทธิ
                     </div>
-                    <div className="text-[12px] font-black text-emerald-700 mt-0.5 whitespace-nowrap">
+                    <div className="text-[10.8px] font-black text-emerald-700 mt-0.5 tracking-tighter leading-none whitespace-nowrap">
                       +{fmtNum(mgrNetShifts)} ฿
                     </div>
                   </div>
-                  <div className="bg-rose-50/70 px-0.5 py-1 rounded border border-rose-200 flex flex-col justify-center">
-                    <div className="text-[8.2px] text-rose-900 font-bold whitespace-nowrap">
-                      3. - ผจก.จ่ายนอกกะ
+                  <div className="bg-rose-50/70 px-[1px] py-1 min-w-0 rounded border border-rose-200 flex flex-col justify-center">
+                    <div className="text-[7.4px] leading-tight text-rose-900 font-bold whitespace-nowrap">
+                      3. จ่ายนอกกะ
                     </div>
-                    <div className="text-[12px] font-black text-rose-700 mt-0.5 whitespace-nowrap">
+                    <div className="text-[10.8px] font-black text-rose-700 mt-0.5 tracking-tighter leading-none whitespace-nowrap">
                       -{fmtNum(mgrOutExp)} ฿
                     </div>
                   </div>
-                  <div className="bg-blue-50/70 px-0.5 py-1 rounded border border-blue-200 flex flex-col justify-center">
-                    <div className="text-[8.2px] text-blue-900 font-bold whitespace-nowrap">4. - นำฝากธนาคาร</div>
-                    <div className="text-[12px] font-black text-blue-800 mt-0.5 whitespace-nowrap">
+                  <div className="bg-blue-50/70 px-[1px] py-1 min-w-0 rounded border border-blue-200 flex flex-col justify-center">
+                    <div className="text-[7.4px] leading-tight text-blue-900 font-bold whitespace-nowrap">
+                      4. ฝากเงิน
+                    </div>
+                    <div className="text-[10.8px] font-black text-blue-800 mt-0.5 tracking-tighter leading-none whitespace-nowrap">
                       -{fmtNum(mgrBankDep)} ฿
                     </div>
                   </div>
-                  <div className="bg-amber-50 px-0.5 py-1 rounded border border-amber-300 flex flex-col justify-center">
-                    <div className="text-[8.2px] text-amber-950 font-black whitespace-nowrap">5. = สะสมยกไป</div>
-                    <div className="text-[12px] font-black text-amber-900 mt-0.5 whitespace-nowrap">
+                  <div className="bg-amber-50 px-[1px] py-1 min-w-0 rounded border border-amber-300 flex flex-col justify-center">
+                    <div className="text-[7.4px] leading-tight text-amber-950 font-black whitespace-nowrap">
+                      5. ยกไป
+                    </div>
+                    <div className="text-[10.8px] font-black text-amber-900 mt-0.5 tracking-tighter leading-none whitespace-nowrap">
                       {fmtNum(mgrCarried)} ฿
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* ฝั่งขวา: รายการจ่ายค่าใช้จ่ายเงินสดวันนี้ (ลดขนาดคอลัมน์ให้อยู่แถวแนวเดียวกันกับ 5 กล่อง) */}
+              {/* ฝั่งขวา: รายการจ่ายค่าใช้จ่ายเงินสดวันนี้ (ขยายเป็น ~2/3 เพื่อรองรับข้อมูลค่าใช้จ่ายจำนวนมาก) */}
               <div
-                className="bg-rose-50/40 rounded border border-rose-200 px-1 py-0.5 flex flex-col justify-center text-[7.4px] min-w-0"
+                className="bg-rose-50/40 rounded border border-rose-200 px-1.5 py-0.5 flex flex-col justify-center text-[7.4px] min-w-0"
                 style={{ flex: "1 1 0" }}
               >
                 <div className="flex justify-between items-center font-bold text-rose-950 border-b border-rose-200 pb-0.5 whitespace-nowrap text-[8.8px]">
@@ -2615,12 +2621,12 @@ export default function FinancialReportType2View({
           <table className="audit-table">
             <thead>
               <tr>
-                <th rowSpan={2} style={{ width: "3.2%" }}>
+                <th rowSpan={2} style={{ width: "3.6%" }}>
                   #
                 </th>
                 <th
                   rowSpan={2}
-                  style={{ width: "15.7%" }}
+                  style={{ width: "15.3%" }}
                   className="bg-blue-100/70 text-blue-950 font-black border-slate-500"
                 >
                   เช็คอิน / จอง
@@ -3012,52 +3018,52 @@ export default function FinancialReportType2View({
             </tbody>
             <tfoot>
               <tr
-                className="bg-slate-900 text-white font-black text-[8.5px] section-row"
-                style={{ height: "22px" }}
+                className="bg-slate-50 text-slate-950 font-black text-[8.5px] border-t-2 border-slate-800 section-row"
+                style={{ height: "24px" }}
               >
-                <td colSpan={4} className="px-2 bg-slate-900 text-white font-bold" style={{ height: "22px" }}>
-                  <div className="flex justify-between items-center w-full text-[8.2px]">
-                    <span>ลงชื่อ..................................</span>
+                <td colSpan={4} className="px-2 bg-white text-slate-950 font-bold" style={{ height: "24px" }}>
+                  <div className="flex justify-between items-center w-full text-[8.5px] text-slate-950 font-bold">
+                    <span>ลงชื่อ</span>
                     <span>ผู้ตรวจ</span>
                   </div>
                 </td>
-                <td className="text-right bg-slate-900 text-amber-300 font-black text-[9.8px]">
+                <td className="text-right bg-slate-100 text-slate-950 font-black text-[9.8px]">
                   {fmtNum(grandTotals.roomRate)}
                 </td>
-                <td className="text-center bg-slate-900 text-slate-400">
+                <td className="text-center bg-slate-100 text-slate-800 font-black text-[9px]">
                   {grandTotals.adjust ? fmtSignedNum(grandTotals.adjust) : ""}
                 </td>
-                <td className="text-right bg-slate-900 text-amber-300 font-black text-[9.8px]">
+                <td className="text-right bg-slate-100 text-slate-950 font-black text-[9.8px]">
                   {grandTotals.extra ? fmtNum(grandTotals.extra) : ""}
                 </td>
-                <td className="text-center bg-slate-900 text-slate-400">
+                <td className="text-center bg-slate-100 text-slate-800 font-black text-[9px]">
                   {grandTotals.minibar ? fmtNum(grandTotals.minibar) : ""}
                 </td>
-                <td className="text-right bg-blue-950 text-amber-400 font-black text-[10.2px]">
+                <td className="text-right bg-blue-100 text-slate-950 font-black text-[10.2px]">
                   {fmtNum(grandTotals.totalCharge)}
                 </td>
                 <td
-                  className="text-right bg-emerald-950 text-emerald-300 font-black text-[10.2px]"
+                  className="text-right bg-emerald-100 text-emerald-950 font-black text-[10.2px]"
                   style={{ borderLeft: "1.8px solid #334155" }}
                 >
                   {fmtNum(grandTotals.cash)}
                 </td>
-                <td className="text-right bg-blue-950 text-blue-300 font-black text-[9.8px]">
+                <td className="text-right bg-blue-100 text-blue-950 font-black text-[9.8px]">
                   {fmtNum(grandTotals.transferCard)}
                 </td>
                 <td
-                  className="text-center bg-slate-900 text-rose-300 font-bold text-[9.2px]"
+                  className="text-center bg-rose-50 text-rose-800 font-black text-[9.2px]"
                   style={{ borderLeft: "2px solid #312e81" }}
                 >
                   {grandTotals.reservationCredit !== 0 ? fmtSignedNum(grandTotals.reservationCredit) : ""}
                 </td>
                 <td
-                  className="text-center bg-slate-900 text-rose-300 font-bold text-[9.2px]"
+                  className="text-center bg-rose-50 text-rose-800 font-black text-[9.2px]"
                   style={{ borderRight: "1.8px solid #334155" }}
                 >
                   {grandTotals.advanceCredit !== 0 ? fmtSignedNum(grandTotals.advanceCredit) : ""}
                 </td>
-                <td colSpan={2} className="text-center bg-slate-900 text-slate-400"></td>
+                <td colSpan={2} className="text-center bg-slate-50 text-slate-500"></td>
               </tr>
             </tfoot>
           </table>
