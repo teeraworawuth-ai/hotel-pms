@@ -1,6 +1,6 @@
 "use client";
 
-import FinancialReportType2View from "./FinancialReportType2View";
+import FinancialReportType2View, { AuditLogRowItem, ShiftSectionData } from "./FinancialReportType2View";
 
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
@@ -176,7 +176,26 @@ type LocationReportSnapshot = {
   liveRequiredTotal: number;
   crossLocCollectedForHere: TransferCardReportItem[];
   crossLocCollectedByHere: TransferCardReportItem[];
+  liveShiftSections?: ShiftSectionData[];
 };
+
+const PROTOTYPE_TRANSFER_CARD_ITEMS: TransferCardReportItem[] = [
+  { id: "pt-1", category: "transfer", bank: "SCB", amount: 360, roomNo: "103", roomLocation: "ซอย1", staffName: "เมย์", shiftLocation: "ซอย1", createdAt: "2026-11-08T11:40:00", slipTimeStr: "08/11 11:40 น.", sortTimestamp: 1, hasExplicitSlipTime: true, allocationLabel: "ชำระตอนเช็คอิน (3 ชม.)" },
+  { id: "pt-2", category: "transfer", bank: "KBANK", amount: 1000, roomNo: "106", roomLocation: "ซอย1", staffName: "เมย์", shiftLocation: "ซอย1", createdAt: "2026-11-08T12:20:00", slipTimeStr: "08/11 12:20 น.", sortTimestamp: 2, hasExplicitSlipTime: true, allocationLabel: "ค่าห้อง 800 + มัดจำ 200" },
+  { id: "pt-3", category: "credit_card", bank: "CREDIT_CARD", amount: 600, roomNo: "110", roomLocation: "ซอย1", staffName: "เมย์", shiftLocation: "ซอย1", createdAt: "2026-11-08T13:10:00", slipTimeStr: "08/11 13:10 น.", sortTimestamp: 3, hasExplicitSlipTime: true, allocationLabel: "ชำระตอนเช็คอิน" },
+  { id: "pt-4", category: "transfer", bank: "KBANK", amount: 900, roomNo: "112", roomLocation: "ซอย1", staffName: "เมย์", shiftLocation: "ซอย1", createdAt: "2026-11-08T13:55:00", slipTimeStr: "08/11 13:55 น.", sortTimestamp: 4, hasExplicitSlipTime: true, allocationLabel: "ค่าห้อง 700 + มัดจำ 200" },
+  { id: "pt-5", category: "transfer", bank: "KBANK", amount: 500, roomNo: "201", roomLocation: "ซอย1", staffName: "เมย์", shiftLocation: "ซอย1", createdAt: "2026-11-08T14:45:00", slipTimeStr: "08/11 14:45 น.", sortTimestamp: 5, hasExplicitSlipTime: true, allocationLabel: "เงินรับจองล่วงหน้า (R1)" },
+  { id: "pt-6", category: "transfer", bank: "SCB", amount: 900, roomNo: "203", roomLocation: "ซอย1", staffName: "แอน", shiftLocation: "ซอย1", createdAt: "2026-11-08T16:10:00", slipTimeStr: "08/11 16:10 น.", sortTimestamp: 6, hasExplicitSlipTime: true, allocationLabel: "ค่าห้อง 700 + มัดจำ 200" },
+  { id: "pt-7", category: "transfer", bank: "KBANK", amount: 900, roomNo: "113", roomLocation: "ซอย1", staffName: "แอน", shiftLocation: "ซอย1", createdAt: "2026-11-08T16:50:00", slipTimeStr: "08/11 16:50 น.", sortTimestamp: 7, hasExplicitSlipTime: true, allocationLabel: "ค่าห้อง 700 + มัดจำ 200" },
+  { id: "pt-8", category: "transfer", bank: "SCB", amount: 900, roomNo: "118", roomLocation: "ซอย1", staffName: "แอน", shiftLocation: "ซอย1", createdAt: "2026-11-08T18:00:00", slipTimeStr: "08/11 18:00 น.", sortTimestamp: 8, hasExplicitSlipTime: true, allocationLabel: "ค่าห้อง 700 + มัดจำ 200" },
+  { id: "pt-9", category: "credit_card", bank: "CREDIT_CARD", amount: 700, roomNo: "120", roomLocation: "ซอย1", staffName: "แอน", shiftLocation: "ซอย1", createdAt: "2026-11-08T18:45:00", slipTimeStr: "08/11 18:45 น.", sortTimestamp: 9, hasExplicitSlipTime: true, allocationLabel: "ชำระตอนเช็คอิน" },
+  { id: "pt-10", category: "transfer", bank: "KBANK", amount: 800, roomNo: "206", roomLocation: "ซอย1", staffName: "แอน", shiftLocation: "ซอย1", createdAt: "2026-11-08T19:25:00", slipTimeStr: "08/11 19:25 น.", sortTimestamp: 10, hasExplicitSlipTime: true, allocationLabel: "ค่าห้อง 600 + มัดจำ 200" },
+  { id: "pt-11", category: "transfer", bank: "SCB", amount: 880, roomNo: "208", roomLocation: "ซอย1", staffName: "แอน", shiftLocation: "ซอย1", createdAt: "2026-11-08T20:10:00", slipTimeStr: "08/11 20:10 น.", sortTimestamp: 11, hasExplicitSlipTime: true, allocationLabel: "ค่าห้อง 600 + ผ้าเช็ดตัว 80 + มัดจำ 200" },
+  { id: "pt-12", category: "transfer", bank: "KBANK", amount: 900, roomNo: "211", roomLocation: "ซอย1", staffName: "แอน", shiftLocation: "ซอย1", createdAt: "2026-11-08T21:10:00", slipTimeStr: "08/11 21:10 น.", sortTimestamp: 12, hasExplicitSlipTime: true, allocationLabel: "ค่าห้อง 700 + มัดจำ 200" },
+  { id: "pt-13", category: "transfer", bank: "SCB", amount: 300, roomNo: "208", roomLocation: "ซอย1", staffName: "แอน", shiftLocation: "ซอย1", createdAt: "2026-11-08T22:52:00", slipTimeStr: "08/11 22:52 น.", sortTimestamp: 13, hasExplicitSlipTime: true, allocationLabel: "เงินรับจองล่วงหน้า (R2-1)" },
+  { id: "pt-14", category: "transfer", bank: "SCB", amount: 300, roomNo: "209", roomLocation: "ซอย1", staffName: "แอน", shiftLocation: "ซอย1", createdAt: "2026-11-08T22:52:30", slipTimeStr: "08/11 22:52 น.", sortTimestamp: 14, hasExplicitSlipTime: true, allocationLabel: "เงินรับจองล่วงหน้า (R2-2)" },
+  { id: "pt-15", category: "transfer", bank: "KBANK", amount: 2300, roomNo: "219", roomLocation: "ซอย1", staffName: "บี", shiftLocation: "ซอย1", createdAt: "2026-11-08T23:30:00", slipTimeStr: "08/11 23:30 น.", sortTimestamp: 15, hasExplicitSlipTime: true, allocationLabel: "โอนชำระกะดึก" },
+];
 
 export default function DailyReport({
   dateOffset,
@@ -196,7 +215,15 @@ export default function DailyReport({
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Multi-location filter & Accounting Transfer/Card Report Modal
-  const [selectedLocation, setSelectedLocation] = useState<string>("ALL");
+  const [selectedLocation, setSelectedLocation] = useState<string>("ซอย1");
+  const [dataMode, setDataMode] = useState<"prototype" | "live">("prototype");
+  const prevDateOffsetRef = useRef<number>(dateOffset);
+  useEffect(() => {
+    if (prevDateOffsetRef.current !== dateOffset) {
+      prevDateOffsetRef.current = dateOffset;
+      setDataMode("live");
+    }
+  }, [dateOffset]);
   const [availableLocations, setAvailableLocations] = useState<string[]>(["ซอย1", "ซอย2", "ซามีญ่า"]);
   const [reportsByLocation, setReportsByLocation] = useState<Record<string, LocationReportSnapshot>>({});
   const [transferCardItems, setTransferCardItems] = useState<TransferCardReportItem[]>([]);
@@ -1364,6 +1391,219 @@ export default function DailyReport({
                 (it) => it.shiftLocation === locFilter && it.roomLocation !== locFilter
               );
 
+        // สร้างข้อมูลตารางบันทึกประจำวัน 15 คอลัมน์ (Live Shift Sections 1-3)
+        const fmtHmShort = (iso?: string | null) => {
+          if (!iso) return "";
+          const d = new Date(iso);
+          if (isNaN(d.getTime())) return "";
+          return d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+        };
+
+        const getSlotForShiftOrTime = (shId?: string | null, isoTime?: string | null): 0 | 1 | 2 => {
+          if (shId) {
+            const idx = locDayShifts.findIndex((s) => s.id === shId);
+            if (idx === 0) return 0;
+            if (idx === 1) return 1;
+            if (idx >= 2) return 2;
+          }
+          if (isoTime) {
+            const hr = new Date(isoTime).getHours();
+            if (hr >= 6 && hr < 15) return 0;
+            if (hr >= 15 && hr < 23) return 1;
+            return 2;
+          }
+          return 0;
+        };
+
+        const slotRows: [AuditLogRowItem[], AuditLogRowItem[], AuditLogRowItem[]] = [[], [], []];
+        const slotTotals = [
+          { roomRate: 0, adjust: 0, extra: 0, minibar: 0, totalCharge: 0, cash: 0, transferCard: 0, reservationCredit: 0, advanceCredit: 0, checkins: 0, anomalies: 0, bookings: 0 },
+          { roomRate: 0, adjust: 0, extra: 0, minibar: 0, totalCharge: 0, cash: 0, transferCard: 0, reservationCredit: 0, advanceCredit: 0, checkins: 0, anomalies: 0, bookings: 0 },
+          { roomRate: 0, adjust: 0, extra: 0, minibar: 0, totalCharge: 0, cash: 0, transferCard: 0, reservationCredit: 0, advanceCredit: 0, checkins: 0, anomalies: 0, bookings: 0 },
+        ];
+
+        const activeBookingIdsToday = new Set<string>();
+        allDailyRates.forEach((dr) => {
+          if (dr.target_date === reportDateStr && bookingMap[dr.booking_id] && matchBooking(bookingMap[dr.booking_id])) {
+            activeBookingIdsToday.add(dr.booking_id);
+          }
+        });
+        txsIn0645Window.forEach((tx) => {
+          if (!tx.category.includes("(Voided)") && tx.booking_id && bookingMap[tx.booking_id] && matchBooking(bookingMap[tx.booking_id])) {
+            activeBookingIdsToday.add(tx.booking_id);
+          }
+        });
+
+        let seqCheckinNo = 1;
+        let seqBookingNo = 1;
+
+        Array.from(activeBookingIdsToday)
+          .map((id) => bookingMap[id])
+          .filter((b): b is BookingRow => Boolean(b && b.status !== "cancelled"))
+          .sort((a, b) => {
+            const ta = new Date(a.actual_check_in_time || a.check_in_time).getTime();
+            const tb = new Date(b.actual_check_in_time || b.check_in_time).getTime();
+            return ta - tb;
+          })
+          .forEach((b) => {
+            const bTxsToday = txsIn0645Window.filter(
+              (tx) => tx.booking_id === b.id && !tx.category.includes("(Voided)")
+            );
+            const firstTx = bTxsToday[0];
+            const slot = getSlotForShiftOrTime(firstTx?.shift_id, firstTx?.created_at || b.actual_check_in_time || b.check_in_time);
+            const rm = roomMap[b.room_id];
+            const roomNo = rm?.room_no || "-";
+            const staffName = firstTx?.staff_name || locDayShifts[slot]?.staff_name || b.staff_name || "-";
+
+            let cashPaid = 0;
+            let keyDepPlaced = 0;
+            let transferPaid = 0;
+            let bankPrefix = "";
+            let tcColor: "purple" | "emerald" | "blue" | "slate" = "slate";
+            let roomChargeTxAmt = 0;
+            let extraAmt = 0;
+            let extraLabel = "";
+
+            bTxsToday.forEach((tx) => {
+              const amt = Number(tx.amount || 0);
+              if (tx.transaction_type === "payment" && amt < 0) {
+                if (tx.category === "cash") {
+                  cashPaid += Math.abs(amt);
+                } else if (tx.category === "transfer" || tx.category === "credit_card") {
+                  transferPaid += Math.abs(amt);
+                  if (tx.category === "credit_card") {
+                    bankPrefix = "Cr";
+                    tcColor = "blue";
+                  } else {
+                    const bm = String(tx.notes || "").match(/\[BANK:([^\]]+)\]/);
+                    const bk = bm ? bm[1].trim().toUpperCase() : "SCB";
+                    bankPrefix = bk.startsWith("K") ? "K" : bk.startsWith("S") ? "S" : bk;
+                    tcColor = bk.startsWith("K") ? "emerald" : "purple";
+                  }
+                }
+              } else if (tx.transaction_type === "deposit" && amt > 0 && (tx.category.includes("ค่ามัดจำกุญแจ") || tx.category === "key_deposit")) {
+                keyDepPlaced += amt;
+              } else if (tx.transaction_type === "revenue") {
+                if (tx.category === "room_charge" || tx.category.includes("ค่าห้องพัก")) {
+                  roomChargeTxAmt += amt;
+                } else if (!tx.category.includes("มัดจำ")) {
+                  extraAmt += amt;
+                  extraLabel = tx.category;
+                }
+              }
+            });
+
+            if (b.status === "reserved") {
+              const rNo = `R${seqBookingNo++}`;
+              const depTotal = cashPaid + transferPaid;
+              const totPrice = Number(b.actual_price || 0);
+              slotRows[slot].push({
+                id: `live-b-${b.id}`,
+                kind: "booking",
+                rowNo: rNo,
+                checkInLabel: `จอง (${new Date(b.check_in_time).toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit" })})`,
+                roomNo,
+                staffName,
+                bookingRateSummary: totPrice > 0 ? `ยอดรวม ${totPrice.toLocaleString()} ฿ - มัดจำ ${depTotal.toLocaleString()} ฿ = คงเหลือ ${(totPrice - depTotal).toLocaleString()} ฿` : "จองล่วงหน้า",
+                cashDisplay: cashPaid > 0 ? cashPaid.toLocaleString() : null,
+                transferCardDisplay: transferPaid > 0 ? `${bankPrefix} ${transferPaid.toLocaleString()}` : null,
+                transferCardColor: tcColor,
+                reservationCreditDisplay: depTotal > 0 ? `+${depTotal.toLocaleString()}` : null,
+                reservationCreditPositive: true,
+                powerWindowDisplay: `เข้า ~${fmtHmShort(b.check_in_time)} น.`,
+              });
+              slotTotals[slot].cash += cashPaid;
+              slotTotals[slot].transferCard += transferPaid;
+              slotTotals[slot].reservationCredit += depTotal;
+              slotTotals[slot].bookings += 1;
+              return;
+            }
+
+            const bRates = dailyRatesByBooking[b.id] || [];
+            const todayRateRow = bRates.find((r) => r.target_date === reportDateStr);
+            const roomAmt = todayRateRow ? Number(todayRateRow.amount || 0) : roomChargeTxAmt;
+            const totalRowCharge = roomAmt + extraAmt;
+            const netCash = cashPaid - keyDepPlaced;
+
+            const cashDisp =
+              cashPaid > 0 && keyDepPlaced > 0
+                ? `${cashPaid.toLocaleString()}-${keyDepPlaced.toLocaleString()}`
+                : cashPaid === 0 && keyDepPlaced > 0
+                ? `-${keyDepPlaced.toLocaleString()}`
+                : cashPaid > 0
+                ? cashPaid.toLocaleString()
+                : null;
+
+            const resBreak = resItems.find((it) => it.bookingId === b.id);
+            const advBreak = advItems.find((it) => it.bookingId === b.id);
+            const resNetRow = resBreak ? resBreak.addedToday - resBreak.usedToday : 0;
+            const advNetRow = advBreak ? advBreak.addedToday - advBreak.usedToday : 0;
+
+            slotRows[slot].push({
+              id: `live-c-${b.id}`,
+              kind: "checkin",
+              rowNo: String(seqCheckinNo++),
+              checkInLabel: fmtHmShort(b.actual_check_in_time || b.check_in_time) || "-",
+              roomNo,
+              staffName,
+              roomRate: roomAmt || null,
+              extraLabel: extraLabel || null,
+              extraAmount: extraAmt || null,
+              totalCharge: totalRowCharge || null,
+              cashDisplay: cashDisp,
+              cashNegative: netCash < 0,
+              transferCardDisplay: transferPaid > 0 ? `${bankPrefix} ${transferPaid.toLocaleString()}` : null,
+              transferCardColor: tcColor,
+              reservationCreditDisplay: resNetRow !== 0 ? (resNetRow > 0 ? `+${resNetRow.toLocaleString()}` : `-${Math.abs(resNetRow).toLocaleString()}`) : null,
+              reservationCreditPositive: resNetRow > 0,
+              advanceCreditDisplay: advNetRow !== 0 ? (advNetRow > 0 ? `+${advNetRow.toLocaleString()}` : `-${Math.abs(advNetRow).toLocaleString()}`) : null,
+              advanceCreditPositive: advNetRow > 0,
+              powerWindowDisplay:
+                b.status === "checked_out"
+                  ? `${fmtHmShort(b.actual_check_in_time || b.check_in_time)} - ${fmtHmShort(b.check_out_time)}`
+                  : `${fmtHmShort(b.actual_check_in_time || b.check_in_time)} - ปัจจุบัน`,
+            });
+
+            slotTotals[slot].roomRate += roomAmt;
+            slotTotals[slot].extra += extraAmt;
+            slotTotals[slot].totalCharge += totalRowCharge;
+            slotTotals[slot].cash += netCash;
+            slotTotals[slot].transferCard += transferPaid;
+            slotTotals[slot].reservationCredit += resNetRow;
+            slotTotals[slot].advanceCredit += advNetRow;
+            slotTotals[slot].checkins += 1;
+          });
+
+        const liveShiftSections: ShiftSectionData[] = ([0, 1, 2] as const).map((idx) => {
+          const sh = locDayShifts[idx];
+          const t = slotTotals[idx];
+          const timeText = sh
+            ? `${fmtHmShort(sh.start_time)} – ${sh.end_time ? fmtHmShort(sh.end_time) + " น." : "ปัจจุบัน"}`
+            : idx === 0
+            ? "07:00 – 15:00 น."
+            : idx === 1
+            ? "15:00 – 23:00 น."
+            : "23:00 – 07:00 น.";
+          return {
+            shiftIndex: (idx + 1) as 1 | 2 | 3,
+            icon: idx === 0 ? "🌅" : idx === 1 ? "🌇" : "🌙",
+            summaryTitle: `รวมกะที่ ${idx + 1} (${timeText}):`,
+            rows: slotRows[idx],
+            totals: {
+              roomRate: t.roomRate,
+              adjust: t.adjust,
+              extra: t.extra,
+              minibar: t.minibar,
+              totalCharge: t.totalCharge,
+              cash: t.cash,
+              transferCard: t.transferCard,
+              reservationCredit: t.reservationCredit,
+              advanceCredit: t.advanceCredit,
+              countSummaryText: `${t.checkins} เข้าพัก${t.anomalies > 0 ? ` + ${t.anomalies} ผิดปกติ` : ""}${t.bookings > 0 ? ` + ${t.bookings} จอง` : ""}`,
+            },
+          };
+        });
+
         return {
           location: locFilter,
           isDayClosed: isLocDayClosed,
@@ -1415,6 +1655,7 @@ export default function DailyReport({
           liveRequiredTotal: locLiveRequiredTotal,
           crossLocCollectedForHere,
           crossLocCollectedByHere,
+          liveShiftSections,
         };
       };
 
@@ -1666,357 +1907,16 @@ export default function DailyReport({
     setRefreshKey((k) => k + 1);
   };
 
+  const effectiveTransferCardItems =
+    dataMode === "prototype" ? PROTOTYPE_TRANSFER_CARD_ITEMS : transferCardItems;
+
   return (
-    <div className="space-y-6">
-      {/* แถบเลือกสถานที่ (รวมทั้งหมด / ซอย1 / ซอย2 / ซามีญ่า) พร้อมสถานะปิดวัน + ปุ่มพิมพ์รายงานการเงิน */}
-      <div className="bg-white rounded-2xl border-2 border-slate-200 p-3.5 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-black text-slate-500 uppercase tracking-wider mr-1">
-            📍 เลือกสถานที่รายงาน:
-          </span>
-          <button
-            type="button"
-            onClick={() => setSelectedLocation("ALL")}
-            className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
-              selectedLocation === "ALL"
-                ? "bg-slate-900 text-white shadow-sm ring-2 ring-slate-900/20"
-                : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-            }`}
-          >
-            <span>📊 รวมทั้งหมด (ทุกสาขา)</span>
-          </button>
-          {availableLocations.map((loc) => {
-            const locRep = reportsByLocation[loc];
-            const locNetRev = locRep
-              ? locRep.roomTargetTotal +
-                locRep.earlyLateTotal +
-                locRep.upsellTotal -
-                locRep.roomDiscountTotal +
-                locRep.addonRevenue +
-                locRep.minibarRevenue +
-                locRep.fineRevenue +
-                locRep.otherRevenue
-              : 0;
-            const locClosed = locRep?.isDayClosed;
-            const isSelected = selectedLocation === loc;
-            return (
-              <button
-                key={loc}
-                type="button"
-                onClick={() => setSelectedLocation(loc)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 border ${
-                  isSelected
-                    ? "bg-indigo-700 text-white shadow-sm ring-2 ring-indigo-400 border-indigo-700"
-                    : locClosed
-                    ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-300"
-                    : "bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300"
-                }`}
-              >
-                <span>📍 {loc}</span>
-                <span
-                  className={`px-1.5 py-0.2 rounded-md text-[9px] font-bold ${
-                    locClosed
-                      ? "bg-emerald-200 text-emerald-950"
-                      : "bg-amber-200 text-amber-950"
-                  }`}
-                >
-                  {locClosed ? "ปิดวันแล้ว ✅" : "เปิดกะ ⏳ ยังไม่ปิดวัน"}
-                </span>
-                <span
-                  className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
-                    isSelected ? "bg-indigo-800 text-indigo-100" : "bg-white text-slate-600"
-                  }`}
-                >
-                  {fmt(locNetRev)}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            onClick={handlePrintLocationFinancialReport}
-            className={`px-3.5 py-2 rounded-xl text-xs font-black shadow-xs flex items-center gap-1.5 transition-all ${
-              canPrintCurrentLocation
-                ? "bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
-                : "bg-slate-300 text-slate-500 cursor-not-allowed opacity-75"
-            }`}
-            title={
-              canPrintCurrentLocation
-                ? `พิมพ์รายงานการเงิน (${selectedLocation === "ALL" ? "รวมทุกสถานที่" : selectedLocation}) A4`
-                : "⚠️ ยังไม่ปิดวัน ไม่สามารถพิมพ์ได้"
-            }
-          >
-            <span>🖨️ พิมพ์รายงานการเงิน A4</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowTransferCardModal(true)}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white font-black text-xs shadow-sm flex items-center justify-center gap-2 shrink-0 transition-all"
-          >
-            <span>💳 ใบตรวจยอดโอน &amp; บัตรเครดิต (พิมพ์ A4)</span>
-            <span className="px-2 py-0.5 rounded-full bg-white/20 text-white text-[11px] font-black">
-              {transferCardItems.length} รายการ
-            </span>
-          </button>
-        </div>
-      </div>
-
-      {/* แถบสรุปเปรียบเทียบแยกตามสถานที่ (แสดงเมื่อดู "รวมทั้งหมด") */}
-      {selectedLocation === "ALL" && (
-        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-xs font-black text-slate-700 flex items-center gap-1.5">
-              <span>🏢 สรุปภาพรวมแยกตามสถานที่ (คลิกที่การ์ดเพื่อเจาะดูรายงานเฉพาะสถานที่นั้น)</span>
-            </div>
-            <span className="text-[11px] text-slate-500 font-semibold">
-              แยกกล่องเงินสดและมัดจำกุญแจตามจุดเคาน์เตอร์แต่ละสาขาชัดเจน
-            </span>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-            {availableLocations.map((loc) => {
-              const rep = reportsByLocation[loc];
-              if (!rep) return null;
-              const locNetRev =
-                rep.roomTargetTotal +
-                rep.earlyLateTotal +
-                rep.upsellTotal -
-                rep.roomDiscountTotal +
-                rep.addonRevenue +
-                rep.minibarRevenue +
-                rep.fineRevenue +
-                rep.otherRevenue;
-              const locOpen = rep.dayShifts.filter((s) => s.status === "open");
-              const locHandoverReq = rep.handovers.reduce((s, h) => s + Number(h.required_amount || 0), 0);
-              const locReqTotal = locHandoverReq + rep.liveRequiredTotal;
-              const locActualCash = rep.handovers.reduce((s, h) => s + Number(h.actual_amount || 0), 0);
-              const locTransferCardTotal = rep.payTransferTotal + rep.payCredit;
-              const locGrossPay = rep.payCash + rep.payTransferTotal + rep.payCredit;
-              const locNetPay =
-                -locGrossPay + rep.payVoidRefund + rep.keyDepositBox.placedToday - rep.keyDepositBox.forfeitedToday;
-              const locNetAdv = rep.advanceBox.addedToday - rep.advanceBox.usedToday;
-              const locNetRes = rep.reservationBox.addedToday - rep.reservationBox.usedToday;
-              const locRecChange = rep.receivableBox.end - rep.receivableBox.start;
-              const locBal = locNetRev + locNetPay + locNetAdv + locNetRes - locRecChange;
-              const locBalanced = Math.abs(locBal) < 0.5;
-              const allBanksForLoc = Array.from(new Set([...bankAccounts, ...Object.keys(rep.payTransferByBank)]));
-
-              return (
-                <div
-                  key={loc}
-                  onClick={() => setSelectedLocation(loc)}
-                  className="bg-white hover:bg-indigo-50/30 border border-slate-200 hover:border-indigo-300 rounded-xl p-3.5 shadow-2xs transition-all cursor-pointer flex flex-col justify-between space-y-2.5"
-                >
-                  <div>
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-black text-sm text-slate-900">📍 {loc}</span>
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            locBalanced
-                              ? "bg-emerald-100 text-emerald-800"
-                              : "bg-amber-100 text-amber-800"
-                          }`}
-                        >
-                          {locBalanced ? "✅ สมดุล 0" : `⚠️ ต่าง ${fmtSigned(locBal)}`}
-                        </span>
-                      </div>
-                      <span className="text-[11px] font-bold text-indigo-600 hover:underline">
-                        ดูสาขานี้ →
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 mt-2.5 text-xs">
-                      <div className="bg-slate-50 rounded-lg p-2 border border-slate-100">
-                        <div className="text-[10px] text-slate-500 font-bold">รายได้สุทธิ</div>
-                        <div className="text-sm font-black text-indigo-700 mt-0.5">{fmt(locNetRev)}</div>
-                      </div>
-                      <div className="bg-emerald-50/70 rounded-lg p-2 border border-emerald-100">
-                        <div className="text-[10px] text-emerald-800 font-bold">เงินสดต้องส่ง / ส่งจริง</div>
-                        <div className="text-xs font-black text-emerald-900 mt-0.5">
-                          {fmt(locReqTotal)} <span className="text-slate-400">/</span>{" "}
-                          <span className="text-emerald-700">{fmt(locActualCash)}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* ยอดโอน + บัตรเครดิต พร้อมแยก SCB / KBANK / บัตรเครดิต ของแต่ละสถานที่ */}
-                    <div className="mt-2 bg-blue-50/60 border border-blue-100 rounded-lg p-2 space-y-1">
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="font-bold text-blue-950">📱💳 รวมโอน+บัตร ({loc})</span>
-                        <span className="font-black text-blue-700">{fmt(locTransferCardTotal)}</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1 pt-0.5">
-                        {allBanksForLoc.map((bk) => (
-                          <span
-                            key={bk}
-                            className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white border border-blue-200/80 text-slate-700"
-                          >
-                            {bk}: <b className="text-blue-800">{fmt(rep.payTransferByBank[bk] || 0)}</b>
-                          </span>
-                        ))}
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white border border-purple-200/80 text-slate-700">
-                          บัตรเครดิต: <b className="text-purple-800">{fmt(rep.payCredit)}</b>
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                    <span className="text-amber-800 font-bold">
-                      🔑 มัดจำกุญแจถืออยู่: <b>{fmt(rep.keyDepositBox.activeHeldTotal)}</b> ({rep.heldDepositRooms.length} ห้อง)
-                    </span>
-                    <span className="text-slate-500 font-semibold">
-                      {locOpen.length > 0
-                        ? `🟢 เปิดกะ (${locOpen.map((s) => s.staff_name).join(", ")})`
-                        : rep.dayShifts.length > 0
-                        ? `✅ ปิดกะแล้ว (${rep.dayShifts.length} กะ)`
-                        : "⚪ ไม่มีการเปิดกะ"}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* แบนเนอร์บอกสถานะเมื่อกำลังดูเฉพาะสถานที่ + แสดงรายการรับโอน/บัตรข้ามสาขา (ถ้ามี) */}
-      {selectedLocation !== "ALL" && (
-        <div className="bg-indigo-900 text-white rounded-2xl p-4 shadow-sm space-y-2.5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="px-3 py-1 rounded-full bg-indigo-500 text-white text-xs font-black">
-                📍 สถานที่: {selectedLocation}
-              </span>
-              <span className="text-sm font-bold text-indigo-100">
-                กำลังแสดงเฉพาะรายได้, เงินรับชำระ, มัดจำกุญแจ และกล่องเงินสดของสาขา <b>{selectedLocation}</b>
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setSelectedLocation("ALL")}
-              className="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-black transition-colors"
-            >
-              ↩️ กลับไปดูรวมทั้งหมด (ทุกสาขา)
-            </button>
-          </div>
-
-          {(crossLocCollectedForHere.length > 0 || crossLocCollectedByHere.length > 0) && (
-            <div className="bg-indigo-950/80 border border-indigo-700 rounded-xl p-3 text-xs space-y-1.5">
-              <div className="font-black text-amber-300 flex items-center gap-1.5">
-                <span>⚡ รายการรับเงินโอน/บัตรเครดิตข้ามสาขา (Cross-Location Transactions)</span>
-              </div>
-              {crossLocCollectedForHere.length > 0 && (
-                <div className="text-indigo-100">
-                  • <b>ห้องพักสาขา {selectedLocation}</b> ที่พนักงานสาขาอื่นรับโอน/บัตรเครดิตให้ ({crossLocCollectedForHere.length} รายการ — นับรวมในยอดโอน/บัตรของสาขา {selectedLocation} แล้ว):{" "}
-                  {crossLocCollectedForHere.map((it) => (
-                    <span
-                      key={it.id}
-                      className="inline-block bg-indigo-800/90 border border-indigo-600 rounded px-2 py-0.5 mr-1.5 mt-1 text-[11px]"
-                    >
-                      ห้อง <b>{it.roomNo}</b> ({it.bank === "CREDIT_CARD" ? "บัตรเครดิต" : it.bank} {fmt(it.amount)} • รับโดย {it.staffName} กะ{it.shiftLocation})
-                    </span>
-                  ))}
-                </div>
-              )}
-              {crossLocCollectedByHere.length > 0 && (
-                <div className="text-indigo-200">
-                  • <b>พนักงานกะสาขา {selectedLocation}</b> รับโอน/บัตรเครดิตให้ห้องพักสาขาอื่น ({crossLocCollectedByHere.length} รายการ — ยอดไปแสดงในรายงานของสาขาห้องพักนั้น):{" "}
-                  {crossLocCollectedByHere.map((it) => (
-                    <span
-                      key={it.id}
-                      className="inline-block bg-slate-800 border border-slate-600 rounded px-2 py-0.5 mr-1.5 mt-1 text-[11px]"
-                    >
-                      ห้อง <b>{it.roomNo}</b> ({it.roomLocation}) • {it.bank === "CREDIT_CARD" ? "บัตรเครดิต" : it.bank} {fmt(it.amount)} (รับโดย {it.staffName})
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* แถบสถานะประจำวันและเวลาตัดรอบ */}
-      <div
-        className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-          isCashComplete ? "bg-indigo-50 border-indigo-200" : "bg-white border-slate-200 shadow-xs"
-        }`}
-      >
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <h2 className={`text-lg font-black ${isCashComplete ? "text-indigo-900" : "text-slate-800"}`}>
-              📊 รายงานเงินสดประจำวัน {selectedLocation !== "ALL" ? `[เฉพาะสาขา ${selectedLocation}]` : "(รวมทุกสาขา)"} ({reportDateLabel})
-            </h2>
-            <span
-              className={`px-3 py-0.5 rounded-full font-bold text-xs ${
-                isCashComplete ? "bg-indigo-600 text-white" : "bg-amber-100 text-amber-800"
-              }`}
-            >
-              {isCashComplete ? "✅ ส่งเงินครบ สรุปยอดแล้ว" : "⚠️ ยังไม่เสร็จสิ้น"}
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            ⏱️ รอบวันรายงาน: <b>{windowLabelStr}</b> (ตัดค่าห้องพักค้างคืนอัตโนมัติเวลา 09:45 น.)
-          </p>
-        </div>
-        {onChangeDateOffset && (
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              disabled={!canGoPrev}
-              onClick={() => changeDate(-1)}
-              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-black disabled:opacity-40"
-            >
-              ◀
-            </button>
-            <button
-              type="button"
-              disabled={dateOffset === 0}
-              onClick={() => onChangeDateOffset(0)}
-              className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold disabled:opacity-40"
-            >
-              วันนี้
-            </button>
-            <button
-              type="button"
-              disabled={!canGoNext}
-              onClick={() => changeDate(1)}
-              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-black disabled:opacity-40"
-            >
-              ▶
-            </button>
-          </div>
-        )}
-      </div>
-
-      {!isCashComplete && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-xs text-amber-900 space-y-1">
-          <div className="font-black text-sm">
-            ⚠️ ยังไม่เสร็จสิ้น — แสดงข้อมูลตามที่มี ณ ปัจจุบัน (จะเปลี่ยนเป็นเสร็จสิ้นเมื่อครบ 3 ข้อด้านล่าง)
-          </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 font-semibold text-amber-800">
-            <span>
-              {dayShifts.length > 0 && openShifts.length === 0 ? "✅" : "⏳"} 1. ปิดกะครบทุกกะ
-              {openShifts.length > 0 ? ` (ยังเปิดอยู่: ${openShifts.map((s) => s.staff_name).join(", ")})` : dayShifts.length === 0 ? " (ยังไม่เปิดกะ)" : ""}
-            </span>
-            <span>
-              {isDayClosed ? "✅" : "⏳"} 2. ติ๊ก “กะสุดท้ายของวัน” ตอนปิดกะสุดท้าย
-            </span>
-            <span>
-              {handovers.length > 0 && pendingManagerSign.length === 0 ? "✅" : "⏳"} 3. ผู้จัดการเซ็นรับครบทุกรายการ
-              {pendingManagerSign.length > 0 ? ` (รอเซ็น ${pendingManagerSign.length} รายการ)` : handovers.length === 0 ? " (ยังไม่มีรายการส่งเงิน)" : ""}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* ================= รายงานการเงิน: ตารางสรุปการเงินรวม 1–13 และการบริหารเงินสดผู้จัดการ (Report 2 Layout) ================= */}
+    <div className="space-y-4">
       <FinancialReportType2View
         selectedLocation={selectedLocation}
+        onSelectLocation={setSelectedLocation}
+        availableLocations={availableLocations}
+        reportsByLocation={reportsByLocation}
         reportDateLabel={reportDateLabel}
         activeReport={activeReport}
         isDayClosed={isDayClosed}
@@ -2024,404 +1924,16 @@ export default function DailyReport({
         handovers={handovers}
         dayExpenses={dayExpenses}
         shiftDrawers={shiftDrawers}
-        fmt={fmt}
-        fmtSigned={fmtSigned}
+        transferCardCount={effectiveTransferCardItems.length}
+        dataMode={dataMode}
+        onChangeDataMode={setDataMode}
         onOpenTransferModal={() => setShowTransferCardModal(true)}
-        onPrintReport={handlePrintLocationFinancialReport}
+        onRequestManagerSign={(h) => {
+          setSignTarget(h);
+          setSignPin("");
+          setSignError("");
+        }}
       />
-
-      {/* ==================== กล่องเงินสดสำหรับเซ็นรับ-เก็บเงินประจำวัน ==================== */}
-      <div className="bg-white border-2 border-emerald-300 rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-5 py-3.5 bg-emerald-800 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
-            <h3 className="font-black text-base">💵 กล่องเงินสด — เซ็นรับ/เก็บเงินประจำวัน</h3>
-            <p className="text-xs text-emerald-100 mt-0.5">ส่งเงินสดของวันที่ {reportDateLabel}</p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {onChangeDateOffset && (
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  disabled={!canGoPrev}
-                  onClick={() => changeDate(-1)}
-                  className="px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 font-black disabled:opacity-40"
-                >
-                  ◀
-                </button>
-                <button
-                  type="button"
-                  disabled={dateOffset === 0}
-                  onClick={() => onChangeDateOffset(0)}
-                  className="px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-xs font-bold disabled:opacity-40"
-                >
-                  วันนี้
-                </button>
-                <button
-                  type="button"
-                  disabled={!canGoNext}
-                  onClick={() => changeDate(1)}
-                  className="px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 font-black disabled:opacity-40"
-                >
-                  ▶
-                </button>
-              </div>
-            )}
-            <span
-              className={`text-xs font-black px-3 py-1 rounded-full ${
-                isCashComplete ? "bg-white text-emerald-800" : "bg-amber-300 text-amber-950"
-              }`}
-              title={incompleteReasons.join("\n")}
-            >
-              {isCashComplete ? "✅ ส่งเงินครบถ้วน" : "⚠️ ยังไม่เสร็จสิ้น"}
-            </span>
-          </div>
-        </div>
-
-        <div className="p-5 grid grid-cols-1 lg:grid-cols-5 gap-5">
-          {/* สรุปตัวเลขเงินสด */}
-          <div className="lg:col-span-2 space-y-2 text-sm">
-            <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-              <span className="font-bold text-slate-700">เงินสดรับสุทธิ (หลังกันมัดจำกุญแจ)</span>
-              <span className="font-black text-slate-900">{fmt(cashReceivedNet)}</span>
-            </div>
-            <div className="py-1.5 border-b border-slate-100">
-              <div className="flex justify-between items-center">
-                <span className="font-bold text-orange-700">หัก ค่าใช้จ่ายเงินสด (ทุกกะ)</span>
-                <span className="font-black text-orange-700">-{fmt(totalExpense)}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowExpenseDetails((p) => !p)}
-                className="mt-1 text-xs font-bold text-orange-700 underline"
-              >
-                🔍 {showExpenseDetails ? "ซ่อนรายละเอียดค่าใช้จ่าย" : `ดูรายละเอียดค่าใช้จ่ายแต่ละกะ (${dayExpenses.length} รายการ)`}
-              </button>
-              {showExpenseDetails && (
-                <div className="mt-2 space-y-2">
-                  {dayShifts.length === 0 || dayExpenses.length === 0 ? (
-                    <div className="text-xs text-slate-400 bg-slate-50 rounded-lg p-2 text-center">ไม่มีค่าใช้จ่ายเงินสด</div>
-                  ) : (
-                    dayShifts
-                      .filter((s) => dayExpenses.some((e) => e.shift_id === s.id))
-                      .map((s, idx) => {
-                        const items = dayExpenses.filter((e) => e.shift_id === s.id);
-                        const sub = items.reduce((sum, e) => sum + Math.abs(Number(e.amount || 0)), 0);
-                        return (
-                          <div key={s.id} className="bg-orange-50/70 border border-orange-200 rounded-lg p-2">
-                            <div className="flex justify-between text-xs font-black text-orange-900 mb-1">
-                              <span>
-                                กะ {idx + 1}: {s.staff_name}
-                              </span>
-                              <span>-{fmt(sub)}</span>
-                            </div>
-                            <ul className="space-y-1">
-                              {items.map((e) => {
-                                const bills = parseBillUrls(e.notes);
-                                return (
-                                  <li key={e.id} className="flex justify-between items-center gap-2 text-[11px] bg-white rounded px-2 py-1">
-                                    <span className="min-w-0">
-                                      <b className="text-slate-800">{e.category}</b>
-                                      <span className="text-slate-500">
-                                        {" "}
-                                        • {new Date(e.created_at).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })} น. • {e.staff_name}
-                                      </span>
-                                    </span>
-                                    <span className="flex items-center gap-1 shrink-0">
-                                      {bills.map((u) => (
-                                        <button key={u} type="button" onClick={() => setViewPhoto(u)} title="ดูรูปบิล">
-                                          <img src={u} alt="bill" className="w-7 h-7 object-cover rounded border border-slate-300" />
-                                        </button>
-                                      ))}
-                                      <b className="text-orange-700">-{fmt(Math.abs(Number(e.amount || 0)))}</b>
-                                    </span>
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          </div>
-                        );
-                      })
-                  )}
-                </div>
-              )}
-            </div>
-            {unconsumedCarriedOutTotal > 0 && (
-              <div className="flex justify-between items-center py-1.5 border-b border-slate-100 text-indigo-700 font-bold">
-                <span>🪙 หัก เงินทอนทิ้งไว้ในลิ้นชักส่งต่อกะหน้า</span>
-                <span className="font-black">-{fmt(unconsumedCarriedOutTotal)}</span>
-              </div>
-            )}
-            <div className="flex justify-between items-center py-1.5 px-2 rounded-lg bg-slate-100 font-black text-slate-900">
-              <span>= ยอดเงินสดที่ต้องส่ง (ตามระบบ)</span>
-              <span>{fmt(totalRequiredToSend)}</span>
-            </div>
-            {openShifts.length > 0 && (
-              <div className="text-[11px] text-amber-700 font-bold">
-                * รวมยอดประมาณการของกะที่ยังเปิดอยู่ (เงินในลิ้นชักขณะนี้ − มัดจำกุญแจคงเหลือ {fmt(liveReserve.total)})
-              </div>
-            )}
-            <div className="flex justify-between items-center py-1 text-emerald-700 font-bold">
-              <span>เงินสดเกิน (+)</span>
-              <span>{fmtSigned(cashOverTotal)}</span>
-            </div>
-            <div className="flex justify-between items-center py-1 text-rose-600 font-bold border-b border-slate-100">
-              <span>เงินสดขาด (−)</span>
-              <span>{fmtSigned(cashShortTotal)}</span>
-            </div>
-            <div className="flex justify-between items-center py-2 px-3 rounded-xl bg-emerald-50 border-2 border-emerald-300 font-black text-emerald-900">
-              <span>💰 เงินสดเก็บรวม (ส่งจริงทุกกะ)</span>
-              <span className="text-xl">{fmt(cashCollectedTotal)}</span>
-            </div>
-
-            <div className="mt-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200">
-              <div className="flex justify-between items-center text-amber-900 font-bold">
-                <span>🔑 มัดจำกุญแจคงเหลือ (กันไว้ในลิ้นชัก)</span>
-                <span className="font-black">{fmt(keyDepositBox.activeHeldTotal)}</span>
-              </div>
-              <div className="text-[11px] text-amber-800 mt-0.5">
-                ต้นวัน {fmt(keyDepositBox.broughtForward)} • กันเพิ่ม {fmt(keyDepositBox.placedToday)} • คืนสด{" "}
-                {fmt(keyDepositBox.refundedToday)}
-                {keyDepositBox.forfeitedToday > 0 ? ` • ริบ ${fmt(keyDepositBox.forfeitedToday)}` : ""}
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowHeldDepositRooms((p) => !p)}
-                className="mt-1 text-[11px] font-bold text-amber-800 underline"
-              >
-                {showHeldDepositRooms ? "ซ่อนรายชื่อห้อง" : `ดูห้องที่ถือมัดจำ (${heldDepositRooms.length} ห้อง)`}
-              </button>
-              {showHeldDepositRooms && (
-                <div className="mt-1.5 grid grid-cols-2 gap-1">
-                  {heldDepositRooms.length === 0 ? (
-                    <span className="text-[11px] text-slate-500">ไม่มีห้องที่ถือมัดจำ</span>
-                  ) : (
-                    heldDepositRooms.map((r) => (
-                      <span key={r.bookingId} className="text-[11px] bg-white border border-amber-200 rounded px-1.5 py-0.5 flex justify-between">
-                        <span>ห้อง {r.roomNo}</span>
-                        <b className="text-amber-800">{fmt(r.amount)}</b>
-                      </span>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ตารางรายละเอียดการส่งเงิน */}
-          <div className="lg:col-span-3">
-            <div className="font-black text-slate-800 text-sm mb-2">🧾 รายละเอียดการส่งเงิน (เรียงตามลำดับ)</div>
-            {handovers.length === 0 && openShifts.length === 0 && closedShiftsWithoutHandover.length === 0 ? (
-              <div className="text-sm text-slate-400 bg-slate-50 rounded-xl p-6 text-center">ยังไม่มีการส่งเงินในวันนี้</div>
-            ) : (
-              <div className="space-y-2">
-                {handovers.map((h, idx) => {
-                  const diff = Number(h.actual_amount || 0) - Number(h.required_amount || 0);
-                  const neg = (h.kind === "mid_shift" ? h.actual_amount : h.required_amount) < 0;
-                  type SigCell = { role: string; name: string | null; sig: string | null; at: string | null };
-                  const staffCell: SigCell = { role: "พนักงาน", name: h.staff_name, sig: h.staff_signature, at: h.staff_signed_at };
-                  const mgrCell: SigCell = { role: "ผู้จัดการ", name: h.manager_name, sig: h.manager_signature, at: h.manager_signed_at };
-                  const sender = neg ? mgrCell : staffCell;
-                  const receiver = neg ? staffCell : mgrCell;
-                  const renderSigCell = (title: string, cell: SigCell) => (
-                    <div className="flex-1 min-w-[140px] bg-slate-50 border border-slate-200 rounded-lg p-2">
-                      <div className="text-[10px] font-bold text-slate-500">
-                        {title} ({cell.role})
-                      </div>
-                      {cell.sig ? (
-                        <>
-                          <img src={cell.sig} alt="signature" className="h-12 w-full object-contain bg-white rounded border border-slate-200 my-1" />
-                          <div className="text-[11px] font-bold text-slate-800">{cell.name}</div>
-                          <div className="text-[10px] text-slate-500">{fmtTime(cell.at)}</div>
-                        </>
-                      ) : cell.role === "ผู้จัดการ" ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSignTarget(h);
-                            setSignPin("");
-                            setSignError("");
-                          }}
-                          className="mt-1 w-full py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-black"
-                        >
-                          ✍️ ผู้จัดการเซ็น{neg ? "ส่งเงิน" : "รับเงิน"}
-                        </button>
-                      ) : (
-                        <div className="text-[11px] text-slate-400 mt-1">ยังไม่ได้เซ็น</div>
-                      )}
-                    </div>
-                  );
-                  return (
-                    <div key={h.id} className="border border-slate-200 rounded-xl p-3 space-y-2">
-                      <div className="flex flex-wrap justify-between items-center gap-2">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="w-6 h-6 rounded-full bg-emerald-700 text-white text-xs font-black flex items-center justify-center">
-                            {idx + 1}
-                          </span>
-                          <span className="font-black text-slate-800 text-sm">กะ {h.shift_staff_name || shiftNameOf(h.shift_id)}</span>
-                          {(h.shift_location || dayShifts.find((s) => s.id === h.shift_id)?.shift_location) && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
-                              📍 {h.shift_location || dayShifts.find((s) => s.id === h.shift_id)?.shift_location}
-                            </span>
-                          )}
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                              h.kind === "shift_close" ? "bg-slate-800 text-white" : "bg-emerald-100 text-emerald-800"
-                            }`}
-                          >
-                            {h.kind === "shift_close" ? "ส่งตอนปิดกะ" : h.method === "fixed" ? "เก็บระหว่างกะ (ระบุจำนวน)" : "เก็บระหว่างกะ"}
-                          </span>
-                        </div>
-                        <span className="text-[11px] text-slate-500">{fmtTime(h.created_at)}</span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2 text-xs">
-                        <div className="bg-slate-50 rounded-lg p-2">
-                          <div className="text-slate-500 font-bold">{neg ? "ผู้จัดการต้องเติม" : "ต้องส่ง"}</div>
-                          <div className="font-black text-slate-900">{neg ? fmt(Math.abs(Number(h.required_amount || 0))) : fmtSigned(h.required_amount)}</div>
-                        </div>
-                        <div className="bg-slate-50 rounded-lg p-2">
-                          <div className="text-slate-500 font-bold">{neg ? "เติมจริง" : "ส่งจริง"}</div>
-                          <div className={`font-black ${neg ? "text-rose-700" : "text-emerald-700"}`}>
-                            {neg ? fmt(Math.abs(Number(h.actual_amount || 0))) : fmtSigned(h.actual_amount)}
-                          </div>
-                        </div>
-                        <div className="bg-slate-50 rounded-lg p-2">
-                          <div className="text-slate-500 font-bold">เกิน/ขาด</div>
-                          <div className={`font-black ${diff > 0 ? "text-emerald-600" : diff < 0 ? "text-rose-600" : "text-slate-500"}`}>
-                            {fmtSigned(diff)}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-[10px] text-slate-500">
-                        เงินในลิ้นชัก {fmt(h.drawer_cash)} • มัดจำกุญแจ {fmt(h.key_reserve)}
-                        {h.key_reserve_rooms !== undefined ? ` (${h.key_reserve_rooms} ห้อง)` : ""}
-                        {Number(h.carried_to_next_shift || 0) > 0 && (
-                          <span className="text-indigo-700 font-bold">
-                            {" "}
-                            • 🪙 เงินทอนส่งต่อกะหน้า {fmt(Number(h.carried_to_next_shift || 0))} (รวมในลิ้นชัก{" "}
-                            {fmt(
-                              Number(
-                                h.next_shift_drawer_total ??
-                                  Number(h.key_reserve || 0) + Number(h.carried_to_next_shift || 0)
-                              )
-                            )}
-                            )
-                          </span>
-                        )}
-                        {h.note && Number(h.carried_to_next_shift || 0) === 0 && (
-                          <span className="text-rose-700 font-bold"> • {h.note}</span>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {renderSigCell("ผู้ส่งเงิน", sender)}
-                        {renderSigCell("ผู้รับเงิน", receiver)}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {openShifts.map((s) => {
-                  const shLoc = s.shift_location || "ซอย1";
-                  const shLocReserve =
-                    reportsByLocation[shLoc]?.liveReserve?.total ?? liveReserve.total;
-                  const live = (shiftDrawers[s.id]?.drawer || 0) - shLocReserve;
-                  return (
-                    <div key={s.id} className="border-2 border-dashed border-amber-300 bg-amber-50/60 rounded-xl p-3 text-sm">
-                      <div className="flex justify-between items-center font-black text-amber-900">
-                        <span className="flex items-center gap-1.5 flex-wrap">
-                          <span>⏳ กะ {s.staff_name} (ยังไม่ปิดกะ)</span>
-                          {s.shift_location && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
-                              📍 {s.shift_location}
-                            </span>
-                          )}
-                        </span>
-                        <span>ประมาณการต้องส่ง {fmtSigned(live)}</span>
-                      </div>
-                      <div className="text-[11px] text-amber-800 mt-0.5">
-                        เงินในลิ้นชักขณะนี้ {fmt(shiftDrawers[s.id]?.drawer || 0)} − มัดจำกุญแจคงเหลือ ({shLoc}) {fmt(shLocReserve)}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {closedShiftsWithoutHandover.map((s) => (
-                  <div key={s.id} className="border border-slate-200 bg-slate-50 rounded-xl p-3 text-xs text-slate-600">
-                    กะ {s.staff_name} ปิดกะก่อนเริ่มใช้ระบบส่งเงินใหม่ (ไม่มีข้อมูลลายเซ็น) • นับเงินได้ {fmt(Number(s.final_cash || 0))}
-                  </div>
-                ))}
-
-                {handovers.length > 0 && (
-                  <div className="flex justify-between items-center px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-sm font-black text-emerald-900">
-                    <span>รวมส่งจริงทุกรายการ (= เงินสดเก็บรวม)</span>
-                    <span>{fmt(cashCollectedTotal)}</span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ประวัติกะของวันนี้ */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-100 bg-slate-50">
-          <h3 className="font-bold text-slate-800">ประวัติกะของวันนี้ (Shift Logs)</h3>
-        </div>
-        <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-          {dayShifts.length === 0 ? (
-            <p className="text-sm text-slate-500 text-center py-4 md:col-span-3">ไม่มีการเปิดกะในวันนี้</p>
-          ) : (
-            dayShifts.map((shift, idx) => {
-              const d = shiftDrawers[shift.id];
-              return (
-                <div key={shift.id} className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm space-y-1">
-                  <div className="flex justify-between items-center gap-1">
-                    <span className="font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
-                      <span>กะ {idx + 1}: {shift.staff_name}</span>
-                      {shift.shift_location && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
-                          📍 {shift.shift_location}
-                        </span>
-                      )}
-                    </span>
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded-full font-bold shrink-0 ${
-                        shift.status === "open" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"
-                      }`}
-                    >
-                      {shift.status === "open" ? "กำลังเปิด" : "ปิดแล้ว"}
-                    </span>
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    {new Date(shift.start_time).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })} –{" "}
-                    {shift.end_time
-                      ? new Date(shift.end_time).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })
-                      : "..."}
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">เงินสดตั้งต้น</span>
-                    <b>{fmt(Number(shift.initial_cash || 0))}</b>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">รับเงินสด / ค่าใช้จ่าย / คืนเงิน</span>
-                    <b>
-                      {fmt(d?.cashIn || 0)} / {fmt(d?.expenses || 0)} / {fmt(d?.refunds || 0)}
-                    </b>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">ส่งเงินแล้ว</span>
-                    <b>{fmt(d?.handedOut || 0)}</b>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">เงินในลิ้นชักคงเหลือตามระบบ</span>
-                    <b className="text-emerald-700">{fmt(d?.drawer || 0)}</b>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
 
       {/* หน้าต่างผู้จัดการเซ็นรับ/ส่งเงิน */}
       {signTarget && (() => {
@@ -2519,7 +2031,7 @@ export default function DailyReport({
         onClose={() => setShowTransferCardModal(false)}
         businessDate={reportDateLabel || businessDateStr}
         windowLabel={windowLabelStr}
-        items={transferCardItems}
+        items={effectiveTransferCardItems}
         locations={availableLocations}
         bankAccounts={bankAccounts}
       />
