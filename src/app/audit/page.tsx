@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSimulatedTime } from "@/contexts/SimulatedTimeContext";
 import { useShift } from "@/contexts/ShiftContext";
 import DailyReport from "./DailyReport";
+import BookingAdvanceReportView from "./BookingAdvanceReportView";
 import GuestReport from "./GuestReport";
 import AnomalyReport from "./AnomalyReport";
 import AnomalyHistory from "./AnomalyHistory";
@@ -13,14 +14,21 @@ import ActivityLogView from "./ActivityLogView";
 export default function AuditPage() {
   const { getNow } = useSimulatedTime();
   const { getActiveBusinessDate } = useShift();
-  const [activeTab, setActiveTab] = useState<"daily" | "guest" | "anomaly" | "history" | "activity_log">("daily");
+  const [activeTab, setActiveTab] = useState<"daily" | "booking" | "guest" | "anomaly" | "history" | "activity_log">("daily");
   const [dateOffset, setDateOffset] = useState<number>(0);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get("tab");
-      if (tabParam === "daily" || tabParam === "activity_log" || tabParam === "guest" || tabParam === "anomaly" || tabParam === "history") {
+      if (
+        tabParam === "daily" ||
+        tabParam === "booking" ||
+        tabParam === "activity_log" ||
+        tabParam === "guest" ||
+        tabParam === "anomaly" ||
+        tabParam === "history"
+      ) {
         setActiveTab(tabParam);
       }
     }
@@ -63,6 +71,14 @@ export default function AuditPage() {
           }`}
         >
           📊 รายงานเงินสดประจำวัน
+        </button>
+        <button
+          onClick={() => setActiveTab("booking")}
+          className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${
+            activeTab === "booking" ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          📅 รายงานการจอง
         </button>
         <button
           onClick={() => setActiveTab("guest")}
@@ -135,6 +151,7 @@ export default function AuditPage() {
       {/* Content */}
       <div id="audit-page-content" className="mt-6 print:mt-0">
         {activeTab === "daily" && <DailyReport dateOffset={dateOffset} onChangeDateOffset={setDateOffset} />}
+        {activeTab === "booking" && <BookingAdvanceReportView dateOffset={dateOffset} />}
         {activeTab === "guest" && <GuestReport dateOffset={dateOffset} />}
         {activeTab === "anomaly" && <HousekeepingOvertime dateOffset={dateOffset} />}
         {activeTab === "anomaly" && <AnomalyReport dateOffset={dateOffset} />}

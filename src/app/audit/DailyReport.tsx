@@ -216,7 +216,7 @@ export default function DailyReport({
 
   // Multi-location filter & Accounting Transfer/Card Report Modal
   const [selectedLocation, setSelectedLocation] = useState<string>("ซอย1");
-  const [dataMode, setDataMode] = useState<"prototype" | "live">("prototype");
+  const [dataMode, setDataMode] = useState<"prototype" | "live">("live");
   const prevDateOffsetRef = useRef<number>(dateOffset);
   useEffect(() => {
     if (prevDateOffsetRef.current !== dateOffset) {
@@ -281,17 +281,32 @@ export default function DailyReport({
       windowStart.setDate(windowStart.getDate() - 180);
       const windowStartDateStr = `${windowStart.getFullYear()}-${String(windowStart.getMonth() + 1).padStart(2, "0")}-${String(windowStart.getDate()).padStart(2, "0")}`;
 
+      // ดึงข้อมูลแบบแบ่งหน้า (Page ละ 1,000 แถว) เพื่อไม่ให้ติดเพดาน PostgREST max_rows = 1,000 แถวของ Supabase
+      async function fetchAllRows<T = any>(
+        buildQuery: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>
+      ): Promise<T[]> {
+        const pageSize = 1000;
+        const all: T[] = [];
+        for (let offset = 0; offset < 25000; offset += pageSize) {
+          const { data, error } = await buildQuery(offset, offset + pageSize - 1);
+          if (error || !data || data.length === 0) break;
+          all.push(...data);
+          if (data.length < pageSize) break;
+        }
+        return all;
+      }
+
       // ดึงข้อมูลทั้งหมดที่จำเป็นแบบขนาน
       const [
         shiftRes,
-        allLedgerRes,
-        bookingsRes,
-        dailyRatesRes,
-        dailyExtrasRes,
+        allLedger,
+        allBookings,
+        allDailyRates,
+        allDailyExtras,
         roomsRes,
         extraSettingsRes,
         posItemsRes,
-        settingsRes,
+        allSettingsRows,
       ] = await Promise.all([
         supabase
           .from("shifts")
@@ -299,28 +314,39 @@ export default function DailyReport({
           .lt("start_time", end0645.toISOString())
           .or(`end_time.gte.${start0645.toISOString()},end_time.is.null`)
           .order("start_time", { ascending: true }),
-        supabase
-          .from("ledger_transactions")
-          .select("*")
-          .gte("created_at", windowStart.toISOString())
-          .lt("created_at", queryEndBound.toISOString())
-          .order("created_at", { ascending: true })
-          .limit(10000),
-        supabase
-          .from("bookings")
-          .select("id, room_id, guest_name, guest_phone, staff_name, status, check_in_time, check_out_time, actual_check_in_time, actual_price, created_at")
-          .or(`check_out_time.gte.${windowStart.toISOString()},status.in.(reserved,checked_in)`)
-          .limit(10000),
-        supabase
-          .from("booking_daily_rates")
-          .select("id, booking_id, target_date, amount, is_manual_override")
-          .gte("target_date", windowStartDateStr)
-          .limit(10000),
-        supabase
-          .from("booking_daily_extras")
-          .select("id, booking_id, target_date, category, amount")
-          .gte("target_date", windowStartDateStr)
-          .limit(10000),
+        fetchAllRows<LedgerTransaction>((from, to) =>
+          supabase
+            .from("ledger_transactions")
+            .select("*")
+            .gte("created_at", windowStart.toISOString())
+            .lt("created_at", queryEndBound.toISOString())
+            .order("created_at", { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllRows<BookingRow>((from, to) =>
+          supabase
+            .from("bookings")
+            .select("id, room_id, guest_name, guest_phone, staff_name, status, check_in_time, check_out_time, actual_check_in_time, actual_price, created_at")
+            .or(`check_out_time.gte.${windowStart.toISOString()},status.in.(reserved,checked_in)`)
+            .order("created_at", { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllRows<DailyRateRow>((from, to) =>
+          supabase
+            .from("booking_daily_rates")
+            .select("id, booking_id, target_date, amount, is_manual_override")
+            .gte("target_date", windowStartDateStr)
+            .order("target_date", { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllRows<any>((from, to) =>
+          supabase
+            .from("booking_daily_extras")
+            .select("id, booking_id, target_date, category, amount")
+            .gte("target_date", windowStartDateStr)
+            .order("target_date", { ascending: true })
+            .range(from, to)
+        ),
         supabase
           .from("rooms")
           .select("id, room_no, location, price_night, price_temp"),
@@ -330,20 +356,20 @@ export default function DailyReport({
         supabase
           .from("pos_items")
           .select("name"),
-        supabase
-          .from("system_settings")
-          .select("key, value")
-          .not("key", "like", "cash_handover_%")
-          .not("key", "like", "shift_bd_%")
-          .limit(10000),
+        fetchAllRows<any>((from, to) =>
+          supabase
+            .from("system_settings")
+            .select("key, value")
+            .not("key", "like", "cash_handover_%")
+            .not("key", "like", "shift_bd_%")
+            .order("key", { ascending: true })
+            .range(from, to)
+        ),
       ]);
 
       if (shiftRes.data) setShifts(shiftRes.data);
 
-      const allLedger: LedgerTransaction[] = (allLedgerRes.data as LedgerTransaction[]) || [];
-      const allBookings: BookingRow[] = (bookingsRes.data as BookingRow[]) || [];
-      const allDailyRates: DailyRateRow[] = (dailyRatesRes.data as DailyRateRow[]) || [];
-      const allDailyExtras: any[] = (dailyExtrasRes.data as any[]) || [];
+      const settingsRes = { data: allSettingsRows };
       const allRooms: RoomRow[] = (roomsRes.data as RoomRow[]) || [];
       const extraNames = new Set((extraSettingsRes.data || []).map((e: any) => e.name));
       const posNames = new Set((posItemsRes.data || []).map((p: any) => p.name));
@@ -438,21 +464,9 @@ export default function DailyReport({
       setWindowLabelStr(`${fmtWindowHm(start0645)} น. ถึง ${fmtWindowHm(new Date(end0645.getTime() - 1000))} น. ของวันถัดไป`);
       setBankAccounts(configuredBanks);
 
-      // รายการที่เกิดในรอบวันธุรกิจ 06:45 น. ถึง 06:44:59 น. ของวันถัดไป (นับเป็น 1 วันเดียวกันทุกหมวด)
-      const txsIn0645Window = allLedger.filter((tx) => {
-        const t = new Date(tx.created_at).getTime();
-        return t >= start0645.getTime() && t < end0645.getTime();
-      });
-      setTransactions(txsIn0645Window);
-
-      const isInTodayRoomWindow = (tx: LedgerTransaction) => {
-        const t = new Date(tx.created_at).getTime();
-        return t >= start0645.getTime() && t < end0645.getTime();
-      };
-
       // ดึงกะช่วงกว้าง แล้วคัดตาม "วันธุรกิจที่ผูกกับกะ" พร้อมตำแหน่งที่เปิดกะ (shift_location)
       const dayShiftFrom = new Date(start0645.getTime() - 3 * 3600 * 1000);
-      const dayShiftTo = new Date(end0645.getTime());
+      const dayShiftTo = new Date(end0645.getTime() + 2 * 3600 * 1000);
       const [dayShiftsRes, handoverList] = await Promise.all([
         supabase
           .from("shifts")
@@ -472,6 +486,7 @@ export default function DailyReport({
         (s) => shiftMetaMap[s.id]?.business_date === reportDateStr
       );
       const dayShiftIds = dayShiftListRaw.map((s) => s.id);
+      const dayShiftIdSet = new Set<string>(dayShiftIds);
       let shiftLedgerRows: LedgerTransaction[] = [];
       if (dayShiftIds.length > 0) {
         const { data: shiftRows } = await supabase
@@ -481,6 +496,30 @@ export default function DailyReport({
           .order("created_at", { ascending: true });
         shiftLedgerRows = (shiftRows as LedgerTransaction[]) || [];
       }
+
+      // รวมรายการในกะของวันนี้เข้ากับ allLedger (ป้องกันกรณีปิดกะเกิน 06:45 น. เล็กน้อย)
+      const existingLedgerIds = new Set(allLedger.map((tx) => tx.id));
+      shiftLedgerRows.forEach((tx) => {
+        if (!existingLedgerIds.has(tx.id)) {
+          allLedger.push(tx);
+          existingLedgerIds.add(tx.id);
+        }
+      });
+
+      // รายการที่เกิดในรอบวันธุรกิจ 06:45 น. ถึง 06:44:59 น. ของวันถัดไป หรือผูกกับกะของวันธุรกิจนี้โดยตรง
+      const isTxInReportDay = (tx: LedgerTransaction) => {
+        if (tx.shift_id && dayShiftIdSet.has(tx.shift_id)) return true;
+        if (tx.shift_id && shiftMetaMap[tx.shift_id]?.business_date && shiftMetaMap[tx.shift_id]?.business_date !== reportDateStr) {
+          return false;
+        }
+        const t = new Date(tx.created_at).getTime();
+        return t >= start0645.getTime() && t < end0645.getTime();
+      };
+
+      const txsIn0645Window = allLedger.filter(isTxInReportDay);
+      setTransactions(txsIn0645Window);
+
+      const isInTodayRoomWindow = (tx: LedgerTransaction) => isTxInReportDay(tx);
 
       // Helper ระบุสถานที่ของห้องพักและรายการบัญชี
       const getBookingLoc = (b?: BookingRow | null): string => {
@@ -1449,129 +1488,157 @@ export default function DailyReport({
             const bTxsToday = txsIn0645Window.filter(
               (tx) => tx.booking_id === b.id && !tx.category.includes("(Voided)")
             );
-            const firstTx = bTxsToday[0];
-            const slot = getSlotForShiftOrTime(firstTx?.shift_id, firstTx?.created_at || b.actual_check_in_time || b.check_in_time);
-            const rm = roomMap[b.room_id];
-            const roomNo = rm?.room_no || "-";
-            const staffName = firstTx?.staff_name || locDayShifts[slot]?.staff_name || b.staff_name || "-";
 
-            let cashPaid = 0;
-            let keyDepPlaced = 0;
-            let transferPaid = 0;
-            let bankPrefix = "";
-            let tcColor: "purple" | "emerald" | "blue" | "slate" = "slate";
-            let roomChargeTxAmt = 0;
-            let extraAmt = 0;
-            let extraLabel = "";
-
+            // จัดกลุ่มรายการตามกะ (0, 1, 2) เพื่อให้ยอดเงินสด/เงินโอนของแต่ละกะตรงกับลิ้นชักจริง 100%
+            const txsBySlot = new Map<0 | 1 | 2, LedgerTransaction[]>();
             bTxsToday.forEach((tx) => {
-              const amt = Number(tx.amount || 0);
-              if (tx.transaction_type === "payment" && amt < 0) {
-                if (tx.category === "cash") {
-                  cashPaid += Math.abs(amt);
-                } else if (tx.category === "transfer" || tx.category === "credit_card") {
-                  transferPaid += Math.abs(amt);
-                  if (tx.category === "credit_card") {
-                    bankPrefix = "Cr";
-                    tcColor = "blue";
-                  } else {
-                    const bm = String(tx.notes || "").match(/\[BANK:([^\]]+)\]/);
-                    const bk = bm ? bm[1].trim().toUpperCase() : "SCB";
-                    bankPrefix = bk.startsWith("K") ? "K" : bk.startsWith("S") ? "S" : bk;
-                    tcColor = bk.startsWith("K") ? "emerald" : "purple";
-                  }
-                }
-              } else if (tx.transaction_type === "deposit" && amt > 0 && (tx.category.includes("ค่ามัดจำกุญแจ") || tx.category === "key_deposit")) {
-                keyDepPlaced += amt;
-              } else if (tx.transaction_type === "revenue") {
-                if (tx.category === "room_charge" || tx.category.includes("ค่าห้องพัก")) {
-                  roomChargeTxAmt += amt;
-                } else if (!tx.category.includes("มัดจำ")) {
-                  extraAmt += amt;
-                  extraLabel = tx.category;
-                }
-              }
+              const s = getSlotForShiftOrTime(tx.shift_id, tx.created_at);
+              if (!txsBySlot.has(s)) txsBySlot.set(s, []);
+              txsBySlot.get(s)!.push(tx);
             });
 
-            if (b.status === "reserved") {
-              const rNo = `R${seqBookingNo++}`;
-              const depTotal = cashPaid + transferPaid;
-              const totPrice = Number(b.actual_price || 0);
-              slotRows[slot].push({
-                id: `live-b-${b.id}`,
-                kind: "booking",
-                rowNo: rNo,
-                checkInLabel: `จอง (${new Date(b.check_in_time).toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit" })})`,
-                roomNo,
-                staffName,
-                bookingRateSummary: totPrice > 0 ? `ยอดรวม ${totPrice.toLocaleString()} ฿ - มัดจำ ${depTotal.toLocaleString()} ฿ = คงเหลือ ${(totPrice - depTotal).toLocaleString()} ฿` : "จองล่วงหน้า",
-                cashDisplay: cashPaid > 0 ? cashPaid.toLocaleString() : null,
-                transferCardDisplay: transferPaid > 0 ? `${bankPrefix} ${transferPaid.toLocaleString()}` : null,
-                transferCardColor: tcColor,
-                reservationCreditDisplay: depTotal > 0 ? `+${depTotal.toLocaleString()}` : null,
-                reservationCreditPositive: true,
-                powerWindowDisplay: `เข้า ~${fmtHmShort(b.check_in_time)} น.`,
-              });
-              slotTotals[slot].cash += cashPaid;
-              slotTotals[slot].transferCard += transferPaid;
-              slotTotals[slot].reservationCredit += depTotal;
-              slotTotals[slot].bookings += 1;
-              return;
+            if (txsBySlot.size === 0) {
+              const defaultSlot = getSlotForShiftOrTime(undefined, b.actual_check_in_time || b.check_in_time);
+              txsBySlot.set(defaultSlot, []);
             }
 
-            const bRates = dailyRatesByBooking[b.id] || [];
-            const todayRateRow = bRates.find((r) => r.target_date === reportDateStr);
-            const roomAmt = todayRateRow ? Number(todayRateRow.amount || 0) : roomChargeTxAmt;
-            const totalRowCharge = roomAmt + extraAmt;
-            const netCash = cashPaid - keyDepPlaced;
+            const primarySlot = Array.from(txsBySlot.keys())[0];
 
-            const cashDisp =
-              cashPaid > 0 && keyDepPlaced > 0
-                ? `${cashPaid.toLocaleString()}-${keyDepPlaced.toLocaleString()}`
-                : cashPaid === 0 && keyDepPlaced > 0
-                ? `-${keyDepPlaced.toLocaleString()}`
-                : cashPaid > 0
-                ? cashPaid.toLocaleString()
-                : null;
+            Array.from(txsBySlot.entries()).forEach(([slot, slotTxs]) => {
+              const isPrimarySlot = slot === primarySlot;
+              const firstTx = slotTxs[0];
+              const rm = roomMap[b.room_id];
+              const roomNo = rm?.room_no || "-";
+              const staffName = firstTx?.staff_name || locDayShifts[slot]?.staff_name || b.staff_name || "-";
 
-            const resBreak = resItems.find((it) => it.bookingId === b.id);
-            const advBreak = advItems.find((it) => it.bookingId === b.id);
-            const resNetRow = resBreak ? resBreak.addedToday - resBreak.usedToday : 0;
-            const advNetRow = advBreak ? advBreak.addedToday - advBreak.usedToday : 0;
+              let cashPaid = 0;
+              let keyDepPlaced = 0;
+              let keyDepRefunded = 0;
+              let transferPaid = 0;
+              let bankPrefix = "";
+              let tcColor: "purple" | "emerald" | "blue" | "slate" = "slate";
+              let roomChargeTxAmt = 0;
+              let extraAmt = 0;
+              let extraLabel = "";
 
-            slotRows[slot].push({
-              id: `live-c-${b.id}`,
-              kind: "checkin",
-              rowNo: String(seqCheckinNo++),
-              checkInLabel: fmtHmShort(b.actual_check_in_time || b.check_in_time) || "-",
-              roomNo,
-              staffName,
-              roomRate: roomAmt || null,
-              extraLabel: extraLabel || null,
-              extraAmount: extraAmt || null,
-              totalCharge: totalRowCharge || null,
-              cashDisplay: cashDisp,
-              cashNegative: netCash < 0,
-              transferCardDisplay: transferPaid > 0 ? `${bankPrefix} ${transferPaid.toLocaleString()}` : null,
-              transferCardColor: tcColor,
-              reservationCreditDisplay: resNetRow !== 0 ? (resNetRow > 0 ? `+${resNetRow.toLocaleString()}` : `-${Math.abs(resNetRow).toLocaleString()}`) : null,
-              reservationCreditPositive: resNetRow > 0,
-              advanceCreditDisplay: advNetRow !== 0 ? (advNetRow > 0 ? `+${advNetRow.toLocaleString()}` : `-${Math.abs(advNetRow).toLocaleString()}`) : null,
-              advanceCreditPositive: advNetRow > 0,
-              powerWindowDisplay:
-                b.status === "checked_out"
-                  ? `${fmtHmShort(b.actual_check_in_time || b.check_in_time)} - ${fmtHmShort(b.check_out_time)}`
-                  : `${fmtHmShort(b.actual_check_in_time || b.check_in_time)} - ปัจจุบัน`,
+              slotTxs.forEach((tx) => {
+                const amt = Number(tx.amount || 0);
+                if (tx.transaction_type === "payment" && amt < 0) {
+                  if (tx.category === "cash") {
+                    cashPaid += Math.abs(amt);
+                  } else if (tx.category === "transfer" || tx.category === "credit_card") {
+                    transferPaid += Math.abs(amt);
+                    if (tx.category === "credit_card") {
+                      bankPrefix = "Cr";
+                      tcColor = "blue";
+                    } else {
+                      const bm = String(tx.notes || "").match(/\[BANK:([^\]]+)\]/);
+                      const bk = bm ? bm[1].trim().toUpperCase() : "SCB";
+                      bankPrefix = bk.startsWith("K") ? "K" : bk.startsWith("S") ? "S" : bk;
+                      tcColor = bk.startsWith("K") ? "emerald" : "purple";
+                    }
+                  }
+                } else if (tx.transaction_type === "deposit" && amt > 0 && (tx.category.includes("ค่ามัดจำกุญแจ") || tx.category === "key_deposit")) {
+                  keyDepPlaced += amt;
+                } else if (tx.transaction_type === "deposit" && amt < 0 && (tx.category.includes("คืนมัดจำ") || tx.category.includes("คืนเงินทอน"))) {
+                  keyDepRefunded += Math.abs(amt);
+                } else if (tx.transaction_type === "revenue") {
+                  if (tx.category === "room_charge" || tx.category.includes("ค่าห้องพัก")) {
+                    roomChargeTxAmt += amt;
+                  } else if (!tx.category.includes("มัดจำ")) {
+                    extraAmt += amt;
+                    extraLabel = tx.category;
+                  }
+                }
+              });
+
+              if (b.status === "reserved") {
+                const rNo = `R${seqBookingNo++}`;
+                const depTotal = cashPaid + transferPaid;
+                const totPrice = Number(b.actual_price || 0);
+                slotRows[slot].push({
+                  id: `live-b-${b.id}-${slot}`,
+                  kind: "booking",
+                  rowNo: rNo,
+                  checkInLabel: `จอง (${new Date(b.check_in_time).toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit" })})`,
+                  roomNo,
+                  staffName,
+                  bookingRateSummary: totPrice > 0 ? `ยอดรวม ${totPrice.toLocaleString()} ฿ - มัดจำ ${depTotal.toLocaleString()} ฿ = คงเหลือ ${(totPrice - depTotal).toLocaleString()} ฿` : "จองล่วงหน้า",
+                  cashDisplay: cashPaid > 0 ? cashPaid.toLocaleString() : null,
+                  transferCardDisplay: transferPaid > 0 ? `${bankPrefix} ${transferPaid.toLocaleString()}` : null,
+                  transferCardColor: tcColor,
+                  reservationCreditDisplay: depTotal > 0 ? `+${depTotal.toLocaleString()}` : null,
+                  reservationCreditPositive: true,
+                  powerWindowDisplay: `เข้า ~${fmtHmShort(b.check_in_time)} น.`,
+                });
+                slotTotals[slot].cash += cashPaid;
+                slotTotals[slot].transferCard += transferPaid;
+                slotTotals[slot].reservationCredit += depTotal;
+                slotTotals[slot].bookings += 1;
+                return;
+              }
+
+              const bRates = dailyRatesByBooking[b.id] || [];
+              const todayRateRow = isPrimarySlot ? bRates.find((r) => r.target_date === reportDateStr) : undefined;
+              const roomAmt = todayRateRow ? Number(todayRateRow.amount || 0) : roomChargeTxAmt;
+              const totalRowCharge = roomAmt + extraAmt;
+              const netCash = cashPaid - keyDepRefunded;
+
+              const cashDisp =
+                cashPaid > 0 && keyDepRefunded > 0
+                  ? `${cashPaid.toLocaleString()}-${keyDepRefunded.toLocaleString()}`
+                  : cashPaid === 0 && keyDepRefunded > 0
+                  ? `-${keyDepRefunded.toLocaleString()}`
+                  : cashPaid > 0
+                  ? cashPaid.toLocaleString()
+                  : null;
+
+              const resBreak = isPrimarySlot ? resItems.find((it) => it.bookingId === b.id) : undefined;
+              const advBreak = isPrimarySlot ? advItems.find((it) => it.bookingId === b.id) : undefined;
+              const resNetRow = resBreak ? resBreak.addedToday - resBreak.usedToday : 0;
+              const advNetRow = advBreak ? advBreak.addedToday - advBreak.usedToday : 0;
+
+              // ข้ามแถวที่ไม่มีทั้งค่าห้องและไม่มีรายการรับ/คืนเงินในกะนี้
+              if (totalRowCharge === 0 && cashPaid === 0 && keyDepRefunded === 0 && transferPaid === 0 && resNetRow === 0 && advNetRow === 0) {
+                return;
+              }
+
+              slotRows[slot].push({
+                id: `live-c-${b.id}-${slot}`,
+                kind: "checkin",
+                rowNo: String(seqCheckinNo++),
+                checkInLabel: fmtHmShort(b.actual_check_in_time || b.check_in_time) || "-",
+                roomNo,
+                staffName,
+                roomRate: roomAmt || null,
+                extraLabel: extraLabel || null,
+                extraAmount: extraAmt || null,
+                totalCharge: totalRowCharge || null,
+                cashDisplay: cashDisp,
+                cashNegative: netCash < 0,
+                transferCardDisplay: transferPaid > 0 ? `${bankPrefix} ${transferPaid.toLocaleString()}` : null,
+                transferCardColor: tcColor,
+                reservationCreditDisplay: resNetRow !== 0 ? (resNetRow > 0 ? `+${resNetRow.toLocaleString()}` : `-${Math.abs(resNetRow).toLocaleString()}`) : null,
+                reservationCreditPositive: resNetRow > 0,
+                advanceCreditDisplay: advNetRow !== 0 ? (advNetRow > 0 ? `+${advNetRow.toLocaleString()}` : `-${Math.abs(advNetRow).toLocaleString()}`) : null,
+                advanceCreditPositive: advNetRow > 0,
+                powerWindowDisplay:
+                  b.status === "checked_out"
+                    ? `${fmtHmShort(b.actual_check_in_time || b.check_in_time)} - ${fmtHmShort(b.check_out_time)}`
+                    : `${fmtHmShort(b.actual_check_in_time || b.check_in_time)} - ปัจจุบัน`,
+              });
+
+              slotTotals[slot].roomRate += roomAmt;
+              slotTotals[slot].extra += extraAmt;
+              slotTotals[slot].totalCharge += totalRowCharge;
+              slotTotals[slot].cash += netCash;
+              slotTotals[slot].transferCard += transferPaid;
+              slotTotals[slot].reservationCredit += resNetRow;
+              slotTotals[slot].advanceCredit += advNetRow;
+              if (totalRowCharge > 0) {
+                slotTotals[slot].checkins += 1;
+              }
             });
-
-            slotTotals[slot].roomRate += roomAmt;
-            slotTotals[slot].extra += extraAmt;
-            slotTotals[slot].totalCharge += totalRowCharge;
-            slotTotals[slot].cash += netCash;
-            slotTotals[slot].transferCard += transferPaid;
-            slotTotals[slot].reservationCredit += resNetRow;
-            slotTotals[slot].advanceCredit += advNetRow;
-            slotTotals[slot].checkins += 1;
           });
 
         const liveShiftSections: ShiftSectionData[] = ([0, 1, 2] as const).map((idx) => {

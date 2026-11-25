@@ -1042,10 +1042,13 @@ export default function FinancialReportType2View({
     const prevClose = prevShift
       ? safeHandovers.find((h) => h.shift_id === prevShift.id && h.kind === "shift_close")
       : null;
-    const carriedIn = prevClose
-      ? Number(prevClose.carried_to_next_shift || 0)
-      : sh
+    const carriedIn = sh
       ? Number(sh.initial_cash || 0)
+      : prevClose
+      ? Number(
+          prevClose.next_shift_drawer_total ??
+            (Number(prevClose.key_reserve || 0) + Number(prevClose.carried_to_next_shift || 0))
+        )
       : 0;
     const afterCarried = netCashInShift + carriedIn;
     const beforeHandover = afterCarried - expSum;
@@ -1056,7 +1059,14 @@ export default function FinancialReportType2View({
       : 0;
     const countedDrawer = sysDrawer + diff;
     const closeSent = closeHandover ? Number(closeHandover.actual_amount || 0) : 0;
-    const carriedOut = closeHandover ? Number(closeHandover.carried_to_next_shift || 0) : 0;
+    const carriedOut = closeHandover
+      ? Number(
+          closeHandover.next_shift_drawer_total ??
+            (Number(closeHandover.key_reserve || 0) + Number(closeHandover.carried_to_next_shift || 0))
+        )
+      : sh
+      ? Math.max(0, countedDrawer - closeSent)
+      : 0;
 
     return {
       sh,
@@ -2572,7 +2582,7 @@ export default function FinancialReportType2View({
                     })}
                     <td className="border border-slate-300 px-0.5 py-0.5 text-center bg-slate-100">
                       <div className="font-black text-slate-700 text-[9.5px]">
-                        {fmtNum(liveS3.carriedOut)} ฿
+                        {fmtNum(liveS3.carriedOut || liveS2.carriedOut || liveS1.carriedOut)} ฿
                       </div>
                       <div className="text-[7.5px] text-slate-600 font-bold mt-0.5">ทอนยกไป</div>
                     </td>
