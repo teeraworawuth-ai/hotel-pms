@@ -1513,45 +1513,6 @@ export default function FinancialReportType2View({
         </div>
 
         <div className="flex items-center gap-1.5 text-[9.5px] flex-wrap">
-          <button
-            type="button"
-            onClick={() => setRowFilter("all")}
-            className={`px-2 py-0.5 rounded font-bold cursor-pointer ${
-              rowFilter === "all" ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-200 hover:bg-slate-600"
-            }`}
-          >
-            ทั้งหมด ({totalItemsCount} รายการ)
-          </button>
-          <button
-            type="button"
-            onClick={() => setRowFilter("checkin")}
-            className={`px-2 py-0.5 rounded cursor-pointer ${
-              rowFilter === "checkin"
-                ? "bg-blue-600 font-bold text-white"
-                : "bg-slate-700 text-slate-200 hover:bg-slate-600"
-            }`}
-          >
-            เช็คอิน ({checkinCount})
-          </button>
-          <button
-            type="button"
-            onClick={() => setRowFilter("anomaly")}
-            className={`px-2 py-0.5 rounded font-bold cursor-pointer ${
-              rowFilter === "anomaly" ? "bg-rose-600 text-white" : "bg-rose-700 hover:bg-rose-600 text-white"
-            }`}
-          >
-            ผิดปกติ ({isProto ? "213 & 109" : anomalyCount})
-          </button>
-          <button
-            type="button"
-            onClick={() => setRowFilter("booking")}
-            className={`px-2 py-0.5 rounded font-bold cursor-pointer ${
-              rowFilter === "booking" ? "bg-indigo-600 text-white" : "bg-indigo-700 hover:bg-indigo-600 text-white"
-            }`}
-          >
-            จองห้อง ({bookingCount})
-          </button>
-
           {isProto && (
             <button
               type="button"
