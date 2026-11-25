@@ -1338,7 +1338,9 @@ export default function FinancialReportType2View({
         #a4-financial-report-sheet table.audit-table tfoot td {
           font-weight: 800;
           border-top: 1.5px solid #0f172a;
-          padding: 2px 1.5px;
+          padding: 2.5px 1.5px;
+          font-size: 9.6px !important;
+          line-height: 1.15;
         }
         #a4-financial-report-sheet .sig-canvas {
           font-family: 'Dancing Script', 'Brush Script MT', cursive, sans-serif;
@@ -1440,7 +1442,9 @@ export default function FinancialReportType2View({
             page-break-inside: avoid !important;
           }
           #a4-financial-report-sheet table.audit-table tfoot td {
-            padding: 1.5px 1.5px !important;
+            padding: 2px 1.5px !important;
+            font-size: 9.2px !important;
+            line-height: 1.1 !important;
           }
           #a4-financial-report-sheet table.audit-table tr {
             page-break-inside: avoid !important;
@@ -1450,7 +1454,7 @@ export default function FinancialReportType2View({
             height: 15px !important;
           }
           #a4-financial-report-sheet table.audit-table tfoot tr.section-row {
-            height: 19px !important;
+            height: 21px !important;
           }
           #a4-financial-report-sheet tr.section-row {
             break-before: avoid !important;
@@ -3095,48 +3099,48 @@ export default function FinancialReportType2View({
             </tbody>
             <tfoot>
               <tr
-                className="bg-slate-50 text-slate-950 font-black text-[8.5px] border-t-2 border-slate-800 section-row"
-                style={{ height: "24px" }}
+                className="bg-slate-50 text-slate-950 font-black text-[9.5px] border-t-2 border-slate-800 section-row"
+                style={{ height: "26.5px" }}
               >
-                <td colSpan={4} className="px-2 bg-white text-slate-950 font-bold" style={{ height: "24px" }}>
-                  <div className="flex justify-between items-center w-full text-[8.5px] text-slate-950 font-bold">
+                <td colSpan={4} className="px-2 bg-white text-slate-950 font-bold" style={{ height: "26.5px", fontSize: "9.4px" }}>
+                  <div className="flex justify-between items-center w-full text-[9.4px] text-slate-950 font-bold">
                     <span>ลงชื่อ</span>
                     <span>ผู้ตรวจ</span>
                   </div>
                 </td>
-                <td className="text-right bg-slate-100 text-slate-950 font-black text-[9.8px]">
+                <td className="text-right bg-slate-100 text-slate-950 font-black text-[10.8px]" style={{ fontSize: "10.8px" }}>
                   {fmtNum(grandTotals.roomRate)}
                 </td>
-                <td className="text-center bg-slate-100 text-slate-800 font-black text-[9px]">
+                <td className="text-center bg-slate-100 text-slate-800 font-black text-[9.9px]" style={{ fontSize: "9.9px" }}>
                   {grandTotals.adjust ? fmtSignedNum(grandTotals.adjust) : ""}
                 </td>
-                <td className="text-right bg-slate-100 text-slate-950 font-black text-[9.8px]">
+                <td className="text-right bg-slate-100 text-slate-950 font-black text-[10.8px]" style={{ fontSize: "10.8px" }}>
                   {grandTotals.extra ? fmtNum(grandTotals.extra) : ""}
                 </td>
-                <td className="text-center bg-slate-100 text-slate-800 font-black text-[9px]">
+                <td className="text-center bg-slate-100 text-slate-800 font-black text-[9.9px]" style={{ fontSize: "9.9px" }}>
                   {grandTotals.minibar ? fmtNum(grandTotals.minibar) : ""}
                 </td>
-                <td className="text-right bg-blue-100 text-slate-950 font-black text-[10.2px]">
+                <td className="text-right bg-blue-100 text-slate-950 font-black text-[11.2px]" style={{ fontSize: "11.2px" }}>
                   {fmtNum(grandTotals.totalCharge)}
                 </td>
                 <td
-                  className="text-right bg-emerald-100 text-emerald-950 font-black text-[10.2px]"
-                  style={{ borderLeft: "1.8px solid #334155" }}
+                  className="text-right bg-emerald-100 text-emerald-950 font-black text-[11.2px]"
+                  style={{ borderLeft: "1.8px solid #334155", fontSize: "11.2px" }}
                 >
                   {fmtNum(grandTotals.cash)}
                 </td>
-                <td className="text-right bg-blue-100 text-blue-950 font-black text-[9.8px]">
+                <td className="text-right bg-blue-100 text-blue-950 font-black text-[10.8px]" style={{ fontSize: "10.8px" }}>
                   {fmtNum(grandTotals.transferCard)}
                 </td>
                 <td
-                  className="text-center bg-rose-50 text-rose-800 font-black text-[9.2px]"
-                  style={{ borderLeft: "2px solid #312e81" }}
+                  className="text-center bg-rose-50 text-rose-800 font-black text-[10.1px]"
+                  style={{ borderLeft: "2px solid #312e81", fontSize: "10.1px" }}
                 >
                   {grandTotals.reservationCredit !== 0 ? fmtSignedNum(grandTotals.reservationCredit) : ""}
                 </td>
                 <td
-                  className="text-center bg-rose-50 text-rose-800 font-black text-[9.2px]"
-                  style={{ borderRight: "1.8px solid #334155" }}
+                  className="text-center bg-rose-50 text-rose-800 font-black text-[10.1px]"
+                  style={{ borderRight: "1.8px solid #334155", fontSize: "10.1px" }}
                 >
                   {grandTotals.advanceCredit !== 0 ? fmtSignedNum(grandTotals.advanceCredit) : ""}
                 </td>

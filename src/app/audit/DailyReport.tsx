@@ -1643,8 +1643,9 @@ export default function DailyReport({
               const ciDayMonth = ciIso
                 ? new Date(ciIso).toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit" })
                 : "";
+              const hasNewCheckinOverride = slotTxs.some((tx) => String(tx.notes || "").includes("เช็คอินใหม่"));
               const rowCheckInLabel =
-                ciDateStr && ciDateStr < reportDateStr
+                !hasNewCheckinOverride && ciDateStr && ciDateStr < reportDateStr
                   ? `${ciDayMonth} ${fmtHmShort(ciIso) || "-"} (พักต่อ)`
                   : fmtHmShort(ciIso) || "-";
 
