@@ -1028,7 +1028,10 @@ export default function FinancialReportType2View({
     const expSum = shExpenses.reduce((s, e) => s + Math.abs(Number(e?.amount || 0)), 0);
     const expNote = shExpenses.map((e) => e?.category).filter(Boolean).join("/");
 
-    const roomCount = sec ? sec.rows.filter((r) => r.kind === "checkin" && !r.isDebtCollection).length : 0;
+    const hasShift = Boolean(sh) || Boolean(sec && sec.rows.length > 0);
+    const roomCount = sec
+      ? sec.rows.filter((r) => r.kind === "checkin" && !r.isDebtCollection && Number(r.totalCharge || 0) > 0).length
+      : 0;
     const rev = sec ? sec.totals.totalCharge : 0;
     const resAdvNet = sec ? sec.totals.reservationCredit + sec.totals.advanceCredit : 0;
     const resAdvNote =
@@ -1038,26 +1041,35 @@ export default function FinancialReportType2View({
     const transCard = sec ? sec.totals.transferCard : 0;
     const netCashInShift = sec ? sec.totals.cash : 0;
 
-    const prevShift = slotIdx > 0 ? safeShifts[slotIdx - 1] : null;
-    const prevClose = prevShift
-      ? safeHandovers.find((h) => h.shift_id === prevShift.id && h.kind === "shift_close")
-      : null;
-    const carriedIn = sh
-      ? Number(sh.initial_cash || 0)
-      : prevClose
-      ? Number(
-          prevClose.next_shift_drawer_total ??
-            (Number(prevClose.key_reserve || 0) + Number(prevClose.carried_to_next_shift || 0))
-        )
+    // คำนวณยอดค้างชำระ (-)/รับชำระหนี้เก่า (+) เฉพาะของกะนี้จากแถวในตาราง
+    const recNetInShift = sec
+      ? sec.rows.reduce((sum, r) => {
+          if (r.kind !== "checkin") return sum;
+          const chg = Number(r.totalCharge || 0);
+          // หากแถวนี้มีค่าห้อง แต่ยอดชำระ + เครดิต น้อยกว่าค่าห้อง (เช่น พักต่อค้างชำระ)
+          const advVal = r.advanceCreditDisplay ? Number(String(r.advanceCreditDisplay).replace(/,/g, "")) || 0 : 0;
+          const resVal = r.reservationCreditDisplay ? Number(String(r.reservationCreditDisplay).replace(/,/g, "")) || 0 : 0;
+          const tcVal = r.transferCardDisplay
+            ? Number(String(r.transferCardDisplay).replace(/[^0-9.-]/g, "")) || 0
+            : 0;
+          const cashFirst = r.cashDisplay ? Number(String(r.cashDisplay).split("-")[0].replace(/,/g, "")) || 0 : 0;
+          const covered = cashFirst + tcVal + Math.abs(advVal) + Math.abs(resVal);
+          if (chg > 0 && covered < chg) {
+            return sum - (chg - covered);
+          }
+          return sum;
+        }, 0)
       : 0;
-    const afterCarried = netCashInShift + carriedIn;
-    const beforeHandover = afterCarried - expSum;
+
+    const carriedIn = sh ? Number(sh.initial_cash || 0) : 0;
+    const afterCarried = hasShift ? netCashInShift + carriedIn : 0;
+    const beforeHandover = hasShift ? afterCarried - expSum : 0;
     const midSent = midHandovers.reduce((s, h) => s + Number(h.actual_amount || 0), 0);
-    const sysDrawer = beforeHandover - midSent;
+    const sysDrawer = hasShift ? beforeHandover - midSent : 0;
     const diff = closeHandover
       ? Number(closeHandover.actual_amount || 0) - Number(closeHandover.required_amount || 0)
       : 0;
-    const countedDrawer = sysDrawer + diff;
+    const countedDrawer = hasShift ? sysDrawer + diff : 0;
     const closeSent = closeHandover ? Number(closeHandover.actual_amount || 0) : 0;
     const carriedOut = closeHandover
       ? Number(
@@ -1070,6 +1082,7 @@ export default function FinancialReportType2View({
 
     return {
       sh,
+      hasShift,
       staffName: sh?.staff_name || (slotIdx === 0 ? "-" : slotIdx === 1 ? "-" : "-"),
       timeRange: sh
         ? `${safeFormatTime(sh.start_time)}–${sh.end_time ? safeFormatTime(sh.end_time) + " น." : "ปัจจุบัน"}`
@@ -1080,6 +1093,7 @@ export default function FinancialReportType2View({
         : "23:00–07:00 น.",
       roomCount,
       rev,
+      recNetInShift,
       resAdvNet,
       resAdvNote,
       transCard,
@@ -1160,7 +1174,7 @@ export default function FinancialReportType2View({
   const liveCloseSentTotal = liveS1.closeSent + liveS2.closeSent + liveS3.closeSent;
   const liveNetFromShifts = liveMidSentTotal + liveCloseSentTotal;
 
-  const mgrBrought = 15000;
+  const mgrBrought = isProto ? 15000 : 0;
   const mgrNetShifts = isProto ? 12150 : liveNetFromShifts;
   const mgrOutExp = outShiftExpAmount;
   const mgrBankDep = isProto ? 18000 : 0;
@@ -2122,10 +2136,18 @@ export default function FinancialReportType2View({
                     <td className="border border-slate-300 px-1.5 py-0.5 font-bold text-slate-800">
                       2. ค้างชำระ (-) / รับชำระ (+)
                     </td>
-                    {[liveS1, liveS2, liveS3].map((_, i) => (
-                      <td key={i} className="border border-slate-300 px-1.5 py-0.5 text-right text-slate-400"></td>
+                    {[liveS1, liveS2, liveS3].map((s, i) => (
+                      <td key={i} className="border border-slate-300 px-1.5 py-0.5 text-right">
+                        {s.recNetInShift !== 0 ? (
+                          <b className={`text-[9.8px] ${s.recNetInShift < 0 ? "text-rose-700" : "text-emerald-800"}`}>
+                            {fmtSignedNum(s.recNetInShift)} ฿
+                          </b>
+                        ) : (
+                          ""
+                        )}
+                      </td>
                     ))}
-                    <td className="border border-slate-300 px-1 py-0.5 text-right bg-slate-50 font-bold">
+                    <td className="border border-slate-300 px-1 py-0.5 text-right bg-slate-50 font-bold text-rose-800">
                       {recChange !== 0 ? `${fmtSignedNum(-recChange)} ฿` : ""}
                     </td>
                   </tr>
@@ -2181,10 +2203,10 @@ export default function FinancialReportType2View({
                       <td
                         key={i}
                         className={`border border-slate-300 px-1.5 py-0.5 text-right font-black text-[10px] ${
-                          s.netCashInShift < 0 ? "text-rose-700" : "text-emerald-800"
+                          !s.hasShift ? "text-slate-400 font-normal" : s.netCashInShift < 0 ? "text-rose-700" : "text-emerald-800"
                         }`}
                       >
-                        {fmtSignedNum(s.netCashInShift)} ฿
+                        {s.hasShift ? `${fmtSignedNum(s.netCashInShift)} ฿` : "-"}
                       </td>
                     ))}
                     <td className="border border-slate-300 px-1 py-0.5 text-right bg-emerald-100/80 font-black text-emerald-900 text-[10.3px]">
@@ -2197,14 +2219,20 @@ export default function FinancialReportType2View({
                     </td>
                     {[liveS1, liveS2, liveS3].map((s, i) => (
                       <td key={i} className="border border-slate-300 px-1.5 py-0.5 text-right">
-                        <span className="text-[7.8px] text-slate-500 mr-1">(ยกมา {fmtNum(s.carriedIn)})</span>
-                        <b
-                          className={`text-[9.8px] ${
-                            s.afterCarried < 0 ? "text-rose-700 font-black" : "text-slate-900"
-                          }`}
-                        >
-                          {fmtNum(s.afterCarried)} ฿
-                        </b>
+                        {s.hasShift ? (
+                          <>
+                            <span className="text-[7.8px] text-slate-500 mr-1">(ยกมา {fmtNum(s.carriedIn)})</span>
+                            <b
+                              className={`text-[9.8px] ${
+                                s.afterCarried < 0 ? "text-rose-700 font-black" : "text-slate-900"
+                              }`}
+                            >
+                              {fmtNum(s.afterCarried)} ฿
+                            </b>
+                          </>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
                       </td>
                     ))}
                     <td className="border border-slate-300 px-1 py-0.5 text-right bg-slate-50 font-bold text-slate-700">
@@ -2246,10 +2274,10 @@ export default function FinancialReportType2View({
                       <td
                         key={i}
                         className={`border border-slate-400 px-1.5 py-0.5 text-right font-black text-[10px] bg-emerald-100 ${
-                          s.beforeHandover < 0 ? "text-rose-700" : "text-emerald-900"
+                          !s.hasShift ? "text-slate-400 font-normal" : s.beforeHandover < 0 ? "text-rose-700" : "text-emerald-900"
                         }`}
                       >
-                        {fmtNum(s.beforeHandover)} ฿
+                        {s.hasShift ? `${fmtNum(s.beforeHandover)} ฿` : "-"}
                       </td>
                     ))}
                     <td className="border border-slate-400 px-1 py-0.5 text-right bg-emerald-200/90 font-black text-emerald-950 text-[10.3px]">
@@ -2289,10 +2317,10 @@ export default function FinancialReportType2View({
                       <td
                         key={i}
                         className={`border border-slate-300 px-1.5 py-0.5 text-right font-black text-[9.8px] ${
-                          s.sysDrawer < 0 ? "text-rose-700 bg-rose-50" : "text-slate-900"
+                          !s.hasShift ? "text-slate-400 font-normal" : s.sysDrawer < 0 ? "text-rose-700 bg-rose-50" : "text-slate-900"
                         }`}
                       >
-                        {fmtNum(s.sysDrawer)} ฿
+                        {s.hasShift ? `${fmtNum(s.sysDrawer)} ฿` : "-"}
                       </td>
                     ))}
                     <td className="border border-slate-300 px-1 py-0.5 text-right bg-slate-50 font-black text-slate-900 text-[9.8px]">
@@ -2310,25 +2338,29 @@ export default function FinancialReportType2View({
                           i === 0 ? "bg-amber-50/40" : i === 1 ? "bg-blue-50/40" : "bg-indigo-50/40"
                         }`}
                       >
-                        <div className="flex justify-end items-center gap-1 w-full">
-                          {s.diff < 0 && (
-                            <span className="text-[7.2px] leading-none text-rose-700 font-black bg-rose-50 px-1 py-[1px] rounded border border-rose-300 whitespace-nowrap">
-                              ขาด -{fmtNum(Math.abs(s.diff))} ฿
-                            </span>
-                          )}
-                          {s.diff > 0 && (
-                            <span className="text-[7.2px] leading-none text-emerald-800 font-black bg-emerald-50 px-1 py-[1px] rounded border border-emerald-300 whitespace-nowrap">
-                              เกิน +{fmtNum(s.diff)} ฿
-                            </span>
-                          )}
-                          <b
-                            className={`text-[9.8px] leading-tight font-black ${
-                              s.countedDrawer < 0 ? "text-rose-700" : "text-slate-900"
-                            }`}
-                          >
-                            {fmtNum(s.countedDrawer)} ฿
-                          </b>
-                        </div>
+                        {s.hasShift ? (
+                          <div className="flex justify-end items-center gap-1 w-full">
+                            {s.diff < 0 && (
+                              <span className="text-[7.2px] leading-none text-rose-700 font-black bg-rose-50 px-1 py-[1px] rounded border border-rose-300 whitespace-nowrap">
+                                ขาด -{fmtNum(Math.abs(s.diff))} ฿
+                              </span>
+                            )}
+                            {s.diff > 0 && (
+                              <span className="text-[7.2px] leading-none text-emerald-800 font-black bg-emerald-50 px-1 py-[1px] rounded border border-emerald-300 whitespace-nowrap">
+                                เกิน +{fmtNum(s.diff)} ฿
+                              </span>
+                            )}
+                            <b
+                              className={`text-[9.8px] leading-tight font-black ${
+                                s.countedDrawer < 0 ? "text-rose-700" : "text-slate-900"
+                              }`}
+                            >
+                              {fmtNum(s.countedDrawer)} ฿
+                            </b>
+                          </div>
+                        ) : (
+                          <div className="text-right text-slate-400 font-normal">-</div>
+                        )}
                       </td>
                     ))}
                     <td className="border border-slate-300 px-1 py-0.5 text-right bg-slate-50 font-black text-slate-900">

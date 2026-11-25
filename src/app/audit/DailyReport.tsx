@@ -1603,11 +1603,23 @@ export default function DailyReport({
                 return;
               }
 
+              const ciIso = b.actual_check_in_time || b.check_in_time;
+              const ciDateStr = toThaiDateStr(ciIso);
+              const ciDayMonth = ciIso
+                ? new Date(ciIso).toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit" })
+                : "";
+              const isRefundOnlyRow = totalRowCharge === 0 && keyDepRefunded > 0;
+              const rowCheckInLabel = isRefundOnlyRow
+                ? `${ciDayMonth ? `${ciDayMonth} ` : ""}${fmtHmShort(ciIso) || "-"} (คืนมัดจำ)`
+                : ciDateStr && ciDateStr < reportDateStr
+                ? `${ciDayMonth} ${fmtHmShort(ciIso) || "-"} (พักต่อ)`
+                : fmtHmShort(ciIso) || "-";
+
               slotRows[slot].push({
                 id: `live-c-${b.id}-${slot}`,
                 kind: "checkin",
                 rowNo: String(seqCheckinNo++),
-                checkInLabel: fmtHmShort(b.actual_check_in_time || b.check_in_time) || "-",
+                checkInLabel: rowCheckInLabel,
                 roomNo,
                 staffName,
                 roomRate: roomAmt || null,
