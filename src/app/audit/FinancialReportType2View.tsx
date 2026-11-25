@@ -1302,7 +1302,8 @@ export default function FinancialReportType2View({
           font-family: 'Sarabun', sans-serif;
           font-size: 7.6px;
           line-height: 1.15;
-          width: 100%;
+          width: 820px;
+          min-width: 820px;
           max-width: 820px;
           margin: 0 auto;
           background: #ffffff;
@@ -1316,6 +1317,10 @@ export default function FinancialReportType2View({
           width: 100%;
           border-collapse: collapse;
           table-layout: fixed;
+          border-left: 1.5px solid #475569 !important;
+          border-right: 1.5px solid #475569 !important;
+          border-top: 1.5px solid #475569 !important;
+          border-bottom: 1.5px solid #475569 !important;
         }
         #a4-financial-report-sheet table.audit-table th,
         #a4-financial-report-sheet table.audit-table td {
@@ -1327,6 +1332,14 @@ export default function FinancialReportType2View({
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
+        }
+        #a4-financial-report-sheet table.audit-table th:first-child,
+        #a4-financial-report-sheet table.audit-table td:first-child {
+          border-left: 1.5px solid #475569 !important;
+        }
+        #a4-financial-report-sheet table.audit-table th:last-child,
+        #a4-financial-report-sheet table.audit-table td:last-child {
+          border-right: 1.5px solid #475569 !important;
         }
         #a4-financial-report-sheet table.audit-table thead th {
           background-color: #f1f5f9;
@@ -1397,7 +1410,12 @@ export default function FinancialReportType2View({
             margin: 0 !important;
             padding: 0 !important;
             max-width: 100% !important;
+            min-width: 100% !important;
             width: 100% !important;
+          }
+          #a4-financial-report-sheet div.overflow-x-auto,
+          #a4-financial-report-sheet .overflow-x-auto {
+            overflow: visible !important;
           }
           #a4-financial-report-sheet > div:first-child {
             padding: 2px 3px !important;
@@ -1425,6 +1443,17 @@ export default function FinancialReportType2View({
           }
           #a4-financial-report-sheet table.audit-table {
             page-break-inside: auto !important;
+            border: 1.2px solid #334155 !important;
+            border-left: 1.2px solid #334155 !important;
+            border-right: 1.2px solid #334155 !important;
+          }
+          #a4-financial-report-sheet table.audit-table th:first-child,
+          #a4-financial-report-sheet table.audit-table td:first-child {
+            border-left: 1.2px solid #334155 !important;
+          }
+          #a4-financial-report-sheet table.audit-table th:last-child,
+          #a4-financial-report-sheet table.audit-table td:last-child {
+            border-right: 1.2px solid #334155 !important;
           }
           #a4-financial-report-sheet table.audit-table th,
           #a4-financial-report-sheet table.audit-table td {
@@ -1615,7 +1644,8 @@ export default function FinancialReportType2View({
       </div>
 
       {/* ================= หน้ากระดาษรายงาน A4 Portrait ================= */}
-      <div id="a4-financial-report-sheet" className="a4-portrait-container">
+      <div className="w-full overflow-x-auto pb-4 print:p-0 print:overflow-visible flex flex-col items-center">
+        <div id="a4-financial-report-sheet" className="a4-portrait-container shrink-0">
         <div className="mb-1.5 border border-slate-300 rounded bg-slate-50 p-1.5">
           {/* แถวหัวกระดาษ: ซ้าย=สถานที่ (ไม่มีป้ายปิดวันสมบูรณ์) | กลาง=วันที่ (อยู่กึ่งกลางระหว่างสถานที่กับค้างชำระ) | ขวา=ค้างชำระ/รับจอง/ล่วงหน้า */}
           <div className="flex justify-between items-center border-b border-slate-300 pb-1 mb-1.5 gap-1.5 text-[8.2px]">
@@ -2728,7 +2758,7 @@ export default function FinancialReportType2View({
                 className="bg-slate-50 text-slate-950 font-black text-[9.8px] border-b-2 border-slate-800 section-row"
                 style={{ height: "28px" }}
               >
-                <td colSpan={4} className="px-2 bg-white text-slate-950 font-bold" style={{ height: "28px", fontSize: "9.8px" }}>
+                <td colSpan={4} className="px-2 bg-white text-slate-950 font-bold border-l-2 border-slate-700" style={{ height: "28px", fontSize: "9.8px" }}>
                   <div className="flex justify-between items-center w-full text-[9.8px] text-slate-950 font-bold">
                     <span>ลงชื่อ</span>
                     <span>ผู้ตรวจ</span>
@@ -2770,10 +2800,10 @@ export default function FinancialReportType2View({
                 >
                   {grandTotals.advanceCredit !== 0 ? fmtSignedNum(grandTotals.advanceCredit) : ""}
                 </td>
-                <td colSpan={2} className="text-center bg-slate-50 text-slate-500"></td>
+                <td colSpan={2} className="text-center bg-slate-50 text-slate-500 border-r-2 border-slate-700"></td>
               </tr>
               <tr>
-                <th rowSpan={2} style={{ width: "3.6%" }}>
+                <th rowSpan={2} style={{ width: "3.6%" }} className="border-l-2 border-slate-700">
                   #
                 </th>
                 <th
@@ -2812,7 +2842,7 @@ export default function FinancialReportType2View({
                 <th
                   rowSpan={2}
                   style={{ width: "3.2%", padding: "2px 0" }}
-                  className="bg-slate-100 text-slate-900 text-center align-middle font-black"
+                  className="bg-slate-100 text-slate-900 text-center align-middle font-black border-r-2 border-slate-700"
                 >
                   <div className="flex flex-col items-center justify-center gap-0.5">
                     <span className="text-[10px] leading-none text-slate-700">☑</span>
@@ -3182,6 +3212,7 @@ export default function FinancialReportType2View({
             ระบบจะลงบันทึกในช่อง <em>&quot;ขาด/เกิน&quot;</em> ของกะบ่ายโดยอัตโนมัติ
           </div>
         )}
+      </div>
       </div>
     </div>
   );
