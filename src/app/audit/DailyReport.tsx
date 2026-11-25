@@ -1644,10 +1644,12 @@ export default function DailyReport({
                 ? new Date(ciIso).toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit" })
                 : "";
               const hasNewCheckinOverride = slotTxs.some((tx) => String(tx.notes || "").includes("เช็คอินใหม่"));
-              const rowCheckInLabel =
-                !hasNewCheckinOverride && ciDateStr && ciDateStr < reportDateStr
-                  ? `${ciDayMonth} ${fmtHmShort(ciIso) || "-"} (พักต่อ)`
-                  : fmtHmShort(ciIso) || "-";
+              const hasExtendFrom23Override = slotTxs.some((tx) => String(tx.notes || "").includes("พักต่อจาก 23/11"));
+              const rowCheckInLabel = hasExtendFrom23Override
+                ? `23/11 ${fmtHmShort(ciIso) || "-"} (พักต่อ)`
+                : !hasNewCheckinOverride && ciDateStr && ciDateStr < reportDateStr
+                ? `${ciDayMonth} ${fmtHmShort(ciIso) || "-"} (พักต่อ)`
+                : fmtHmShort(ciIso) || "-";
 
               slotRows[slot].push({
                 id: `live-c-${b.id}-${slot}`,

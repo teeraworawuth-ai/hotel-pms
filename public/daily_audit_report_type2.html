@@ -150,16 +150,13 @@
     }
 
     /* เส้นแบ่งกลุ่ม ชำระเงิน (เงินสด, โอน/บัตร) กับ เครดิต (รับจอง, ล่วงหน้า) ให้แยกกลุ่มชัดเจน */
-    table.audit-table tbody tr:not(.section-row) td:nth-last-child(6),
-    table.audit-table tfoot tr td:nth-last-child(6) {
+    table.audit-table tbody tr:not(.section-row) td:nth-last-child(6) {
       border-left: 1.8px solid #334155 !important;
     }
-    table.audit-table tbody tr:not(.section-row) td:nth-last-child(4),
-    table.audit-table tfoot tr td:nth-last-child(4) {
+    table.audit-table tbody tr:not(.section-row) td:nth-last-child(4) {
       border-left: 2px solid #312e81 !important;
     }
-    table.audit-table tbody tr:not(.section-row) td:nth-last-child(3),
-    table.audit-table tfoot tr td:nth-last-child(3) {
+    table.audit-table tbody tr:not(.section-row) td:nth-last-child(3) {
       border-right: 1.8px solid #334155 !important;
     }
     table.audit-table tbody tr.item-checkin td:nth-last-child(4),
@@ -591,7 +588,43 @@
     <!-- ตารางบันทึกประจำวัน 15 คอลัมน์ (จองล่วงหน้าไม่นับเป็นรายได้ ขีดช่องเรียกเก็บ ลง จ.+ยอดมัดจำ) -->
     <div class="overflow-x-auto">
       <table class="audit-table">
+        <colgroup>
+          <col style="width: 3.6%;" />
+          <col style="width: 15.3%;" />
+          <col style="width: 3.75%;" />
+          <col style="width: 3.9%;" />
+          <col style="width: 2.6%;" />
+          <col style="width: 2.4%;" />
+          <col style="width: 6.0%;" />
+          <col style="width: 3.9%;" />
+          <col style="width: 4.95%;" />
+          <col style="width: 10.5%;" />
+          <col style="width: 10.5%;" />
+          <col style="width: 2.05%;" />
+          <col style="width: 2.05%;" />
+          <col style="width: 12.2%;" />
+          <col style="width: 3.2%;" />
+        </colgroup>
         <thead>
+          <!-- แถบลงชื่อผู้ตรวจ และสรุปรวมทั้งสิ้น 24 ชม. (ย้ายมาไว้เหนือตารางเช็คอิน ใต้กล่อง 5 กล่อง) -->
+          <tr class="bg-slate-50 text-slate-950 font-black text-[9.8px] border-b-2 border-slate-800 section-row" style="height: 28px;">
+            <td colspan="4" class="px-2 bg-white text-slate-950 font-bold" style="height: 28px; font-size: 9.8px !important;">
+              <div class="flex justify-between items-center w-full text-[9.8px] text-slate-950 font-bold">
+                <span>ลงชื่อ</span>
+                <span>ผู้ตรวจ</span>
+              </div>
+            </td>
+            <td class="text-right bg-slate-100 text-slate-950 font-black text-[11.3px]" style="font-size: 11.3px !important;">25,920</td>
+            <td class="text-center bg-slate-100 text-slate-800 font-black text-[10.4px]" style="font-size: 10.4px !important;"></td>
+            <td class="text-right bg-slate-100 text-slate-950 font-black text-[11.3px]" style="font-size: 11.3px !important;">190</td>
+            <td class="text-center bg-slate-100 text-slate-800 font-black text-[10.4px]" style="font-size: 10.4px !important;"></td>
+            <td class="text-right bg-blue-100 text-slate-950 font-black text-[11.8px]" style="font-size: 11.8px !important;">26,110</td>
+            <td class="text-right bg-emerald-100 text-emerald-950 font-black text-[11.8px]" style="border-left: 1.8px solid #334155 !important; font-size: 11.8px !important;">12,370</td>
+            <td class="text-right bg-blue-100 text-blue-950 font-black text-[11.3px]" style="font-size: 11.3px !important;">12,240</td>
+            <td class="text-center bg-rose-50 text-rose-800 font-black text-[10.6px]" style="border-left: 2px solid #312e81 !important; font-size: 10.6px !important;" title="รับจองใหม่ +1,600 หักใช้จองเดิม -2,400">-800</td>
+            <td class="text-center bg-rose-50 text-rose-800 font-black text-[10.6px]" style="border-right: 1.8px solid #334155 !important; font-size: 10.6px !important;" title="ตั้งพักล่วงหน้าใหม่ +1,200 หักใช้ล่วงหน้าเดิม -1,900">-700</td>
+            <td colspan="2" class="text-center bg-slate-50 text-slate-500"></td>
+          </tr>
           <tr>
             <th rowspan="2" style="width: 3.6%;">#</th>
             <!-- คอลัมน์เช็คอิน / จอง -->
@@ -1499,27 +1532,6 @@
           </tr>
 
         </tbody>
-        <tfoot>
-          <!-- แถบลงชื่อผู้ตรวจ และสรุปรวมทั้งสิ้น 24 ชม. (รายได้ค่าห้องจริง 25,920 + เสริม 190 = 26,110 | รับชำระเงินสด 12,370 + โอน/บัตร 12,240 + จอง/ล่วงหน้า -1,500) -->
-          <tr class="bg-slate-50 text-slate-950 font-black text-[9.5px] border-t-2 border-slate-800 section-row" style="height: 26.5px;">
-            <td colspan="4" class="px-2 bg-white text-slate-950 font-bold" style="height: 26.5px; font-size: 9.4px !important;">
-              <div class="flex justify-between items-center w-full text-[9.4px] text-slate-950 font-bold">
-                <span>ลงชื่อ</span>
-                <span>ผู้ตรวจ</span>
-              </div>
-            </td>
-            <td class="text-right bg-slate-100 text-slate-950 font-black text-[10.8px]" style="font-size: 10.8px !important;">25,920</td>
-            <td class="text-center bg-slate-100 text-slate-800 font-black text-[9.9px]" style="font-size: 9.9px !important;"></td>
-            <td class="text-right bg-slate-100 text-slate-950 font-black text-[10.8px]" style="font-size: 10.8px !important;">190</td>
-            <td class="text-center bg-slate-100 text-slate-800 font-black text-[9.9px]" style="font-size: 9.9px !important;"></td>
-            <td class="text-right bg-blue-100 text-slate-950 font-black text-[11.2px]" style="font-size: 11.2px !important;">26,110</td>
-            <td class="text-right bg-emerald-100 text-emerald-950 font-black text-[11.2px]" style="border-left: 1.8px solid #334155 !important; font-size: 11.2px !important;">12,370</td>
-            <td class="text-right bg-blue-100 text-blue-950 font-black text-[10.8px]" style="font-size: 10.8px !important;">12,240</td>
-            <td class="text-center bg-rose-50 text-rose-800 font-black text-[10.1px]" style="border-left: 2px solid #312e81 !important; font-size: 10.1px !important;" title="รับจองใหม่ +1,600 หักใช้จองเดิม -2,400">-800</td>
-            <td class="text-center bg-rose-50 text-rose-800 font-black text-[10.1px]" style="border-right: 1.8px solid #334155 !important; font-size: 10.1px !important;" title="ตั้งพักล่วงหน้าใหม่ +1,200 หักใช้ล่วงหน้าเดิม -1,900">-700</td>
-            <td colspan="2" class="text-center bg-slate-50 text-slate-500"></td>
-          </tr>
-        </tfoot>
       </table>
     </div>
 
