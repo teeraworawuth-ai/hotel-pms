@@ -2699,15 +2699,15 @@ export default function FinancialReportType2View({
               <col style={{ width: "15.3%" }} />
               <col style={{ width: "3.75%" }} />
               <col style={{ width: "3.9%" }} />
-              <col style={{ width: "2.6%" }} />
-              <col style={{ width: "2.4%" }} />
-              <col style={{ width: "6.0%" }} />
-              <col style={{ width: "3.9%" }} />
-              <col style={{ width: "4.95%" }} />
-              <col style={{ width: "10.5%" }} />
-              <col style={{ width: "10.5%" }} />
-              <col style={{ width: "2.05%" }} />
-              <col style={{ width: "2.05%" }} />
+              <col style={{ width: "6.45%" }} />
+              <col style={{ width: "6.45%" }} />
+              <col style={{ width: "6.45%" }} />
+              <col style={{ width: "6.45%" }} />
+              <col style={{ width: "6.45%" }} />
+              <col style={{ width: "6.45%" }} />
+              <col style={{ width: "6.45%" }} />
+              <col style={{ width: "6.45%" }} />
+              <col style={{ width: "6.45%" }} />
               <col style={{ width: "12.2%" }} />
               <col style={{ width: "3.2%" }} />
             </colgroup>
