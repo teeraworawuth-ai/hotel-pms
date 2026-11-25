@@ -15,7 +15,8 @@ export default function AuditPage() {
   const { getNow } = useSimulatedTime();
   const { getActiveBusinessDate } = useShift();
   const [activeTab, setActiveTab] = useState<"daily" | "booking" | "guest" | "anomaly" | "history" | "activity_log">("daily");
-  const [dateOffset, setDateOffset] = useState<number>(0);
+  // ตั้งค่าเริ่มต้นเป็นเมื่อวาน (-1 = 24 พ.ย. 2569) เมื่อวันนี้ยังไม่มีการปิดกะ
+  const [dateOffset, setDateOffset] = useState<number>(-1);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
