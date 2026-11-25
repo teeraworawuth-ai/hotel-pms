@@ -1335,6 +1335,10 @@ export default function FinancialReportType2View({
           text-align: center;
           padding: 2px 1px;
         }
+        #a4-financial-report-sheet table.audit-table tbody tr.section-row td {
+          font-size: 8.3px !important;
+          line-height: 1.05;
+        }
         #a4-financial-report-sheet table.audit-table tfoot td {
           font-weight: 800;
           border-top: 1.5px solid #0f172a;
@@ -1438,7 +1442,11 @@ export default function FinancialReportType2View({
             display: table-row-group !important;
             page-break-inside: avoid !important;
           }
-          #a4-financial-report-sheet table.audit-table tfoot td {
+          #a4-financial-report-sheet table.audit-table tbody tr.section-row td {
+          font-size: 8.3px !important;
+          line-height: 1.05;
+        }
+        #a4-financial-report-sheet table.audit-table tfoot td {
             padding: 2px 1.5px !important;
             font-size: 9.8px !important;
             line-height: 1.1 !important;
@@ -1449,6 +1457,9 @@ export default function FinancialReportType2View({
           }
           #a4-financial-report-sheet table.audit-table tr.section-row {
             height: 15px !important;
+          }
+          #a4-financial-report-sheet table.audit-table tbody tr.section-row td {
+            font-size: 7.8px !important;
           }
           #a4-financial-report-sheet table.audit-table tfoot tr.section-row {
             height: 22px !important;
@@ -1865,8 +1876,8 @@ export default function FinancialReportType2View({
                       12,200 ฿
                     </td>
                   </tr>
-                  <tr className="border-t border-b border-slate-300 bg-rose-50/20">
-                    <td className="border border-slate-300 px-1.5 py-0.5 font-bold text-slate-900 whitespace-nowrap">
+                  <tr className="border-t border-b border-slate-300 bg-amber-50/20">
+                    <td className="border border-slate-300 px-1.5 py-0.5 font-black text-amber-950 bg-amber-50/70 whitespace-nowrap">
                       9. หัก ส่งเงินระหว่างกะ (-)
                     </td>
                     <td className="border border-slate-300 px-1.5 py-0.5 text-right text-slate-400">-</td>
@@ -1932,8 +1943,8 @@ export default function FinancialReportType2View({
                       </div>
                     </td>
                   </tr>
-                  <tr className="border-t border-slate-300">
-                    <td className="border border-slate-300 px-1.5 py-0.5 font-bold text-slate-800 whitespace-nowrap">
+                  <tr className="border-t border-slate-300 bg-rose-50/20">
+                    <td className="border border-slate-300 px-1.5 py-0.5 font-black text-rose-950 bg-rose-50/70 whitespace-nowrap">
                       12. หัก ส่งเงิน (-) / บวก เบิกทอน (+)
                     </td>
                     <td className="border border-slate-300 px-1.5 py-0.5 text-right text-slate-400">-</td>
@@ -1949,8 +1960,8 @@ export default function FinancialReportType2View({
                       -9,650 ฿
                     </td>
                   </tr>
-                  <tr className="border-t border-b-2 border-slate-500 bg-amber-50/30">
-                    <td className="border border-slate-300 px-1.5 py-0.5 font-black text-amber-950 whitespace-nowrap">
+                  <tr className="border-t border-b-2 border-slate-500 bg-blue-50/20">
+                    <td className="border border-slate-300 px-1.5 py-0.5 font-black text-blue-950 bg-blue-50/70 whitespace-nowrap">
                       13. เงินทอนส่งมอบยกไป
                     </td>
                     <td className="border border-slate-300 px-1.5 py-0.5 text-right font-black text-emerald-800 text-[9.8px]">
@@ -2304,8 +2315,8 @@ export default function FinancialReportType2View({
                       {fmtNum(grandTotals.cash + liveS1.carriedIn - liveInExpTotal)} ฿
                     </td>
                   </tr>
-                  <tr className="border-t border-b border-slate-300 bg-rose-50/20">
-                    <td className="border border-slate-300 px-1.5 py-0.5 font-bold text-slate-900 whitespace-nowrap">
+                  <tr className="border-t border-b border-slate-300 bg-amber-50/20">
+                    <td className="border border-slate-300 px-1.5 py-0.5 font-black text-amber-950 bg-amber-50/70 whitespace-nowrap">
                       9. หัก ส่งเงินระหว่างกะ (-)
                     </td>
                     {[liveS1, liveS2, liveS3].map((s, i) => (
@@ -2408,8 +2419,8 @@ export default function FinancialReportType2View({
                       })()}
                     </td>
                   </tr>
-                  <tr className="border-t border-slate-300">
-                    <td className="border border-slate-300 px-1.5 py-0.5 font-bold text-slate-800 whitespace-nowrap">
+                  <tr className="border-t border-slate-300 bg-rose-50/20">
+                    <td className="border border-slate-300 px-1.5 py-0.5 font-black text-rose-950 bg-rose-50/70 whitespace-nowrap">
                       12. หัก ส่งเงิน (-) / บวก เบิกทอน (+)
                     </td>
                     {[liveS1, liveS2, liveS3].map((s, i) => (
@@ -2444,8 +2455,8 @@ export default function FinancialReportType2View({
                       {liveCloseSentTotal !== 0 ? `${fmtSignedNum(-liveCloseSentTotal)} ฿` : "0 ฿"}
                     </td>
                   </tr>
-                  <tr className="border-t border-b-2 border-slate-500 bg-amber-50/30">
-                    <td className="border border-slate-300 px-1.5 py-0.5 font-black text-amber-950 whitespace-nowrap">
+                  <tr className="border-t border-b-2 border-slate-500 bg-blue-50/20">
+                    <td className="border border-slate-300 px-1.5 py-0.5 font-black text-blue-950 bg-blue-50/70 whitespace-nowrap">
                       13. เงินทอนส่งมอบยกไป
                     </td>
                     {[liveS1, liveS2, liveS3].map((s, i) => (
@@ -2608,49 +2619,49 @@ export default function FinancialReportType2View({
           {/* ================= ส่วนกระทบยอดเงินสดสะสมผู้จัดการ (ซ้าย 1/3) + รายการจ่ายค่าใช้จ่ายเงินสดวันนี้ (ขวา 2/3) : จัดอยู่แถวแนวเดียวกัน ================= */}
           <div className="mt-1 bg-white border border-slate-300 rounded p-1 shadow-xs text-[8px]">
             <div className="flex gap-1 items-stretch">
-              {/* ฝั่งซ้าย: 5 กล่องสมการเงินสดสะสมผู้จัดการ (ขนาดความกว้าง ~1/3 ของแถว) */}
+              {/* ฝั่งซ้าย: 5 กล่องสมการเงินสดสะสมผู้จัดการ (ขยายขนาดขึ้น +10%) */}
               <div
-                className="bg-slate-50 rounded border border-slate-200 p-[2px] flex flex-col justify-center"
-                style={{ flex: "0 0 34%" }}
+                className="bg-slate-50 rounded border border-slate-200 p-[2.5px] flex flex-col justify-center"
+                style={{ flex: "0 0 37.5%" }}
               >
-                <div className="grid grid-cols-5 gap-[2px] text-center">
-                  <div className="bg-white px-[1px] py-1 min-w-0 rounded border border-slate-200 flex flex-col justify-center">
-                    <div className="text-[7.4px] leading-tight text-slate-600 font-bold whitespace-nowrap">
+                <div className="grid grid-cols-5 gap-[2.5px] text-center">
+                  <div className="bg-white px-[2px] py-[4.5px] min-w-0 rounded border border-slate-200 flex flex-col justify-center">
+                    <div className="text-[8.2px] leading-tight text-slate-600 font-bold whitespace-nowrap">
                       1. ยกมา
                     </div>
-                    <div className="text-[10.8px] font-black text-slate-800 mt-0.5 tracking-tighter leading-none whitespace-nowrap">
+                    <div className="text-[11.9px] font-black text-slate-800 mt-0.5 tracking-tighter leading-none whitespace-nowrap">
                       {fmtNum(mgrBrought)} ฿
                     </div>
                   </div>
-                  <div className="bg-emerald-50/70 px-[1px] py-1 min-w-0 rounded border border-emerald-200 flex flex-col justify-center">
-                    <div className="text-[7.4px] leading-tight text-emerald-900 font-bold whitespace-nowrap">
+                  <div className="bg-emerald-50/70 px-[2px] py-[4.5px] min-w-0 rounded border border-emerald-200 flex flex-col justify-center">
+                    <div className="text-[8.2px] leading-tight text-emerald-900 font-bold whitespace-nowrap">
                       2. รับสุทธิ
                     </div>
-                    <div className="text-[10.8px] font-black text-emerald-700 mt-0.5 tracking-tighter leading-none whitespace-nowrap">
+                    <div className="text-[11.9px] font-black text-emerald-700 mt-0.5 tracking-tighter leading-none whitespace-nowrap">
                       +{fmtNum(mgrNetShifts)} ฿
                     </div>
                   </div>
-                  <div className="bg-rose-50/70 px-[1px] py-1 min-w-0 rounded border border-rose-200 flex flex-col justify-center">
-                    <div className="text-[7.4px] leading-tight text-rose-900 font-bold whitespace-nowrap">
+                  <div className="bg-rose-50/70 px-[2px] py-[4.5px] min-w-0 rounded border border-rose-200 flex flex-col justify-center">
+                    <div className="text-[8.2px] leading-tight text-rose-900 font-bold whitespace-nowrap">
                       3. จ่ายนอกกะ
                     </div>
-                    <div className="text-[10.8px] font-black text-rose-700 mt-0.5 tracking-tighter leading-none whitespace-nowrap">
+                    <div className="text-[11.9px] font-black text-rose-700 mt-0.5 tracking-tighter leading-none whitespace-nowrap">
                       -{fmtNum(mgrOutExp)} ฿
                     </div>
                   </div>
-                  <div className="bg-blue-50/70 px-[1px] py-1 min-w-0 rounded border border-blue-200 flex flex-col justify-center">
-                    <div className="text-[7.4px] leading-tight text-blue-900 font-bold whitespace-nowrap">
+                  <div className="bg-blue-50/70 px-[2px] py-[4.5px] min-w-0 rounded border border-blue-200 flex flex-col justify-center">
+                    <div className="text-[8.2px] leading-tight text-blue-900 font-bold whitespace-nowrap">
                       4. ฝากเงิน
                     </div>
-                    <div className="text-[10.8px] font-black text-blue-800 mt-0.5 tracking-tighter leading-none whitespace-nowrap">
+                    <div className="text-[11.9px] font-black text-blue-800 mt-0.5 tracking-tighter leading-none whitespace-nowrap">
                       -{fmtNum(mgrBankDep)} ฿
                     </div>
                   </div>
-                  <div className="bg-amber-50 px-[1px] py-1 min-w-0 rounded border border-amber-300 flex flex-col justify-center">
-                    <div className="text-[7.4px] leading-tight text-amber-950 font-black whitespace-nowrap">
+                  <div className="bg-amber-50 px-[2px] py-[4.5px] min-w-0 rounded border border-amber-300 flex flex-col justify-center">
+                    <div className="text-[8.2px] leading-tight text-amber-950 font-black whitespace-nowrap">
                       5. ยกไป
                     </div>
-                    <div className="text-[10.8px] font-black text-amber-900 mt-0.5 tracking-tighter leading-none whitespace-nowrap">
+                    <div className="text-[11.9px] font-black text-amber-900 mt-0.5 tracking-tighter leading-none whitespace-nowrap">
                       {fmtNum(mgrCarried)} ฿
                     </div>
                   </div>
@@ -3151,7 +3162,8 @@ export default function FinancialReportType2View({
                       </td>
                       <td
                         colSpan={2}
-                        className="text-center text-[7.2px] font-semibold text-slate-700 py-0.5 whitespace-nowrap"
+                        className="text-center text-[7.6px] font-semibold text-slate-700 py-0.5 whitespace-nowrap"
+                        style={{ fontSize: "7.6px" }}
                       >
                         {sec.totals.countSummaryText}
                       </td>
