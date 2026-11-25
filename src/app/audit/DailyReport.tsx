@@ -780,7 +780,7 @@ export default function DailyReport({
         const futureUnpostedExtras = bExtras
           .filter((de) => !dayIncluded(String(de.target_date)))
           .reduce((s, de) => s + Number(de.amount || 0), 0);
-        const parts = inHouse ? computeKeyDepositParts(txBefore, futureUnpostedRates + futureUnpostedExtras) : null;
+        const parts = inHouse ? computeKeyDepositParts(txBefore, 0) : null;
 
         let charges = 0;
         const chargeItems: ReceivableChargeItem[] = [];

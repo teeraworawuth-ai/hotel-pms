@@ -2619,10 +2619,10 @@ export default function FinancialReportType2View({
           {/* ================= ส่วนกระทบยอดเงินสดสะสมผู้จัดการ (ซ้าย 1/3) + รายการจ่ายค่าใช้จ่ายเงินสดวันนี้ (ขวา 2/3) : จัดอยู่แถวแนวเดียวกัน ================= */}
           <div className="mt-1 bg-white border border-slate-300 rounded p-1 shadow-xs text-[8px]">
             <div className="flex gap-1 items-stretch">
-              {/* ฝั่งซ้าย: 5 กล่องสมการเงินสดสะสมผู้จัดการ (ขยายขนาดขึ้น +10%) */}
+              {/* ฝั่งซ้าย: 5 กล่องสมการเงินสดสะสมผู้จัดการ (ขยายความกว้างขึ้น +15% โดยคงขนาดตัวหนังสือ/ตัวเลขภายในเท่าเดิม และลดความกว้างกล่องรายจ่ายด้านขวาลงตามสัดส่วน) */}
               <div
                 className="bg-slate-50 rounded border border-slate-200 p-[2.5px] flex flex-col justify-center"
-                style={{ flex: "0 0 37.5%" }}
+                style={{ flex: "0 0 44%" }}
               >
                 <div className="grid grid-cols-5 gap-[2.5px] text-center">
                   <div className="bg-white px-[2px] py-[4.5px] min-w-0 rounded border border-slate-200 flex flex-col justify-center">
