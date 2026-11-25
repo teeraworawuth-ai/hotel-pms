@@ -1016,8 +1016,31 @@ export default function FinancialReportType2View({
   const safeHandovers = Array.isArray(handovers) ? handovers : [];
   const safeExpenses = Array.isArray(dayExpenses) ? dayExpenses : [];
 
+  // จัดกะลง 3 ช่อง (1. กะเช้า, 2. กะบ่าย, 3. กะดึก) — หากมี <= 2 กะ และเปิดกะหลัง 16:00 น. ให้จัดเป็นกะดึก (ช่อง 3) โดยเว้นวรรคกะบ่าย (ช่อง 2)
+  const slottedShifts: [Shift | null, Shift | null, Shift | null] = [null, null, null];
+  if (safeShifts.length >= 3) {
+    slottedShifts[0] = safeShifts[0] || null;
+    slottedShifts[1] = safeShifts[1] || null;
+    slottedShifts[2] = safeShifts[2] || null;
+  } else {
+    safeShifts.forEach((sh) => {
+      const hr = new Date(sh.start_time).getHours();
+      if ((hr >= 16 || hr < 5) && !slottedShifts[2]) {
+        slottedShifts[2] = sh;
+      } else if (hr >= 12 && hr < 16 && !slottedShifts[1]) {
+        slottedShifts[1] = sh;
+      } else if (!slottedShifts[0]) {
+        slottedShifts[0] = sh;
+      } else if (!slottedShifts[1]) {
+        slottedShifts[1] = sh;
+      } else {
+        slottedShifts[2] = sh;
+      }
+    });
+  }
+
   const getLiveShiftSlot = (slotIdx: 0 | 1 | 2) => {
-    const sh = safeShifts[slotIdx];
+    const sh = slottedShifts[slotIdx] || undefined;
     const sec = liveSections[slotIdx];
     const shHandovers = sh ? safeHandovers.filter((h) => h.shift_id === sh.id) : [];
     const midHandovers = shHandovers.filter((h) => h.kind === "mid_shift");
@@ -1046,7 +1069,6 @@ export default function FinancialReportType2View({
       ? sec.rows.reduce((sum, r) => {
           if (r.kind !== "checkin") return sum;
           const chg = Number(r.totalCharge || 0);
-          // หากแถวนี้มีค่าห้อง แต่ยอดชำระ + เครดิต น้อยกว่าค่าห้อง (เช่น พักต่อค้างชำระ)
           const advVal = r.advanceCreditDisplay ? Number(String(r.advanceCreditDisplay).replace(/,/g, "")) || 0 : 0;
           const resVal = r.reservationCreditDisplay ? Number(String(r.reservationCreditDisplay).replace(/,/g, "")) || 0 : 0;
           const tcVal = r.transferCardDisplay
@@ -1066,19 +1088,16 @@ export default function FinancialReportType2View({
     const beforeHandover = hasShift ? afterCarried - expSum : 0;
     const midSent = midHandovers.reduce((s, h) => s + Number(h.actual_amount || 0), 0);
     const sysDrawer = hasShift ? beforeHandover - midSent : 0;
-    const diff = closeHandover
-      ? Number(closeHandover.actual_amount || 0) - Number(closeHandover.required_amount || 0)
-      : 0;
-    const countedDrawer = hasShift ? sysDrawer + diff : 0;
     const closeSent = closeHandover ? Number(closeHandover.actual_amount || 0) : 0;
-    const carriedOut = closeHandover
-      ? Number(
-          closeHandover.next_shift_drawer_total ??
-            (Number(closeHandover.key_reserve || 0) + Number(closeHandover.carried_to_next_shift || 0))
-        )
-      : sh
-      ? Math.max(0, countedDrawer - closeSent)
+    const carriedOut = closeHandover ? Number(closeHandover.carried_to_next_shift || 0) : 0;
+    const countedDrawer = hasShift
+      ? closeHandover
+        ? closeSent + carriedOut
+        : sh?.final_cash != null
+        ? Number(sh.final_cash)
+        : sysDrawer
       : 0;
+    const diff = hasShift && (closeHandover || sh?.final_cash != null) ? countedDrawer - sysDrawer : 0;
 
     return {
       sh,
@@ -2764,6 +2783,9 @@ export default function FinancialReportType2View({
             </thead>
             <tbody className="text-slate-800">
               {activeSections.map((sec) => {
+                if (!isProto && sec.rows.length === 0 && !slottedShifts[sec.shiftIndex - 1]) {
+                  return null;
+                }
                 const visibleRows = sec.rows.filter(
                   (r) => rowFilter === "all" || r.kind === rowFilter
                 );

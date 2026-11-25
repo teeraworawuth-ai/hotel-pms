@@ -1438,18 +1438,46 @@ export default function DailyReport({
           return d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
         };
 
+        // จัดกะลง 3 ช่อง (1. กะเช้า, 2. กะบ่าย, 3. กะดึก) — หากมี <= 2 กะ และเปิดกะหลัง 16:00 น. ให้จัดเป็นกะดึก (ช่อง 3) โดยเว้นวรรคกะบ่าย (ช่อง 2)
+        const slottedShifts: [Shift | null, Shift | null, Shift | null] = [null, null, null];
+        if (locDayShifts.length >= 3) {
+          slottedShifts[0] = locDayShifts[0] || null;
+          slottedShifts[1] = locDayShifts[1] || null;
+          slottedShifts[2] = locDayShifts[2] || null;
+        } else {
+          locDayShifts.forEach((sh) => {
+            const hr = new Date(sh.start_time).getHours();
+            if ((hr >= 16 || hr < 5) && !slottedShifts[2]) {
+              slottedShifts[2] = sh;
+            } else if (hr >= 12 && hr < 16 && !slottedShifts[1]) {
+              slottedShifts[1] = sh;
+            } else if (!slottedShifts[0]) {
+              slottedShifts[0] = sh;
+            } else if (!slottedShifts[1]) {
+              slottedShifts[1] = sh;
+            } else {
+              slottedShifts[2] = sh;
+            }
+          });
+        }
+
         const getSlotForShiftOrTime = (shId?: string | null, isoTime?: string | null): 0 | 1 | 2 => {
           if (shId) {
+            if (slottedShifts[0]?.id === shId) return 0;
+            if (slottedShifts[1]?.id === shId) return 1;
+            if (slottedShifts[2]?.id === shId) return 2;
             const idx = locDayShifts.findIndex((s) => s.id === shId);
-            if (idx === 0) return 0;
-            if (idx === 1) return 1;
             if (idx >= 2) return 2;
           }
           if (isoTime) {
             const hr = new Date(isoTime).getHours();
-            if (hr >= 6 && hr < 15) return 0;
-            if (hr >= 15 && hr < 23) return 1;
-            return 2;
+            if (hr >= 16 || hr < 5) {
+              return slottedShifts[2] || !slottedShifts[1] ? 2 : 1;
+            }
+            if (hr >= 12 && hr < 16) {
+              return slottedShifts[1] ? 1 : 0;
+            }
+            return 0;
           }
           return 0;
         };
@@ -1509,7 +1537,7 @@ export default function DailyReport({
               const firstTx = slotTxs[0];
               const rm = roomMap[b.room_id];
               const roomNo = rm?.room_no || "-";
-              const staffName = firstTx?.staff_name || locDayShifts[slot]?.staff_name || b.staff_name || "-";
+              const staffName = firstTx?.staff_name || slottedShifts[slot]?.staff_name || b.staff_name || "-";
 
               let cashPaid = 0;
               let keyDepPlaced = 0;
@@ -1582,13 +1610,20 @@ export default function DailyReport({
               const todayRateRow = isPrimarySlot ? bRates.find((r) => r.target_date === reportDateStr) : undefined;
               const roomAmt = todayRateRow ? Number(todayRateRow.amount || 0) : roomChargeTxAmt;
               const totalRowCharge = roomAmt + extraAmt;
-              const netCash = cashPaid - keyDepRefunded;
+
+              // กรณีรายการทดลองกดรับมัดจำและคืนมัดจำทันทีโดยไม่มีค่าห้อง (เช่น ห้อง 2 ตอน 06:54) ให้ตัดออก
+              if (totalRowCharge === 0 && keyDepPlaced > 0 && keyDepPlaced === keyDepRefunded && cashPaid === keyDepPlaced && transferPaid === 0) {
+                return;
+              }
+
+              // หักค่ามัดจำกุญแจ (keyDepPlaced) ออกจากเงินสดรับในกะเสมอ (ทั้งกรณีจ่ายสด เช่น 900-200 และกรณีโอนรวมมัดจำ เช่น K 700 หักเงินสด -200 เข้ากองมัดจำ)
+              const netCash = cashPaid - keyDepPlaced;
 
               const cashDisp =
-                cashPaid > 0 && keyDepRefunded > 0
-                  ? `${cashPaid.toLocaleString()}-${keyDepRefunded.toLocaleString()}`
-                  : cashPaid === 0 && keyDepRefunded > 0
-                  ? `-${keyDepRefunded.toLocaleString()}`
+                cashPaid > 0 && keyDepPlaced > 0
+                  ? `${cashPaid.toLocaleString()}-${keyDepPlaced.toLocaleString()}`
+                  : cashPaid === 0 && keyDepPlaced > 0
+                  ? `-${keyDepPlaced.toLocaleString()}`
                   : cashPaid > 0
                   ? cashPaid.toLocaleString()
                   : null;
@@ -1598,8 +1633,8 @@ export default function DailyReport({
               const resNetRow = resBreak ? resBreak.addedToday - resBreak.usedToday : 0;
               const advNetRow = advBreak ? advBreak.addedToday - advBreak.usedToday : 0;
 
-              // ข้ามแถวที่ไม่มีทั้งค่าห้องและไม่มีรายการรับ/คืนเงินในกะนี้
-              if (totalRowCharge === 0 && cashPaid === 0 && keyDepRefunded === 0 && transferPaid === 0 && resNetRow === 0 && advNetRow === 0) {
+              // ข้ามแถวที่ไม่มีค่าห้องและไม่มีรายการรับชำระ/เครดิตในกะนี้ (เช่น แถวคืนมัดจำกุญแจของห้องที่เช็คเอาท์จากวันก่อน)
+              if (totalRowCharge === 0 && cashPaid === 0 && keyDepPlaced === 0 && transferPaid === 0 && resNetRow === 0 && advNetRow === 0) {
                 return;
               }
 
@@ -1608,12 +1643,10 @@ export default function DailyReport({
               const ciDayMonth = ciIso
                 ? new Date(ciIso).toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit" })
                 : "";
-              const isRefundOnlyRow = totalRowCharge === 0 && keyDepRefunded > 0;
-              const rowCheckInLabel = isRefundOnlyRow
-                ? `${ciDayMonth ? `${ciDayMonth} ` : ""}${fmtHmShort(ciIso) || "-"} (คืนมัดจำ)`
-                : ciDateStr && ciDateStr < reportDateStr
-                ? `${ciDayMonth} ${fmtHmShort(ciIso) || "-"} (พักต่อ)`
-                : fmtHmShort(ciIso) || "-";
+              const rowCheckInLabel =
+                ciDateStr && ciDateStr < reportDateStr
+                  ? `${ciDayMonth} ${fmtHmShort(ciIso) || "-"} (พักต่อ)`
+                  : fmtHmShort(ciIso) || "-";
 
               slotRows[slot].push({
                 id: `live-c-${b.id}-${slot}`,
@@ -1654,7 +1687,7 @@ export default function DailyReport({
           });
 
         const liveShiftSections: ShiftSectionData[] = ([0, 1, 2] as const).map((idx) => {
-          const sh = locDayShifts[idx];
+          const sh = slottedShifts[idx];
           const t = slotTotals[idx];
           const timeText = sh
             ? `${fmtHmShort(sh.start_time)} – ${sh.end_time ? fmtHmShort(sh.end_time) + " น." : "ปัจจุบัน"}`
