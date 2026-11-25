@@ -1217,8 +1217,10 @@ export default function DailyReport({
             heldRooms.push({ bookingId: b.id, roomNo, guestName: b.guest_name || "ผู้เข้าพัก", amount: e.active });
           }
 
-          const bUnpaidStart = Math.max(0, -balS);
-          const bUnpaidEnd = Math.max(0, -balE);
+          // รีเซ็ตยอดค้างชำระเก่าจากช่วงทดลองระบบก่อนวันที่ 2026-11-24 ให้เป็น 0 เพื่อเริ่มนับระบบจริงตั้งแต่วันที่ 24 พ.ย. 2569
+          const isPreLaunchTestBooking = (e.checkInDateStr || s.checkInDateStr) < "2026-11-24";
+          const bUnpaidStart = isPreLaunchTestBooking ? 0 : Math.max(0, -balS);
+          const bUnpaidEnd = isPreLaunchTestBooking ? 0 : Math.max(0, -balE);
           arStart += bUnpaidStart;
           arEnd += bUnpaidEnd;
 
