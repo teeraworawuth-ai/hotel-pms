@@ -287,6 +287,16 @@ export async function fetchHandoversByDate(businessDate: string): Promise<CashHa
   );
 }
 
+export async function fetchAllHandovers(): Promise<CashHandover[]> {
+  const { data } = await supabase
+    .from("system_settings")
+    .select("key, value")
+    .like("key", `${HANDOVER_KEY_PREFIX}%`);
+  return ((data || []).map((r: any) => r.value as CashHandover) || [])
+    .filter(Boolean)
+    .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+}
+
 export function newHandoverId() {
   return `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }

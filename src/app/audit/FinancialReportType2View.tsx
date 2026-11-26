@@ -99,6 +99,7 @@ export type LocationReportSnapshot = {
   liveReserve?: { total?: number };
   liveRequiredTotal?: number;
   liveShiftSections?: ShiftSectionData[];
+  mgrBroughtForward?: number;
 };
 
 type Props = {
@@ -1223,7 +1224,7 @@ export default function FinancialReportType2View({
   const liveCloseSentTotal = liveS1.closeSent + liveS2.closeSent + liveS3.closeSent;
   const liveNetFromShifts = liveMidSentTotal + liveCloseSentTotal;
 
-  const mgrBrought = isProto ? 15000 : 0;
+  const mgrBrought = isProto ? 15000 : Number(report.mgrBroughtForward ?? 0);
   const mgrNetShifts = isProto ? 12150 : liveNetFromShifts;
   const mgrOutExp = outShiftExpAmount;
   const mgrBankDep = isProto ? 18000 : 0;

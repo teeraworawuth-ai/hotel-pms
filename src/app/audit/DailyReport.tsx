@@ -13,6 +13,7 @@ import {
   CashHandover,
   computeDrawerFromRows,
   EOD_LOC_KEY_PREFIX,
+  fetchAllHandovers,
   fetchHandoversByDate,
   fetchShiftMetadata,
   inferShiftLocation,
@@ -177,6 +178,7 @@ type LocationReportSnapshot = {
   crossLocCollectedForHere: TransferCardReportItem[];
   crossLocCollectedByHere: TransferCardReportItem[];
   liveShiftSections?: ShiftSectionData[];
+  mgrBroughtForward?: number;
 };
 
 const PROTOTYPE_TRANSFER_CARD_ITEMS: TransferCardReportItem[] = [
@@ -467,15 +469,17 @@ export default function DailyReport({
       // ดึงกะช่วงกว้าง แล้วคัดตาม "วันธุรกิจที่ผูกกับกะ" พร้อมตำแหน่งที่เปิดกะ (shift_location)
       const dayShiftFrom = new Date(start0645.getTime() - 3 * 3600 * 1000);
       const dayShiftTo = new Date(end0645.getTime() + 2 * 3600 * 1000);
-      const [dayShiftsRes, handoverList] = await Promise.all([
+      const [dayShiftsRes, allHandoversList] = await Promise.all([
         supabase
           .from("shifts")
           .select("*")
           .gte("start_time", dayShiftFrom.toISOString())
           .lt("start_time", dayShiftTo.toISOString())
           .order("start_time", { ascending: true }),
-        fetchHandoversByDate(reportDateStr),
+        fetchAllHandovers(),
       ]);
+      const handoverList = allHandoversList.filter((h) => h.business_date === reportDateStr);
+      const priorHandoversList = allHandoversList.filter((h) => h.business_date && h.business_date < reportDateStr);
       const candidateShifts: Shift[] = (dayShiftsRes.data as Shift[]) || [];
       const allKnownShiftsMap = new Map<string, Shift>();
       ((shiftRes.data as Shift[]) || []).forEach((s) => allKnownShiftsMap.set(s.id, s));
@@ -1382,6 +1386,8 @@ export default function DailyReport({
         // 4. กล่องเงินสดและกะของสถานที่นั้น
         const locDayShifts = dayShiftList.filter(matchShift);
         const locHandovers = handoverList.filter(matchHandover);
+        const locPriorHandovers = priorHandoversList.filter(matchHandover);
+        const mgrBroughtForward = locPriorHandovers.reduce((sum, h) => sum + Number(h.actual_amount || 0), 0);
         const locExpenses = expenseRows.filter((e) => locDayShifts.some((s) => s.id === e.shift_id));
         const locTotalExpense = locExpenses.reduce((sum, r) => sum + Math.abs(Number(r.amount || 0)), 0);
 
@@ -1773,6 +1779,7 @@ export default function DailyReport({
           crossLocCollectedForHere,
           crossLocCollectedByHere,
           liveShiftSections,
+          mgrBroughtForward,
         };
       };
 
