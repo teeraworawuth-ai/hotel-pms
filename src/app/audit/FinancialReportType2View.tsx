@@ -3295,16 +3295,17 @@ export default function FinancialReportType2View({
                           <td
                             className={
                               r.extraAmount
-                                ? "px-1 text-[7px] bg-indigo-50/20"
+                                ? "px-1 text-[7px] bg-indigo-50/20 whitespace-normal"
                                 : "text-center text-slate-400"
                             }
+                            style={r.extraAmount ? { whiteSpace: "normal" } : undefined}
                           >
                             {r.extraAmount ? (
-                              <div className="flex justify-between items-center w-full">
-                                <span className="text-indigo-900 font-semibold text-[6.8px]">
+                              <div className="flex flex-wrap justify-between items-baseline gap-x-0.5 w-full leading-[1.08]">
+                                <span className="text-indigo-900 font-semibold text-[6.5px] break-words">
                                   {r.extraLabel || "เสริม"}
                                 </span>
-                                <span className="font-bold text-indigo-950 text-[8.5px]">
+                                <span className="font-bold text-indigo-950 text-[8.5px] shrink-0 ml-auto">
                                   {fmtNum(r.extraAmount)}
                                 </span>
                               </div>
