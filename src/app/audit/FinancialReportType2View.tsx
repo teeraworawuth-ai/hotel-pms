@@ -1301,6 +1301,31 @@ export default function FinancialReportType2View({
     }
   }
 
+  // สร้างรายการยอดโอนที่จะแสดงผล (คัดเฉพาะที่มีมูลค่า > 0 หากไม่มีเลยจะว่าง)
+  const activeTransferItems = [
+    {
+      key: "S",
+      label: "S",
+      amount: grandTransferBreakdown.S,
+      colorClass: "text-purple-900",
+      textColor: "text-slate-900",
+    },
+    {
+      key: "K",
+      label: "K",
+      amount: grandTransferBreakdown.K,
+      colorClass: "text-emerald-900",
+      textColor: "text-slate-900",
+    },
+    {
+      key: "Cr",
+      label: "Cr",
+      amount: grandTransferBreakdown.Cr,
+      colorClass: "text-blue-900",
+      textColor: "text-blue-950",
+    },
+  ].filter((item) => item.amount > 0);
+
   // ตัวช่วยแสดงลายเซ็นในโหมด Live / Prototype
   const renderLiveSignatureCell = (
     h: CashHandover | null,
@@ -2974,28 +2999,33 @@ export default function FinancialReportType2View({
                   className="bg-blue-100 text-blue-950 font-black px-1 py-0.5 align-middle"
                   style={{ height: "28px", boxSizing: "border-box" }}
                 >
-                  <div className="flex flex-col justify-center items-end h-full w-full leading-none pr-0.5">
-                    <div className="inline-grid grid-cols-[auto_auto] items-baseline gap-x-1.5 text-right">
-                      <span className="font-extrabold text-purple-900 text-[8px] text-right">S</span>
-                      <span className="font-black text-slate-900 text-[8.8px] font-mono text-right">
-                        {fmtNum(grandTransferBreakdown.S)}
-                      </span>
-
-                      <span className="font-extrabold text-emerald-900 text-[8px] text-right">K</span>
-                      <span className="font-black text-slate-900 text-[8.8px] font-mono text-right">
-                        {fmtNum(grandTransferBreakdown.K)}
-                      </span>
-
-                      {grandTransferBreakdown.Cr > 0 && (
-                        <>
-                          <span className="font-extrabold text-blue-900 text-[7.5px] text-right">Cr</span>
-                          <span className="font-black text-blue-950 text-[8px] font-mono text-right">
-                            {fmtNum(grandTransferBreakdown.Cr)}
-                          </span>
-                        </>
-                      )}
+                  {activeTransferItems.length === 0 ? null : activeTransferItems.length === 1 ? (
+                    <div className="flex items-center justify-end h-full w-full pr-0.5">
+                      <div className="flex items-baseline justify-end gap-1">
+                        <span className={`font-extrabold ${activeTransferItems[0].colorClass} text-[9px]`}>
+                          {activeTransferItems[0].label}
+                        </span>
+                        <span className="font-black text-slate-900 text-[10.5px] font-mono">
+                          {fmtNum(activeTransferItems[0].amount)}
+                        </span>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="flex flex-col justify-center items-end h-full w-full leading-none pr-0.5">
+                      <div className="inline-grid grid-cols-[auto_auto] items-baseline gap-x-1.5 text-right">
+                        {activeTransferItems.map((item) => (
+                          <React.Fragment key={item.key}>
+                            <span className={`font-extrabold ${item.colorClass} text-[8px] text-right`}>
+                              {item.label}
+                            </span>
+                            <span className={`font-black ${item.textColor} text-[8.8px] font-mono text-right`}>
+                              {fmtNum(item.amount)}
+                            </span>
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </td>
                 <td
                   className="text-center bg-rose-50 text-rose-800 font-black text-[10.6px]"
