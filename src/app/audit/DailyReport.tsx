@@ -1386,7 +1386,10 @@ export default function DailyReport({
         // 4. กล่องเงินสดและกะของสถานที่นั้น
         const locDayShifts = dayShiftList.filter(matchShift);
         const locHandovers = handoverList.filter(matchHandover);
-        const locPriorHandovers = priorHandoversList.filter(matchHandover);
+        // ซอย 1 เริ่มใช้งานจริงตั้งแต่วันที่ 2026-11-24 (ไม่นับข้อมูลทดสอบก่อนหน้าเข้ายอดยกมา)
+        const locPriorHandovers = priorHandoversList.filter(
+          (h) => matchHandover(h) && h.business_date >= "2026-11-24"
+        );
         const mgrBroughtForward = locPriorHandovers.reduce((sum, h) => sum + Number(h.actual_amount || 0), 0);
         const locExpenses = expenseRows.filter((e) => locDayShifts.some((s) => s.id === e.shift_id));
         const locTotalExpense = locExpenses.reduce((sum, r) => sum + Math.abs(Number(r.amount || 0)), 0);
