@@ -1454,6 +1454,9 @@ export default function FinancialReportType2View({
           color: #1e3a8a;
           line-height: 1;
         }
+        #a4-financial-report-sheet table.audit-table tbody tr:not(.section-row) td:nth-child(5) {
+          border-left: 1.8px solid #334155 !important;
+        }
         #a4-financial-report-sheet table.audit-table tbody tr:not(.section-row) td:nth-last-child(6) {
           border-left: 1.8px solid #334155 !important;
         }
@@ -2943,7 +2946,10 @@ export default function FinancialReportType2View({
                     <span>ผู้ตรวจ</span>
                   </div>
                 </td>
-                <td className="text-right bg-slate-100 text-slate-950 font-black text-[11.3px]" style={{ fontSize: "11.3px" }}>
+                <td
+                  className="text-right bg-slate-100 text-slate-950 font-black text-[11.3px]"
+                  style={{ borderLeft: "1.8px solid #334155", fontSize: "11.3px" }}
+                >
                   {fmtNum(grandTotals.roomRate)}
                 </td>
                 <td className="text-center bg-slate-100 text-slate-800 font-black text-[10.4px]" style={{ fontSize: "10.4px" }}>
@@ -3022,7 +3028,11 @@ export default function FinancialReportType2View({
                 <th rowSpan={2} style={{ width: "3.9%" }}>
                   พนง.
                 </th>
-                <th colSpan={5} className="bg-blue-50 text-blue-950 border-b border-slate-400">
+                <th
+                  colSpan={5}
+                  className="bg-blue-50 text-blue-950 border-b border-slate-400"
+                  style={{ borderLeft: "1.8px solid #334155" }}
+                >
                   รายการเรียกเก็บ (รายได้วันนี้)
                 </th>
                 <th
@@ -3054,7 +3064,7 @@ export default function FinancialReportType2View({
                 </th>
               </tr>
               <tr>
-                <th className="bg-blue-50/60" style={{ width: "2.6%" }}>
+                <th className="bg-blue-50/60" style={{ width: "2.6%", borderLeft: "1.8px solid #334155" }}>
                   ค่าห้อง
                 </th>
                 <th className="bg-blue-50/60 text-slate-900" style={{ width: "2.4%" }}>
@@ -3341,7 +3351,7 @@ export default function FinancialReportType2View({
                       <td colSpan={4} className="text-center text-amber-950 py-0.5 border-l-2 border-slate-700">
                         {sec.icon} {sec.summaryTitle}
                       </td>
-                      <td className="text-right text-amber-950 py-0.5">
+                      <td className="text-right text-amber-950 py-0.5" style={{ borderLeft: "1.8px solid #334155" }}>
                         {sec.totals.roomRate ? fmtNum(sec.totals.roomRate) : ""}
                       </td>
                       <td className="text-center text-slate-700 py-0.5">
