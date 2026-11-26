@@ -3381,7 +3381,7 @@ export default function FinancialReportType2View({
                       style={{ height: "18px" }}
                     >
                       <td colSpan={4} className="text-center text-amber-950 py-0.5 border-l-2 border-slate-700">
-                        {sec.icon} {sec.summaryTitle}
+                        {sec.icon} {String(sec.summaryTitle).replace(/\)\s*:\s*$/, ")")} {sec.totals.countSummaryText}
                       </td>
                       <td className="text-right text-amber-950 py-0.5" style={{ borderLeft: "1.8px solid #334155" }}>
                         {sec.totals.roomRate ? fmtNum(sec.totals.roomRate) : ""}
@@ -3439,9 +3439,7 @@ export default function FinancialReportType2View({
                         colSpan={2}
                         className="text-center text-[7.6px] font-semibold text-slate-700 py-0.5 whitespace-nowrap border-r-2 border-slate-700"
                         style={{ fontSize: "7.6px" }}
-                      >
-                        {sec.totals.countSummaryText}
-                      </td>
+                      ></td>
                     </tr>
                   </React.Fragment>
                 );
