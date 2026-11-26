@@ -879,6 +879,38 @@ export default function FinancialReportType2View({
   const [rowFilter, setRowFilter] = useState<"all" | "checkin" | "anomaly" | "booking">("all");
   const [isShortOverDemo, setIsShortOverDemo] = useState(false);
 
+  // การควบคุมขนาดและการซูมแสดงผลสำหรับมือถือและเดสก์ท็อป
+  const [scaleMode, setScaleMode] = useState<"fit" | "100" | "custom">("100");
+  const [customZoom, setCustomZoom] = useState<number>(1);
+  const [viewportWidth, setViewportWidth] = useState<number>(1200);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (typeof window !== "undefined") {
+        const w = window.innerWidth;
+        setViewportWidth(w);
+        if (w < 820) {
+          setScaleMode("fit");
+        }
+      }
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const fitScale = viewportWidth < 820 ? Math.max(0.35, Math.min(1, (viewportWidth - 16) / 820)) : 1;
+  const effectiveMobileScale =
+    viewportWidth < 820
+      ? scaleMode === "fit"
+        ? fitScale
+        : scaleMode === "100"
+        ? 1
+        : customZoom
+      : scaleMode === "custom"
+      ? customZoom
+      : 1;
+
   const fmtNum = (n: number | undefined | null) => {
     const val = Number(n || 0);
     return isNaN(val) ? "0" : val.toLocaleString();
@@ -1298,6 +1330,14 @@ export default function FinancialReportType2View({
         rel="stylesheet"
       />
       <style>{`
+        @media screen and (min-width: 1024px) {
+          #a4-financial-report-sheet {
+            zoom: 1.15;
+          }
+          .report-control-bar {
+            max-width: 943px !important;
+          }
+        }
         #a4-financial-report-sheet {
           font-family: 'Sarabun', sans-serif;
           font-size: 7.6px;
@@ -1305,6 +1345,7 @@ export default function FinancialReportType2View({
           width: 820px;
           min-width: 820px;
           max-width: 820px;
+          box-sizing: border-box;
           margin: 0 auto;
           background: #ffffff;
           color: #0f172a;
@@ -1315,12 +1356,14 @@ export default function FinancialReportType2View({
         }
         #a4-financial-report-sheet table.audit-table {
           width: 100%;
+          box-sizing: border-box;
           border-collapse: collapse;
           table-layout: fixed;
-          border-left: 1.5px solid #475569 !important;
-          border-right: 1.5px solid #475569 !important;
-          border-top: 1.5px solid #475569 !important;
-          border-bottom: 1.5px solid #475569 !important;
+          border: 1.8px solid #334155 !important;
+          border-left: 2px solid #334155 !important;
+          border-right: 2px solid #334155 !important;
+          border-top: 1.8px solid #334155 !important;
+          border-bottom: 1.8px solid #334155 !important;
         }
         #a4-financial-report-sheet table.audit-table th,
         #a4-financial-report-sheet table.audit-table td {
@@ -1334,12 +1377,14 @@ export default function FinancialReportType2View({
           text-overflow: ellipsis;
         }
         #a4-financial-report-sheet table.audit-table th:first-child,
-        #a4-financial-report-sheet table.audit-table td:first-child {
-          border-left: 1.5px solid #475569 !important;
+        #a4-financial-report-sheet table.audit-table td:first-child,
+        #a4-financial-report-sheet table.audit-table tr > *:first-child {
+          border-left: 2px solid #334155 !important;
         }
         #a4-financial-report-sheet table.audit-table th:last-child,
-        #a4-financial-report-sheet table.audit-table td:last-child {
-          border-right: 1.5px solid #475569 !important;
+        #a4-financial-report-sheet table.audit-table td:last-child,
+        #a4-financial-report-sheet table.audit-table tr > *:last-child {
+          border-right: 2px solid #334155 !important;
         }
         #a4-financial-report-sheet table.audit-table thead th {
           background-color: #f1f5f9;
@@ -1380,7 +1425,7 @@ export default function FinancialReportType2View({
         }
         @page {
           size: A4 portrait;
-          margin: 2.5mm 3.5mm;
+          margin: 3mm;
         }
         @media print {
           nav, header, .no-print {
@@ -1405,17 +1450,22 @@ export default function FinancialReportType2View({
             margin-top: 0 !important;
           }
           #a4-financial-report-sheet {
+            box-sizing: border-box !important;
             box-shadow: none !important;
             border: none !important;
-            margin: 0 !important;
-            padding: 0 !important;
+            margin: 0 auto !important;
+            padding: 0 1.5mm !important;
             max-width: 100% !important;
             min-width: 100% !important;
             width: 100% !important;
+            zoom: 1 !important;
           }
           #a4-financial-report-sheet div.overflow-x-auto,
           #a4-financial-report-sheet .overflow-x-auto {
             overflow: visible !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
           }
           #a4-financial-report-sheet > div:first-child {
             padding: 2px 3px !important;
@@ -1428,6 +1478,7 @@ export default function FinancialReportType2View({
           #a4-financial-report-sheet #summary-type-2 table {
             line-height: 1.1 !important;
             font-size: 8.1px !important;
+            width: 100% !important;
           }
           #a4-financial-report-sheet #summary-type-2 th,
           #a4-financial-report-sheet #summary-type-2 td {
@@ -1442,18 +1493,26 @@ export default function FinancialReportType2View({
             padding: 2px !important;
           }
           #a4-financial-report-sheet table.audit-table {
+            width: 100% !important;
+            box-sizing: border-box !important;
             page-break-inside: auto !important;
-            border: 1.2px solid #334155 !important;
-            border-left: 1.2px solid #334155 !important;
-            border-right: 1.2px solid #334155 !important;
+            border-collapse: collapse !important;
+            table-layout: fixed !important;
+            border: 1.8px solid #1e293b !important;
+            border-left: 2px solid #1e293b !important;
+            border-right: 2px solid #1e293b !important;
+            border-top: 1.8px solid #1e293b !important;
+            border-bottom: 1.8px solid #1e293b !important;
           }
           #a4-financial-report-sheet table.audit-table th:first-child,
-          #a4-financial-report-sheet table.audit-table td:first-child {
-            border-left: 1.2px solid #334155 !important;
+          #a4-financial-report-sheet table.audit-table td:first-child,
+          #a4-financial-report-sheet table.audit-table tr > *:first-child {
+            border-left: 2px solid #1e293b !important;
           }
           #a4-financial-report-sheet table.audit-table th:last-child,
-          #a4-financial-report-sheet table.audit-table td:last-child {
-            border-right: 1.2px solid #334155 !important;
+          #a4-financial-report-sheet table.audit-table td:last-child,
+          #a4-financial-report-sheet table.audit-table tr > *:last-child {
+            border-right: 2px solid #1e293b !important;
           }
           #a4-financial-report-sheet table.audit-table th,
           #a4-financial-report-sheet table.audit-table td {
@@ -1472,10 +1531,10 @@ export default function FinancialReportType2View({
             page-break-inside: avoid !important;
           }
           #a4-financial-report-sheet table.audit-table tbody tr.section-row td {
-          font-size: 8.3px !important;
-          line-height: 1.05;
-        }
-        #a4-financial-report-sheet table.audit-table tfoot td {
+            font-size: 8.3px !important;
+            line-height: 1.05;
+          }
+          #a4-financial-report-sheet table.audit-table tfoot td {
             padding: 2px 1.5px !important;
             font-size: 9.8px !important;
             line-height: 1.1 !important;
@@ -1502,7 +1561,7 @@ export default function FinancialReportType2View({
 
       {/* ================= แถบควบคุม Interactive ด้านบน (ไม่พิมพ์) ================= */}
       <div
-        className="no-print max-w-[820px] mx-auto mb-2 bg-slate-900 text-white px-3 py-2 rounded-lg flex flex-wrap items-center justify-between gap-2 shadow"
+        className="no-print report-control-bar max-w-[820px] lg:max-w-[943px] mx-auto mb-2 bg-slate-900 text-white px-3 py-2 rounded-lg flex flex-wrap items-center justify-between gap-2 shadow"
         style={{ fontFamily: "'Sarabun', sans-serif" }}
       >
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -1643,9 +1702,85 @@ export default function FinancialReportType2View({
         </div>
       </div>
 
+      {/* แถบเครื่องมือควบคุมการซูมและปรับมุมมอง (สำหรับมือถือและจอคอมพิวเตอร์) */}
+      <div
+        className="no-print w-full max-w-[820px] lg:max-w-[943px] mx-auto mb-2 px-3 py-1.5 bg-slate-800 text-white rounded-lg flex items-center justify-between gap-2 text-xs shadow-sm"
+        style={{ fontFamily: "'Sarabun', sans-serif" }}
+      >
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1">
+            <span>🔍</span>
+            <span>มุมมองรายงาน:</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setScaleMode("fit");
+              setCustomZoom(fitScale);
+            }}
+            className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+              scaleMode === "fit"
+                ? "bg-emerald-600 text-white ring-2 ring-emerald-400 shadow-xs"
+                : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+            }`}
+            title="ย่อขนาดให้แสดงผลพอดีหน้าจอโทรศัพท์/หน้าจอปัจจุบัน เห็นรายงานครบทั้งแผ่น ไม่ต้องเลื่อนแนวนอน"
+          >
+            <span>📱 พอดีจอ</span>
+            <span className="text-[9.5px] opacity-80 font-mono">({Math.round(fitScale * 100)}%)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setScaleMode("100");
+              setCustomZoom(1);
+            }}
+            className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all cursor-pointer ${
+              scaleMode === "100" && customZoom === 1
+                ? "bg-indigo-600 text-white ring-2 ring-indigo-400 shadow-xs"
+                : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+            }`}
+            title="ขนาดมาตรฐาน 100% (สามารถเลื่อนดูข้อมูลได้อิสระ)"
+          >
+            ขนาดจริง 100%
+          </button>
+        </div>
+
+        <div className="flex items-center gap-1 bg-slate-900 px-2 py-0.5 rounded border border-slate-700">
+          <button
+            type="button"
+            onClick={() => {
+              setScaleMode("custom");
+              setCustomZoom((prev) => Math.max(0.35, +(prev - 0.1).toFixed(2)));
+            }}
+            className="px-2 py-0.5 rounded text-[12px] font-black hover:bg-slate-700 text-slate-200 cursor-pointer"
+            title="ย่อขนาดลง (-)"
+          >
+            ➖
+          </button>
+          <span className="text-[11px] font-mono font-bold text-emerald-400 min-w-[42px] text-center">
+            {Math.round(effectiveMobileScale * (viewportWidth >= 1024 && scaleMode !== "custom" && scaleMode !== "fit" ? 115 : 100))}%
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setScaleMode("custom");
+              setCustomZoom((prev) => Math.min(2.0, +(prev + 0.1).toFixed(2)));
+            }}
+            className="px-2 py-0.5 rounded text-[12px] font-black hover:bg-slate-700 text-slate-200 cursor-pointer"
+            title="ขยายขนาดขึ้น (+)"
+          >
+            ➕
+          </button>
+        </div>
+      </div>
+
       {/* ================= หน้ากระดาษรายงาน A4 Portrait ================= */}
       <div className="w-full overflow-x-auto pb-4 print:p-0 print:overflow-visible flex flex-col items-center">
-        <div id="a4-financial-report-sheet" className="a4-portrait-container shrink-0">
+        <div
+          id="a4-financial-report-sheet"
+          className="a4-portrait-container shrink-0"
+          style={effectiveMobileScale !== 1 ? { zoom: effectiveMobileScale } : undefined}
+        >
         <div className="mb-1.5 border border-slate-300 rounded bg-slate-50 p-1.5">
           {/* แถวหัวกระดาษ: ซ้าย=สถานที่ (ไม่มีป้ายปิดวันสมบูรณ์) | กลาง=วันที่ (อยู่กึ่งกลางระหว่างสถานที่กับค้างชำระ) | ขวา=ค้างชำระ/รับจอง/ล่วงหน้า */}
           <div className="flex justify-between items-center border-b border-slate-300 pb-1 mb-1.5 gap-1.5 text-[8.2px]">
@@ -1721,13 +1856,13 @@ export default function FinancialReportType2View({
                 <tr className="bg-slate-100 border-b border-slate-400 font-black text-[9.8px]">
                   <th
                     className="border border-slate-400 px-1.5 py-1 text-center text-slate-900"
-                    style={{ width: "16.1%" }}
+                    style={{ width: "14.8%" }}
                   >
                     รายการสรุปการเงิน
                   </th>
                   <th
                     className="border border-slate-400 px-1.5 py-1 bg-amber-100/80 text-amber-950 text-right"
-                    style={{ width: "25.5%" }}
+                    style={{ width: "26.13%" }}
                   >
                     <div className="font-bold text-[9.8px]">
                       1. กะเช้า ({isProto ? "เมย์" : liveS1.staffName})
@@ -1738,7 +1873,7 @@ export default function FinancialReportType2View({
                   </th>
                   <th
                     className="border border-slate-400 px-1.5 py-1 bg-blue-100/80 text-blue-950 text-right"
-                    style={{ width: "25.5%" }}
+                    style={{ width: "26.13%" }}
                   >
                     <div className="font-bold text-[9.8px]">
                       2. กะบ่าย ({isProto ? "แอน" : liveS2.staffName})
@@ -1749,7 +1884,7 @@ export default function FinancialReportType2View({
                   </th>
                   <th
                     className="border border-slate-400 px-1.5 py-1 bg-indigo-100/80 text-indigo-950 text-right"
-                    style={{ width: "25.5%" }}
+                    style={{ width: "26.13%" }}
                   >
                     <div className="font-bold text-[9.8px]">
                       3. กะดึก ({isProto ? "บี" : liveS3.staffName})
@@ -1760,7 +1895,7 @@ export default function FinancialReportType2View({
                   </th>
                   <th
                     className="border border-slate-400 px-0.5 py-1 bg-slate-800 text-white text-center whitespace-nowrap text-[8.8px] font-black"
-                    style={{ width: "7.4%" }}
+                    style={{ width: "6.81%" }}
                   >
                     รวมทั้งวัน
                   </th>
@@ -2906,7 +3041,7 @@ export default function FinancialReportType2View({
                             key={r.id}
                             className="bg-rose-200 border-y border-rose-400 font-bold text-rose-950 item-anomaly"
                           >
-                            <td className="text-center font-black text-rose-950">{r.rowNo}</td>
+                            <td className="text-center font-black text-rose-950 border-l-2 border-slate-700">{r.rowNo}</td>
                             <td className="text-right pr-1.5 font-black text-rose-950">{r.checkInLabel}</td>
                             <td className="text-center font-black text-rose-950">{r.roomNo}</td>
                             <td className="text-center text-rose-800">{r.staffName}</td>
@@ -2920,7 +3055,7 @@ export default function FinancialReportType2View({
                             <td className="text-center text-rose-800"></td>
                             <td className="text-center text-rose-800"></td>
                             <td className="text-center font-black text-rose-950">{r.powerWindowDisplay}</td>
-                            <td className="text-center"></td>
+                            <td className="text-center border-r-2 border-slate-700"></td>
                           </tr>
                         );
                       }
@@ -2931,7 +3066,7 @@ export default function FinancialReportType2View({
                             key={r.id}
                             className="bg-rose-200 border-y border-rose-400 font-bold text-rose-950 item-anomaly"
                           >
-                            <td className="text-center font-black text-rose-950">{r.rowNo}</td>
+                            <td className="text-center font-black text-rose-950 border-l-2 border-slate-700">{r.rowNo}</td>
                             <td className="text-center font-black text-rose-950">{r.checkInLabel}</td>
                             <td className="text-center font-black text-rose-950">{r.roomNo}</td>
                             <td className="text-center text-rose-950 font-bold">{r.staffName}</td>
@@ -2945,7 +3080,7 @@ export default function FinancialReportType2View({
                             <td className="text-center text-rose-800"></td>
                             <td className="text-center text-rose-800"></td>
                             <td className="text-center font-black text-rose-950">{r.powerWindowDisplay}</td>
-                            <td className="text-center"></td>
+                            <td className="text-center border-r-2 border-slate-700"></td>
                           </tr>
                         );
                       }
@@ -2961,7 +3096,7 @@ export default function FinancialReportType2View({
                             : "text-slate-700";
                         return (
                           <tr key={r.id} className="bg-indigo-50/60 border-y border-indigo-200 item-booking">
-                            <td className="text-center font-bold text-indigo-900">{r.rowNo}</td>
+                            <td className="text-center font-bold text-indigo-900 border-l-2 border-slate-700">{r.rowNo}</td>
                             <td className="text-center font-black text-indigo-950 bg-indigo-100/70">
                               {r.checkInLabel}
                             </td>
@@ -2976,8 +3111,8 @@ export default function FinancialReportType2View({
                             <td
                               className={
                                 r.cashDisplay
-                                  ? "text-right font-bold text-blue-900 bg-emerald-50/70"
-                                  : "text-center text-slate-400"
+                                   ? "text-right font-bold text-blue-900 bg-emerald-50/70"
+                                   : "text-center text-slate-400"
                               }
                             >
                               {r.cashDisplay || ""}
@@ -2998,7 +3133,7 @@ export default function FinancialReportType2View({
                             <td className="text-center px-1 text-indigo-950 bg-indigo-50/50 text-[6.4px] max-w-[85px] truncate">
                               {r.powerWindowDisplay || ""}
                             </td>
-                            <td className="text-center"></td>
+                            <td className="text-center border-r-2 border-slate-700"></td>
                           </tr>
                         );
                       }
@@ -3021,7 +3156,7 @@ export default function FinancialReportType2View({
                           }`}
                         >
                           <td
-                            className={`text-center font-bold ${
+                            className={`text-center font-bold border-l-2 border-slate-700 ${
                               r.isDebtCollection ? "text-emerald-900" : ""
                             }`}
                           >
@@ -3125,7 +3260,7 @@ export default function FinancialReportType2View({
                             {r.advanceCreditDisplay || ""}
                           </td>
                           <td className="text-center">{r.powerWindowDisplay || ""}</td>
-                          <td className="text-center"></td>
+                          <td className="text-center border-r-2 border-slate-700"></td>
                         </tr>
                       );
                     })}
@@ -3135,7 +3270,7 @@ export default function FinancialReportType2View({
                       className="bg-amber-100/70 font-bold text-[8px] leading-tight border-b-2 border-slate-400 section-row"
                       style={{ height: "18px" }}
                     >
-                      <td colSpan={4} className="text-center text-amber-950 py-0.5">
+                      <td colSpan={4} className="text-center text-amber-950 py-0.5 border-l-2 border-slate-700">
                         {sec.icon} {sec.summaryTitle}
                       </td>
                       <td className="text-right text-amber-950 py-0.5">
@@ -3192,7 +3327,7 @@ export default function FinancialReportType2View({
                       </td>
                       <td
                         colSpan={2}
-                        className="text-center text-[7.6px] font-semibold text-slate-700 py-0.5 whitespace-nowrap"
+                        className="text-center text-[7.6px] font-semibold text-slate-700 py-0.5 whitespace-nowrap border-r-2 border-slate-700"
                         style={{ fontSize: "7.6px" }}
                       >
                         {sec.totals.countSummaryText}
