@@ -879,9 +879,9 @@ export default function FinancialReportType2View({
   const [rowFilter, setRowFilter] = useState<"all" | "checkin" | "anomaly" | "booking">("all");
   const [isShortOverDemo, setIsShortOverDemo] = useState(false);
 
-  // การควบคุมขนาดและการซูมแสดงผลสำหรับมือถือและเดสก์ท็อป
-  const [scaleMode, setScaleMode] = useState<"fit" | "100" | "custom">("100");
-  const [customZoom, setCustomZoom] = useState<number>(1);
+  // การควบคุมขนาดและการซูมแสดงผลสำหรับมือถือและเดสก์ท็อป (ตั้งต้น 130% บนจอคอมพิวเตอร์)
+  const [scaleMode, setScaleMode] = useState<"fit" | "default" | "custom">("default");
+  const [customZoom, setCustomZoom] = useState<number>(1.3);
   const [viewportWidth, setViewportWidth] = useState<number>(1200);
 
   useEffect(() => {
@@ -900,16 +900,14 @@ export default function FinancialReportType2View({
   }, []);
 
   const fitScale = viewportWidth < 820 ? Math.max(0.35, Math.min(1, (viewportWidth - 16) / 820)) : 1;
-  const effectiveMobileScale =
-    viewportWidth < 820
-      ? scaleMode === "fit"
-        ? fitScale
-        : scaleMode === "100"
-        ? 1
-        : customZoom
-      : scaleMode === "custom"
-      ? customZoom
-      : 1;
+  const currentZoomLevel =
+    scaleMode === "fit"
+      ? fitScale
+      : scaleMode === "default"
+      ? viewportWidth >= 1024
+        ? 1.3
+        : 1.0
+      : customZoom;
 
   const fmtNum = (n: number | undefined | null) => {
     const val = Number(n || 0);
@@ -1332,10 +1330,10 @@ export default function FinancialReportType2View({
       <style>{`
         @media screen and (min-width: 1024px) {
           #a4-financial-report-sheet {
-            zoom: 1.15;
+            zoom: 1.30;
           }
           .report-control-bar {
-            max-width: 943px !important;
+            max-width: 1066px !important;
           }
         }
         #a4-financial-report-sheet {
@@ -1561,7 +1559,7 @@ export default function FinancialReportType2View({
 
       {/* ================= แถบควบคุม Interactive ด้านบน (ไม่พิมพ์) ================= */}
       <div
-        className="no-print report-control-bar max-w-[820px] lg:max-w-[943px] mx-auto mb-2 bg-slate-900 text-white px-3 py-2 rounded-lg flex flex-wrap items-center justify-between gap-2 shadow"
+        className="no-print report-control-bar max-w-[820px] lg:max-w-[1066px] mx-auto mb-2 bg-slate-900 text-white px-3 py-2 rounded-lg flex flex-wrap items-center justify-between gap-2 shadow"
         style={{ fontFamily: "'Sarabun', sans-serif" }}
       >
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -1704,7 +1702,7 @@ export default function FinancialReportType2View({
 
       {/* แถบเครื่องมือควบคุมการซูมและปรับมุมมอง (สำหรับมือถือและจอคอมพิวเตอร์) */}
       <div
-        className="no-print w-full max-w-[820px] lg:max-w-[943px] mx-auto mb-2 px-3 py-1.5 bg-slate-800 text-white rounded-lg flex items-center justify-between gap-2 text-xs shadow-sm"
+        className="no-print report-control-bar w-full max-w-[820px] lg:max-w-[1066px] mx-auto mb-2 px-3 py-1.5 bg-slate-800 text-white rounded-lg flex items-center justify-between gap-2 text-xs shadow-sm"
         style={{ fontFamily: "'Sarabun', sans-serif" }}
       >
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -1731,17 +1729,17 @@ export default function FinancialReportType2View({
           <button
             type="button"
             onClick={() => {
-              setScaleMode("100");
-              setCustomZoom(1);
+              setScaleMode("default");
+              setCustomZoom(viewportWidth >= 1024 ? 1.3 : 1);
             }}
             className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all cursor-pointer ${
-              scaleMode === "100" && customZoom === 1
+              scaleMode === "default"
                 ? "bg-indigo-600 text-white ring-2 ring-indigo-400 shadow-xs"
                 : "bg-slate-700 text-slate-300 hover:bg-slate-600"
             }`}
-            title="ขนาดมาตรฐาน 100% (สามารถเลื่อนดูข้อมูลได้อิสระ)"
+            title="ขนาดมาตรฐานตั้งต้น (130% สำหรับจอคอมพิวเตอร์ / 100% สำหรับแท็บเล็ต)"
           >
-            ขนาดจริง 100%
+            ขนาดจริง {viewportWidth >= 1024 ? "130%" : "100%"}
           </button>
         </div>
 
@@ -1750,7 +1748,7 @@ export default function FinancialReportType2View({
             type="button"
             onClick={() => {
               setScaleMode("custom");
-              setCustomZoom((prev) => Math.max(0.35, +(prev - 0.1).toFixed(2)));
+              setCustomZoom(Math.max(0.35, +(currentZoomLevel - 0.1).toFixed(2)));
             }}
             className="px-2 py-0.5 rounded text-[12px] font-black hover:bg-slate-700 text-slate-200 cursor-pointer"
             title="ย่อขนาดลง (-)"
@@ -1758,13 +1756,13 @@ export default function FinancialReportType2View({
             ➖
           </button>
           <span className="text-[11px] font-mono font-bold text-emerald-400 min-w-[42px] text-center">
-            {Math.round(effectiveMobileScale * (viewportWidth >= 1024 && scaleMode !== "custom" && scaleMode !== "fit" ? 115 : 100))}%
+            {Math.round(currentZoomLevel * 100)}%
           </span>
           <button
             type="button"
             onClick={() => {
               setScaleMode("custom");
-              setCustomZoom((prev) => Math.min(2.0, +(prev + 0.1).toFixed(2)));
+              setCustomZoom(Math.min(2.0, +(currentZoomLevel + 0.1).toFixed(2)));
             }}
             className="px-2 py-0.5 rounded text-[12px] font-black hover:bg-slate-700 text-slate-200 cursor-pointer"
             title="ขยายขนาดขึ้น (+)"
@@ -1779,7 +1777,7 @@ export default function FinancialReportType2View({
         <div
           id="a4-financial-report-sheet"
           className="a4-portrait-container shrink-0"
-          style={effectiveMobileScale !== 1 ? { zoom: effectiveMobileScale } : undefined}
+          style={scaleMode !== "default" ? { zoom: currentZoomLevel } : undefined}
         >
         <div className="mb-1.5 border border-slate-300 rounded bg-slate-50 p-1.5">
           {/* แถวหัวกระดาษ: ซ้าย=สถานที่ (ไม่มีป้ายปิดวันสมบูรณ์) | กลาง=วันที่ (อยู่กึ่งกลางระหว่างสถานที่กับค้างชำระ) | ขวา=ค้างชำระ/รับจอง/ล่วงหน้า */}
