@@ -1255,6 +1255,52 @@ export default function FinancialReportType2View({
     }
   );
 
+  // คำนวณแยกยอดโอนตามธนาคาร (S = SCB, K = KBANK, Cr = Credit Card) สำหรับช่องสรุปหัวตาราง
+  const grandTransferBreakdown = allRowsFlat.reduce(
+    (acc, r) => {
+      if (r.transferCardDisplay) {
+        const str = String(r.transferCardDisplay).trim();
+        const m = str.match(/^([A-Za-z]+)\s*([\d,]+(?:\.\d+)?)/);
+        if (m) {
+          const p = m[1].toUpperCase();
+          const amt = Number(m[2].replace(/,/g, "")) || 0;
+          if (p.startsWith("S")) acc.S += amt;
+          else if (p.startsWith("K")) acc.K += amt;
+          else if (p.startsWith("CR")) acc.Cr += amt;
+          else acc.other += amt;
+        } else {
+          const num = Number(str.replace(/[^\d.]/g, "")) || 0;
+          if (num > 0) acc.K += num;
+        }
+      }
+      return acc;
+    },
+    { S: 0, K: 0, Cr: 0, other: 0 }
+  );
+
+  // Fallback กรณี allRowsFlat ไม่มีข้อมูล transferCardDisplay แต่ activeReport มี payTransferByBank
+  if (
+    grandTransferBreakdown.S === 0 &&
+    grandTransferBreakdown.K === 0 &&
+    grandTransferBreakdown.Cr === 0 &&
+    grandTotals.transferCard > 0
+  ) {
+    if (activeReport?.payTransferByBank) {
+      const bankMap = activeReport.payTransferByBank;
+      for (const [k, v] of Object.entries(bankMap)) {
+        const upper = k.toUpperCase();
+        const amt = Number(v || 0);
+        if (upper.startsWith("S")) grandTransferBreakdown.S += amt;
+        else if (upper.startsWith("K")) grandTransferBreakdown.K += amt;
+        else if (upper.startsWith("CR")) grandTransferBreakdown.Cr += amt;
+        else grandTransferBreakdown.other += amt;
+      }
+    }
+    if (grandTransferBreakdown.S === 0 && grandTransferBreakdown.K === 0) {
+      grandTransferBreakdown.K = grandTotals.transferCard;
+    }
+  }
+
   // ตัวช่วยแสดงลายเซ็นในโหมด Live / Prototype
   const renderLiveSignatureCell = (
     h: CashHandover | null,
@@ -2918,8 +2964,32 @@ export default function FinancialReportType2View({
                 >
                   {fmtNum(grandTotals.cash)}
                 </td>
-                <td className="text-right bg-blue-100 text-blue-950 font-black text-[11.3px]" style={{ fontSize: "11.3px" }}>
-                  {fmtNum(grandTotals.transferCard)}
+                <td
+                  className="bg-blue-100 text-blue-950 font-black px-1 py-0.5 align-middle"
+                  style={{ height: "28px", boxSizing: "border-box" }}
+                >
+                  <div className="flex flex-col justify-center items-end h-full w-full leading-none pr-0.5">
+                    <div className="inline-grid grid-cols-[auto_auto] items-baseline gap-x-1.5 text-right">
+                      <span className="font-extrabold text-purple-900 text-[8px] text-right">S</span>
+                      <span className="font-black text-slate-900 text-[8.8px] font-mono text-right">
+                        {fmtNum(grandTransferBreakdown.S)}
+                      </span>
+
+                      <span className="font-extrabold text-emerald-900 text-[8px] text-right">K</span>
+                      <span className="font-black text-slate-900 text-[8.8px] font-mono text-right">
+                        {fmtNum(grandTransferBreakdown.K)}
+                      </span>
+
+                      {grandTransferBreakdown.Cr > 0 && (
+                        <>
+                          <span className="font-extrabold text-blue-900 text-[7.5px] text-right">Cr</span>
+                          <span className="font-black text-blue-950 text-[8px] font-mono text-right">
+                            {fmtNum(grandTransferBreakdown.Cr)}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </td>
                 <td
                   className="text-center bg-rose-50 text-rose-800 font-black text-[10.6px]"
