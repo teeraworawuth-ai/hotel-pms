@@ -1480,11 +1480,25 @@ export default function FinancialReportType2View({
           color: #1e3a8a;
           line-height: 1;
         }
-        #a4-financial-report-sheet table.audit-table tbody tr:not(.section-row) td:nth-child(5) {
-          border-left: 1.8px solid #334155 !important;
+        #a4-financial-report-sheet table.audit-table th.boundary-col-1-prev,
+        #a4-financial-report-sheet table.audit-table td.boundary-col-1-prev,
+        #a4-financial-report-sheet table.audit-table tbody tr:not(.section-row) td:nth-child(4) {
+          border-right: 2px solid #1e293b !important;
         }
+        #a4-financial-report-sheet table.audit-table th.boundary-col-1,
+        #a4-financial-report-sheet table.audit-table td.boundary-col-1,
+        #a4-financial-report-sheet table.audit-table tbody tr:not(.section-row) td:nth-child(5) {
+          border-left: 2px solid #1e293b !important;
+        }
+        #a4-financial-report-sheet table.audit-table th.boundary-col-2-prev,
+        #a4-financial-report-sheet table.audit-table td.boundary-col-2-prev,
+        #a4-financial-report-sheet table.audit-table tbody tr:not(.section-row) td:nth-last-child(7) {
+          border-right: 2px solid #1e293b !important;
+        }
+        #a4-financial-report-sheet table.audit-table th.boundary-col-2,
+        #a4-financial-report-sheet table.audit-table td.boundary-col-2,
         #a4-financial-report-sheet table.audit-table tbody tr:not(.section-row) td:nth-last-child(6) {
-          border-left: 1.8px solid #334155 !important;
+          border-left: 2px solid #1e293b !important;
         }
         #a4-financial-report-sheet table.audit-table tbody tr:not(.section-row) td:nth-last-child(4) {
           border-left: 2px solid #312e81 !important;
@@ -1586,6 +1600,26 @@ export default function FinancialReportType2View({
           #a4-financial-report-sheet table.audit-table td:last-child,
           #a4-financial-report-sheet table.audit-table tr > *:last-child {
             border-right: 2px solid #1e293b !important;
+          }
+          #a4-financial-report-sheet table.audit-table th.boundary-col-1-prev,
+          #a4-financial-report-sheet table.audit-table td.boundary-col-1-prev,
+          #a4-financial-report-sheet table.audit-table tbody tr:not(.section-row) td:nth-child(4) {
+            border-right: 2px solid #1e293b !important;
+          }
+          #a4-financial-report-sheet table.audit-table th.boundary-col-1,
+          #a4-financial-report-sheet table.audit-table td.boundary-col-1,
+          #a4-financial-report-sheet table.audit-table tbody tr:not(.section-row) td:nth-child(5) {
+            border-left: 2px solid #1e293b !important;
+          }
+          #a4-financial-report-sheet table.audit-table th.boundary-col-2-prev,
+          #a4-financial-report-sheet table.audit-table td.boundary-col-2-prev,
+          #a4-financial-report-sheet table.audit-table tbody tr:not(.section-row) td:nth-last-child(7) {
+            border-right: 2px solid #1e293b !important;
+          }
+          #a4-financial-report-sheet table.audit-table th.boundary-col-2,
+          #a4-financial-report-sheet table.audit-table td.boundary-col-2,
+          #a4-financial-report-sheet table.audit-table tbody tr:not(.section-row) td:nth-last-child(6) {
+            border-left: 2px solid #1e293b !important;
           }
           #a4-financial-report-sheet table.audit-table th,
           #a4-financial-report-sheet table.audit-table td {
@@ -2966,15 +3000,15 @@ export default function FinancialReportType2View({
                 className="bg-slate-50 text-slate-950 font-black text-[9.8px] border-b-2 border-slate-800 section-row"
                 style={{ height: "28px" }}
               >
-                <td colSpan={4} className="px-2 bg-white text-slate-950 font-bold border-l-2 border-slate-700" style={{ height: "28px", fontSize: "9.8px" }}>
+                <td colSpan={4} className="boundary-col-1-prev px-2 bg-white text-slate-950 font-bold border-l-2 border-slate-700" style={{ height: "28px", fontSize: "9.8px", borderRight: "2px solid #1e293b" }}>
                   <div className="flex justify-between items-center w-full text-[9.8px] text-slate-950 font-bold">
                     <span>ลงชื่อ</span>
                     <span>ผู้ตรวจ</span>
                   </div>
                 </td>
                 <td
-                  className="text-right bg-slate-100 text-slate-950 font-black text-[11.3px]"
-                  style={{ borderLeft: "1.8px solid #334155", fontSize: "11.3px" }}
+                  className="boundary-col-1 text-right bg-slate-100 text-slate-950 font-black text-[11.3px]"
+                  style={{ borderLeft: "2px solid #1e293b", fontSize: "11.3px" }}
                 >
                   {fmtNum(grandTotals.roomRate)}
                 </td>
@@ -2987,12 +3021,12 @@ export default function FinancialReportType2View({
                 <td className="text-center bg-slate-100 text-slate-800 font-black text-[10.4px]" style={{ fontSize: "10.4px" }}>
                   {grandTotals.minibar ? fmtNum(grandTotals.minibar) : ""}
                 </td>
-                <td className="text-right bg-blue-100 text-slate-950 font-black text-[11.8px]" style={{ fontSize: "11.8px" }}>
+                <td className="boundary-col-2-prev text-right bg-blue-100 text-slate-950 font-black text-[11.8px]" style={{ fontSize: "11.8px", borderRight: "2px solid #1e293b" }}>
                   {fmtNum(grandTotals.totalCharge)}
                 </td>
                 <td
-                  className="text-right bg-emerald-100 text-emerald-950 font-black text-[11.8px]"
-                  style={{ borderLeft: "1.8px solid #334155", fontSize: "11.8px" }}
+                  className="boundary-col-2 text-right bg-emerald-100 text-emerald-950 font-black text-[11.8px]"
+                  style={{ borderLeft: "2px solid #1e293b", fontSize: "11.8px" }}
                 >
                   {fmtNum(grandTotals.cash)}
                 </td>
@@ -3056,20 +3090,20 @@ export default function FinancialReportType2View({
                 <th rowSpan={2} style={{ width: "3.75%" }}>
                   ห้อง
                 </th>
-                <th rowSpan={2} style={{ width: "3.9%" }}>
+                <th rowSpan={2} className="boundary-col-1-prev" style={{ width: "3.9%", borderRight: "2px solid #1e293b" }}>
                   พนง.
                 </th>
                 <th
                   colSpan={5}
-                  className="bg-blue-50 text-blue-950 border-b border-slate-400"
-                  style={{ borderLeft: "1.8px solid #334155" }}
+                  className="boundary-col-1 boundary-col-2-prev bg-blue-50 text-blue-950 border-b border-slate-400"
+                  style={{ borderLeft: "2px solid #1e293b", borderRight: "2px solid #1e293b" }}
                 >
                   รายการเรียกเก็บ (รายได้วันนี้)
                 </th>
                 <th
                   colSpan={2}
-                  className="bg-emerald-100/90 text-emerald-950 font-black border-b border-slate-400"
-                  style={{ borderLeft: "1.8px solid #334155" }}
+                  className="boundary-col-2 bg-emerald-100/90 text-emerald-950 font-black border-b border-slate-400"
+                  style={{ borderLeft: "2px solid #1e293b" }}
                 >
                   ชำระเงิน
                 </th>
@@ -3095,7 +3129,7 @@ export default function FinancialReportType2View({
                 </th>
               </tr>
               <tr>
-                <th className="bg-blue-50/60" style={{ width: "2.6%", borderLeft: "1.8px solid #334155" }}>
+                <th className="boundary-col-1 bg-blue-50/60" style={{ width: "2.6%", borderLeft: "2px solid #1e293b" }}>
                   ค่าห้อง
                 </th>
                 <th className="bg-blue-50/60 text-slate-900" style={{ width: "2.4%" }}>
@@ -3107,12 +3141,12 @@ export default function FinancialReportType2View({
                 <th className="bg-blue-50/60" style={{ width: "3.9%" }}>
                   มินิบาร์
                 </th>
-                <th className="bg-blue-100/80 font-black text-blue-950" style={{ width: "4.95%" }}>
+                <th className="boundary-col-2-prev bg-blue-100/80 font-black text-blue-950" style={{ width: "4.95%", borderRight: "2px solid #1e293b" }}>
                   รวมเงิน
                 </th>
                 <th
-                  className="bg-emerald-50/80 text-emerald-950"
-                  style={{ width: "10.5%", borderLeft: "1.8px solid #334155" }}
+                  className="boundary-col-2 bg-emerald-50/80 text-emerald-950"
+                  style={{ width: "10.5%", borderLeft: "2px solid #1e293b" }}
                 >
                   เงินสด
                 </th>
@@ -3153,13 +3187,13 @@ export default function FinancialReportType2View({
                             <td className="text-center font-black text-rose-950 border-l-2 border-slate-700">{r.rowNo}</td>
                             <td className="text-right pr-1.5 font-black text-rose-950">{r.checkInLabel}</td>
                             <td className="text-center font-black text-rose-950">{r.roomNo}</td>
-                            <td className="text-center text-rose-800">{r.staffName}</td>
+                            <td className="text-center text-rose-800 boundary-col-1-prev">{r.staffName}</td>
+                            <td className="text-center text-rose-800 boundary-col-1"></td>
                             <td className="text-center text-rose-800"></td>
                             <td className="text-center text-rose-800"></td>
                             <td className="text-center text-rose-800"></td>
-                            <td className="text-center text-rose-800"></td>
-                            <td className="text-center text-rose-800 font-black"></td>
-                            <td className="text-center text-rose-800"></td>
+                            <td className="text-center text-rose-800 font-black boundary-col-2-prev"></td>
+                            <td className="text-center text-rose-800 boundary-col-2"></td>
                             <td className="text-center text-rose-800"></td>
                             <td className="text-center text-rose-800"></td>
                             <td className="text-center text-rose-800"></td>
@@ -3178,13 +3212,13 @@ export default function FinancialReportType2View({
                             <td className="text-center font-black text-rose-950 border-l-2 border-slate-700">{r.rowNo}</td>
                             <td className="text-center font-black text-rose-950">{r.checkInLabel}</td>
                             <td className="text-center font-black text-rose-950">{r.roomNo}</td>
-                            <td className="text-center text-rose-950 font-bold">{r.staffName}</td>
-                            <td className="text-right font-black text-rose-950">{fmtNum(r.roomRate)}</td>
+                            <td className="text-center text-rose-950 font-bold boundary-col-1-prev">{r.staffName}</td>
+                            <td className="text-right font-black text-rose-950 boundary-col-1">{fmtNum(r.roomRate)}</td>
                             <td className="text-center text-rose-800"></td>
                             <td className="text-center text-rose-800"></td>
                             <td className="text-center text-rose-800"></td>
-                            <td className="text-right font-black text-rose-950">{fmtNum(r.totalCharge)}</td>
-                            <td className="text-center text-rose-800"></td>
+                            <td className="text-right font-black text-rose-950 boundary-col-2-prev">{fmtNum(r.totalCharge)}</td>
+                            <td className="text-center text-rose-800 boundary-col-2"></td>
                             <td className="text-center text-rose-800"></td>
                             <td className="text-center text-rose-800"></td>
                             <td className="text-center text-rose-800"></td>
@@ -3210,19 +3244,19 @@ export default function FinancialReportType2View({
                               {r.checkInLabel}
                             </td>
                             <td className="text-center font-black text-indigo-950">{r.roomNo}</td>
-                            <td className="text-center">{r.staffName}</td>
+                            <td className="text-center boundary-col-1-prev">{r.staffName}</td>
                             <td
                               colSpan={5}
-                              className="text-center font-bold text-indigo-950 bg-indigo-50/70 text-[6.6px]"
+                              className="text-center font-bold text-indigo-950 bg-indigo-50/70 text-[6.6px] boundary-col-1 boundary-col-2-prev"
                             >
                               {r.bookingRateSummary}
                             </td>
                             <td
-                              className={
+                              className={`${
                                 r.cashDisplay
                                    ? "text-right font-bold text-blue-900 bg-emerald-50/70"
                                    : "text-center text-slate-400"
-                              }
+                              } boundary-col-2`}
                             >
                               {r.cashDisplay || ""}
                             </td>
@@ -3285,8 +3319,8 @@ export default function FinancialReportType2View({
                           >
                             {r.roomNo}
                           </td>
-                          <td className="text-center">{r.staffName}</td>
-                          <td className={r.roomRate ? "text-right" : "text-center text-slate-400"}>
+                          <td className="text-center boundary-col-1-prev">{r.staffName}</td>
+                          <td className={`${r.roomRate ? "text-right" : "text-center text-slate-400"} boundary-col-1`}>
                             {r.roomRate ? fmtNum(r.roomRate) : ""}
                           </td>
                           <td className="text-center text-slate-700 font-bold">
@@ -3317,16 +3351,16 @@ export default function FinancialReportType2View({
                             {r.minibarAmount ? fmtNum(r.minibarAmount) : ""}
                           </td>
                           <td
-                            className={
+                            className={`${
                               r.totalCharge
                                 ? "text-right font-bold bg-blue-50/30"
                                 : "text-center text-slate-400"
-                            }
+                            } boundary-col-2-prev`}
                           >
                             {r.totalCharge ? fmtNum(r.totalCharge) : ""}
                           </td>
                           <td
-                            className={
+                            className={`${
                               r.cashDisplay
                                 ? r.cashHighlight
                                   ? "text-right font-black text-emerald-900 bg-emerald-100/70"
@@ -3334,7 +3368,7 @@ export default function FinancialReportType2View({
                                   ? "text-center font-bold text-rose-700"
                                   : "text-center font-bold"
                                 : "text-center text-slate-400"
-                            }
+                            } boundary-col-2`}
                           >
                             {r.cashDisplay || ""}
                           </td>
@@ -3380,10 +3414,10 @@ export default function FinancialReportType2View({
                       className="bg-amber-100/70 font-bold text-[8px] leading-tight border-b-2 border-slate-400 section-row"
                       style={{ height: "18px" }}
                     >
-                      <td colSpan={4} className="text-center text-amber-950 py-0.5 border-l-2 border-slate-700">
+                      <td colSpan={4} className="boundary-col-1-prev text-center text-amber-950 py-0.5 border-l-2 border-slate-700" style={{ borderRight: "2px solid #1e293b" }}>
                         {sec.icon} {String(sec.summaryTitle).replace(/\)\s*:\s*$/, ")")} {sec.totals.countSummaryText}
                       </td>
-                      <td className="text-right text-amber-950 py-0.5" style={{ borderLeft: "1.8px solid #334155" }}>
+                      <td className="boundary-col-1 text-right text-amber-950 py-0.5" style={{ borderLeft: "2px solid #1e293b" }}>
                         {sec.totals.roomRate ? fmtNum(sec.totals.roomRate) : ""}
                       </td>
                       <td className="text-center text-slate-700 py-0.5">
@@ -3395,14 +3429,14 @@ export default function FinancialReportType2View({
                       <td className="text-right text-amber-950 font-bold py-0.5">
                         {sec.totals.minibar ? fmtNum(sec.totals.minibar) : ""}
                       </td>
-                      <td className="text-right font-black text-amber-950 bg-amber-200/50 py-0.5">
+                      <td className="boundary-col-2-prev text-right font-black text-amber-950 bg-amber-200/50 py-0.5" style={{ borderRight: "2px solid #1e293b" }}>
                         {sec.totals.totalCharge ? fmtNum(sec.totals.totalCharge) : ""}
                       </td>
                       <td
-                        className={`text-right font-black py-0.5 ${
+                        className={`boundary-col-2 text-right font-black py-0.5 ${
                           sec.totals.cash < 0 ? "text-rose-700" : "text-emerald-900"
                         }`}
-                        style={{ borderLeft: "1.8px solid #334155" }}
+                        style={{ borderLeft: "2px solid #1e293b" }}
                       >
                         {sec.totals.cash !== 0 ? fmtNum(sec.totals.cash) : ""}
                       </td>
