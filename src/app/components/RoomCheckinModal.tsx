@@ -54,11 +54,8 @@ interface ModalProps {
 
 export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onClose, onUpdate }: ModalProps) {
   const { getNow } = useSimulatedTime();
-  const { activeShift, operatorName, ensureShiftWritable, currentBusinessDate, closeDayBusinessDate, refreshShift } = useShift();
-  const displayDate = getNow();
-  if (displayDate.getHours() < 6 || (displayDate.getHours() === 6 && displayDate.getMinutes() < 45)) {
-    displayDate.setDate(displayDate.getDate() - 1);
-  }
+  const { activeShift, operatorName, ensureShiftWritable, currentBusinessDate, closeDayBusinessDate, refreshShift, getActiveBusinessDate } = useShift();
+  const displayDate = getActiveBusinessDate();
   displayDate.setDate(displayDate.getDate() + dateOffset);
   const displayDateStr = `${displayDate.getFullYear()}-${String(displayDate.getMonth() + 1).padStart(2, '0')}-${String(displayDate.getDate()).padStart(2, '0')}`;
   const [showBilling, setShowBilling] = useState(false);
@@ -187,28 +184,17 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
     // Recalculate Daily Breakdown / Short-Stay Target Price when Dates, Hours, or Tab change
     useEffect(() => {
       const generateBreakdown = async () => {
-        const startDate = (isExistingBooking && room.check_in_time) ? new Date(room.check_in_time) : new Date(displayDateStr);
+        const startDate = (isExistingBooking && room.check_in_time) ? new Date(room.check_in_time) : new Date(`${displayDateStr}T12:00:00`);
         if (isExistingBooking && room.check_in_time && (startDate.getHours() < 6 || (startDate.getHours() === 6 && startDate.getMinutes() < 45))) {
           startDate.setDate(startDate.getDate() - 1);
         }
         if (!isExistingBooking && dateOffset > 0) startDate.setHours(14, 0, 0, 0);
         const todayDateStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
-        const fallbackPlanId = ratePlans.length > 0 ? ratePlans[0].id : null;
+        const weekdayPlan = ratePlans.find(p => p.name.toLowerCase().includes('weekday'));
+        const fallbackPlanId = weekdayPlan ? weekdayPlan.id : (ratePlans.length > 0 ? ratePlans[0].id : null);
 
         if (activeTab === 'short_stay') {
           setDailyBreakdown([]);
-          const hasRoomTempPrice = Boolean(room.price_temp && Number(room.price_temp) > 0);
-          if (!hasRoomTempPrice) {
-            setShortStayBase3Hr(0);
-            setTotalTargetPrice(0);
-            if (isExistingBooking && room.actual_price !== undefined && room.actual_price !== null) {
-              setActualPrice(Number(room.actual_price));
-            } else {
-              setActualPrice('');
-            }
-            return;
-          }
-
           const { data: todaySetting } = await supabase
             .from('daily_pricing_settings')
             .select('rate_plan_id')
@@ -229,6 +215,17 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
                 break;
               }
             }
+          }
+
+          if (base3Hr <= 0) {
+            setShortStayBase3Hr(0);
+            setTotalTargetPrice(0);
+            if (isExistingBooking && room.actual_price !== undefined && room.actual_price !== null) {
+              setActualPrice(Number(room.actual_price));
+            } else {
+              setActualPrice('');
+            }
+            return;
           }
 
           setShortStayBase3Hr(base3Hr);
@@ -256,13 +253,12 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
           return;
         }
         
-        const hasRoomNightPrice = Boolean(room.price_night && Number(room.price_night) > 0);
         const numNights = Math.max(1, Number(nights) || 0);
         const targetDates: string[] = [];
         for (let i = 0; i < numNights; i++) {
           const d = new Date(startDate);
           d.setDate(startDate.getDate() + i);
-          targetDates.push(d.toLocaleDateString('en-CA'));
+          targetDates.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
         }
 
         const { data: dailySettings } = await supabase
@@ -273,6 +269,7 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
         // 3. Fetch Base Prices and Calendar Prices for all relevant rate plans
         const relevantPlanIds = new Set(dailySettings?.map(s => s.rate_plan_id) || []);
         if (fallbackPlanId) relevantPlanIds.add(fallbackPlanId);
+        ratePlans.forEach(rp => relevantPlanIds.add(rp.id));
 
         const { data: baseData } = await supabase
           .from('rate_plan_room_types')
@@ -299,8 +296,25 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
           const activePlanId = setting ? setting.rate_plan_id : fallbackPlanId;
           const activePlanName = ratePlans.find(rp => rp.id === activePlanId)?.name || 'Default';
 
-          // กรณีห้องนี้ยังไม่ได้ตั้งราคาค้างคืนไว้ (price_night เป็นค่าว่าง/0): ไม่แสดงราคาเป้าหมาย และปล่อยให้กรอกราคาเองโดยไม่ติดลบ/ไม่บวกเกิน
-          if (!hasRoomNightPrice) {
+          let targetPrice = Number(room.price_night || 0);
+          
+          if (activePlanId) {
+            const calPrice = calendarData?.find(c => c.rate_plan_id === activePlanId && c.target_date === dateStr);
+            if (calPrice && Number(calPrice.price) > 0) {
+              targetPrice = Number(calPrice.price);
+            } else {
+              const baseP = baseData?.find(b => b.rate_plan_id === activePlanId);
+              if (baseP && Number(baseP.base_price) > 0) targetPrice = Number(baseP.base_price);
+            }
+          }
+          // หากแผนราคาหลักของวันนี้ไม่มีราคาของประเภทห้องนี้ ให้ค้นหาจากแผนราคาอื่นที่มีตั้งค่าไว้
+          if (targetPrice <= 0 && baseData && baseData.length > 0) {
+            const anyBase = baseData.find(b => Number(b.base_price) > 0);
+            if (anyBase) targetPrice = Number(anyBase.base_price);
+          }
+
+          // กรณีห้องนี้ไม่มีทั้งราคาในแผนราคาบนปฏิทิน และไม่ได้ตั้งราคาค้างคืนไว้ (targetPrice <= 0): ปล่อยให้กรอกราคาเอง
+          if (targetPrice <= 0) {
             const savedRate = savedDailyRates.find(r => r.target_date === dateStr);
             let dayActualPrice: number | '' = '';
             if (savedRate !== undefined) {
@@ -316,18 +330,6 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
               isOverride: false
             });
             continue;
-          }
-
-          let targetPrice = room.price_night || 0;
-          
-          if (activePlanId) {
-            const calPrice = calendarData?.find(c => c.rate_plan_id === activePlanId && c.target_date === dateStr);
-            if (calPrice) {
-              targetPrice = Number(calPrice.price);
-            } else {
-              const baseP = baseData?.find(b => b.rate_plan_id === activePlanId);
-              if (baseP) targetPrice = Number(baseP.base_price);
-            }
           }
 
           let finalPrice = targetPrice;

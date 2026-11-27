@@ -145,15 +145,13 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       setSuggestedReserve(r.total);
       setSuggestedReserveRoomsCount(r.rooms.length);
       setLastClosedDrawer(lastDrawer);
+      // ยอดเงินสดยกมาต้นกะ (initial_cash) ต้องมาจากเงินทอนส่งมอบยกไปจากกะก่อนหน้า (ข้อ 13 carried_cash) เท่านั้น หากกะก่อนหน้าไม่ได้ส่งมอบเงินทอนให้กะถัดไป ให้เริ่มต้นเป็น 0 ฿
       const unconsumedCarry =
         lastDrawer && !lastDrawer.consumed_by_shift_id ? Math.max(0, Number(lastDrawer.carried_cash || 0)) : 0;
-      const expectedTotal =
-        lastDrawer && !lastDrawer.consumed_by_shift_id && Number.isFinite(Number(lastDrawer.total_in_drawer))
-          ? Math.max(0, Number(lastDrawer.total_in_drawer))
-          : r.total + unconsumedCarry;
+      const expectedTotal = unconsumedCarry;
       setInitialCash(expectedTotal);
       setOpenCashMode("matched");
-      // หากยอดคาดหมายเป็น 0 ให้ถือว่ายืนยันได้ทันที แต่ถ้ามีเงินส่งต่อหรือมัดจำในลิ้นชัก ให้พนักงานกดปุ่มยืนยันตรวจนับเงินก่อน
+      // หากยอดส่งมอบยกมาเป็น 0 ให้ถือว่ายืนยันได้ทันที แต่ถ้ามีเงินทอนส่งต่อจากกะก่อนหน้า ให้พนักงานกดปุ่มยืนยันตรวจนับเงินก่อน
       setOpenCashConfirmed(expectedTotal === 0);
     });
   }, [showOpenModal, shiftLocation, staffPrimaryLocation]);
@@ -210,10 +208,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
     lastClosedDrawer && !lastClosedDrawer.consumed_by_shift_id
       ? Math.max(0, Number(lastClosedDrawer.carried_cash || 0))
       : 0;
-  const expectedOpenDrawerTotal =
-    lastClosedDrawer && !lastClosedDrawer.consumed_by_shift_id && Number.isFinite(Number(lastClosedDrawer.total_in_drawer))
-      ? Math.max(0, Number(lastClosedDrawer.total_in_drawer))
-      : (suggestedReserve || 0) + unconsumedCarryFromPrev;
+  const expectedOpenDrawerTotal = unconsumedCarryFromPrev;
   const prevDrawerShortfall = Math.max(0, (suggestedReserve || 0) - expectedOpenDrawerTotal);
   const openCashDiff = (initialCash === "" ? 0 : Number(initialCash)) - expectedOpenDrawerTotal;
 

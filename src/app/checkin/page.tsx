@@ -312,6 +312,7 @@ export default function CheckinPage() {
     const dailyRatesMap: Record<string, number> = {};
     const targetDateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth()+1).padStart(2,'0')}-${String(targetDate.getDate()).padStart(2,'0')}`;
     
+    let todaySmartPricesMap: Record<string, number> = {};
     const { data: dailySetting } = await supabase.from('daily_pricing_settings').select('rate_plan_id').eq('target_date', targetDateStr).maybeSingle();
     if (dailySetting?.rate_plan_id) {
       const { data: basePrices } = await supabase.from('rate_plan_room_types').select('room_type, base_price').eq('rate_plan_id', dailySetting.rate_plan_id);
@@ -324,6 +325,7 @@ export default function CheckinPage() {
       if (calPrices) {
         calPrices.forEach(c => pricesMap[c.room_type] = c.price);
       }
+      todaySmartPricesMap = pricesMap;
       setSmartPricesMap(pricesMap);
     } else {
       setSmartPricesMap({});
@@ -660,7 +662,17 @@ export default function CheckinPage() {
       });
       const incoming_today = !!incomingBookingToday;
 
-      let finalRoom: RoomStatus = { ...room, has_upcoming, upcoming_days, incoming_today };
+      const resolvedNightPrice =
+        todaySmartPricesMap[room.room_type] !== undefined && Number(todaySmartPricesMap[room.room_type]) > 0
+          ? Number(todaySmartPricesMap[room.room_type])
+          : room.price_night;
+      let finalRoom: RoomStatus = {
+        ...room,
+        price_night: resolvedNightPrice,
+        has_upcoming,
+        upcoming_days,
+        incoming_today,
+      };
 
       if (dateOffset === 0) {
         if (incomingBookingToday) {

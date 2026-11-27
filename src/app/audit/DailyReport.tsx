@@ -1,6 +1,13 @@
 "use client";
 
-import FinancialReportType2View, { AuditLogRowItem, ShiftSectionData } from "./FinancialReportType2View";
+import FinancialReportType2View, {
+  AuditEditEntry,
+  AuditLogRowItem,
+  ManagerBoxEditTarget,
+  RowEditMeta,
+  ShiftSectionData,
+  ShiftSummaryEditTarget,
+} from "./FinancialReportType2View";
 
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
@@ -179,6 +186,8 @@ type LocationReportSnapshot = {
   crossLocCollectedByHere: TransferCardReportItem[];
   liveShiftSections?: ShiftSectionData[];
   mgrBroughtForward?: number;
+  mgrOutExpenseOverride?: number;
+  mgrBankDeposit?: number;
 };
 
 const PROTOTYPE_TRANSFER_CARD_ITEMS: TransferCardReportItem[] = [
@@ -207,7 +216,7 @@ export default function DailyReport({
   onChangeDateOffset?: (offset: number) => void;
 }) {
   const { getNow } = useSimulatedTime();
-  const { getActiveBusinessDate, currentBusinessDate } = useShift();
+  const { getActiveBusinessDate, currentBusinessDate, currentUser } = useShift();
   const [loading, setLoading] = useState(true);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [transactions, setTransactions] = useState<LedgerTransaction[]>([]);
@@ -215,6 +224,34 @@ export default function DailyReport({
   const [businessDateStr, setBusinessDateStr] = useState("");
   const [windowLabelStr, setWindowLabelStr] = useState("06:45 น. - 06:44 น. ของวันถัดไป");
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Direct In-Report Editing (Quick Audit Fix) state
+  const [auditEditsMap, setAuditEditsMap] = useState<Record<string, AuditEditEntry>>({});
+  const [editingRow, setEditingRow] = useState<AuditLogRowItem | null>(null);
+  const [editingShiftSummary, setEditingShiftSummary] = useState<ShiftSummaryEditTarget | null>(null);
+  const [editingManagerBox, setEditingManagerBox] = useState<ManagerBoxEditTarget | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
+  const [editPin, setEditPin] = useState("");
+
+  // Form states for Row Edit Modal
+  const [rowEditRoomRate, setRowEditRoomRate] = useState("");
+  const [rowEditExtraLabel, setRowEditExtraLabel] = useState("");
+  const [rowEditExtraAmount, setRowEditExtraAmount] = useState("");
+  const [rowEditCashPaid, setRowEditCashPaid] = useState("");
+  const [rowEditTransferPaid, setRowEditTransferPaid] = useState("");
+  const [rowEditTransferBank, setRowEditTransferBank] = useState<"SCB" | "KBANK" | "CREDIT_CARD">("SCB");
+
+  // Form states for Shift Summary Edit Modal (Rows 6, 11, 12, 13)
+  const [shiftEditCarriedIn, setShiftEditCarriedIn] = useState("");
+  const [shiftEditCountedDrawer, setShiftEditCountedDrawer] = useState("");
+  const [shiftEditCloseSent, setShiftEditCloseSent] = useState("");
+  const [shiftEditCarriedOut, setShiftEditCarriedOut] = useState("");
+
+  // Form states for Manager Cash Box Edit Modal (Boxes 1, 3, 4)
+  const [mgrEditBrought, setMgrEditBrought] = useState("");
+  const [mgrEditOutExp, setMgrEditOutExp] = useState("");
+  const [mgrEditBankDep, setMgrEditBankDep] = useState("");
 
   // Multi-location filter & Accounting Transfer/Card Report Modal
   const [selectedLocation, setSelectedLocation] = useState<string>("ซอย1");
@@ -422,6 +459,12 @@ export default function DailyReport({
       const eodKey = `eod_shift_${reportDateStr}`;
       let prevEodClosedAt: string | null = null;
       let currEodClosedAt: string | null = null;
+      const auditEditsKey = `audit_report_edits_${reportDateStr}`;
+      let loadedAuditEdits: Record<string, AuditEditEntry> = {};
+      const mgrBoxSettingsMap: Record<
+        string,
+        Record<string, { broughtOverride?: number | null; outExpOverride?: number | null; bankDeposit?: number }>
+      > = {};
 
       (settingsRes.data || []).forEach((row: any) => {
         if (row.key === "bank_accounts" && Array.isArray(row.value) && row.value.length > 0) {
@@ -439,8 +482,20 @@ export default function DailyReport({
         } else if (typeof row.key === "string" && row.key.startsWith("booking_meta_")) {
           const bId = row.key.replace("booking_meta_", "");
           bookingMetaMap[bId] = row.value as BookingMeta;
+        } else if (row.key === auditEditsKey && row.value && typeof row.value === "object") {
+          loadedAuditEdits = row.value as Record<string, AuditEditEntry>;
+        } else if (typeof row.key === "string" && row.key.startsWith("mgr_cash_box_")) {
+          // Format: mgr_cash_box_${loc}_${YYYY-MM-DD}
+          const m = row.key.match(/^mgr_cash_box_(.+)_(\d{4}-\d{2}-\d{2})$/);
+          if (m && row.value && typeof row.value === "object") {
+            const locName = m[1];
+            const dStr = m[2];
+            if (!mgrBoxSettingsMap[locName]) mgrBoxSettingsMap[locName] = {};
+            mgrBoxSettingsMap[locName][dStr] = row.value;
+          }
         }
       });
+      setAuditEditsMap(loadedAuditEdits);
 
       // หากเมื่อวานปิดกะสุดท้ายตั้งแต่ 05:30 น. เป็นต้นไป ให้เริ่มนับวันใหม่ทันทีตั้งแต่เวลาที่ปิดกะสุดท้ายนั้น
       if (prevEodClosedAt) {
@@ -1383,14 +1438,68 @@ export default function DailyReport({
           }
         });
 
-        // 4. กล่องเงินสดและกะของสถานที่นั้น
-        const locDayShifts = dayShiftList.filter(matchShift);
+        // 4. กล่องเงินสดและกะของสถานที่นั้น (กรองกะที่เปิดและปิดผิดพลาดภายใน < 10 นาทีโดยไม่มีรายการเดินบัญชีและไม่มีการส่งมอบเงินออก)
+        const rawLocDayShifts = dayShiftList.filter(matchShift);
         const locHandovers = handoverList.filter(matchHandover);
+        const locDayShifts = rawLocDayShifts.filter((sh) => {
+          if (sh.status !== "closed" || rawLocDayShifts.length <= 1) return true;
+          const hasTx = txsIn0645Window.some((tx) => tx.shift_id === sh.id && !tx.category.includes("(Voided)"));
+          if (hasTx) return true;
+          const hasHandoverAmt = locHandovers.some(
+            (h) =>
+              h.shift_id === sh.id &&
+              (Number(h.actual_amount || 0) !== 0 ||
+                Number(h.required_amount || 0) !== 0 ||
+                Number(h.carried_to_next_shift || 0) !== 0)
+          );
+          if (hasHandoverAmt) return true;
+          const durMs =
+            sh.end_time && sh.start_time
+              ? new Date(sh.end_time).getTime() - new Date(sh.start_time).getTime()
+              : 9999999;
+          return durMs > 10 * 60 * 1000;
+        });
+
         // ซอย 1 เริ่มใช้งานจริงตั้งแต่วันที่ 2026-11-24 (ไม่นับข้อมูลทดสอบก่อนหน้าเข้ายอดยกมา)
         const locPriorHandovers = priorHandoversList.filter(
           (h) => matchHandover(h) && h.business_date >= "2026-11-24"
         );
-        const mgrBroughtForward = locPriorHandovers.reduce((sum, h) => sum + Number(h.actual_amount || 0), 0);
+        const locMgrBoxByDate = mgrBoxSettingsMap[locFilter] || {};
+        const todayMgrBoxSetting = locMgrBoxByDate[reportDateStr] || {};
+        let mgrBroughtForward = 0;
+        if (todayMgrBoxSetting.broughtOverride != null) {
+          mgrBroughtForward = Number(todayMgrBoxSetting.broughtOverride);
+        } else {
+          // คำนวณยอดยกมาสะสมตั้งแต่วันที่ 2026-11-24 จนถึงวันก่อนหน้า (รวมผลจากการปรับแก้ ยกมา/จ่ายนอกกะ/ฝากเงิน ของวันก่อนหน้า)
+          const priorDatesSet = new Set<string>();
+          locPriorHandovers.forEach((h) => {
+            if (h.business_date >= "2026-11-24" && h.business_date < reportDateStr) {
+              priorDatesSet.add(h.business_date);
+            }
+          });
+          Object.keys(locMgrBoxByDate).forEach((d) => {
+            if (d >= "2026-11-24" && d < reportDateStr) priorDatesSet.add(d);
+          });
+          const sortedPriorDates = Array.from(priorDatesSet).sort();
+          let runningMgrCash = 0;
+          sortedPriorDates.forEach((d) => {
+            const boxD = locMgrBoxByDate[d];
+            if (boxD?.broughtOverride != null) {
+              runningMgrCash = Number(boxD.broughtOverride);
+            }
+            const dayNetSent = locPriorHandovers
+              .filter((h) => h.business_date === d)
+              .reduce((s, h) => s + Number(h.actual_amount || 0), 0);
+            const dayOutExp = Number(boxD?.outExpOverride ?? 0);
+            const dayBankDep = Number(boxD?.bankDeposit ?? 0);
+            runningMgrCash = runningMgrCash + dayNetSent - dayOutExp - dayBankDep;
+          });
+          mgrBroughtForward = runningMgrCash;
+        }
+        const mgrOutExpenseOverride =
+          todayMgrBoxSetting.outExpOverride != null ? Number(todayMgrBoxSetting.outExpOverride) : undefined;
+        const mgrBankDeposit =
+          todayMgrBoxSetting.bankDeposit != null ? Number(todayMgrBoxSetting.bankDeposit) : 0;
         const locExpenses = expenseRows.filter((e) => locDayShifts.some((s) => s.id === e.shift_id));
         const locTotalExpense = locExpenses.reduce((sum, r) => sum + Math.abs(Number(r.amount || 0)), 0);
 
@@ -1559,14 +1668,20 @@ export default function DailyReport({
               let roomChargeTxAmt = 0;
               let extraAmt = 0;
               let extraLabel = "";
+              const cashTxIds: string[] = [];
+              const transferTxIds: string[] = [];
+              const extraTxIds: string[] = [];
+              const roomChargeTxIds: string[] = [];
 
               slotTxs.forEach((tx) => {
                 const amt = Number(tx.amount || 0);
                 if (tx.transaction_type === "payment" && amt < 0) {
                   if (tx.category === "cash") {
                     cashPaid += Math.abs(amt);
+                    cashTxIds.push(tx.id);
                   } else if (tx.category === "transfer" || tx.category === "credit_card") {
                     transferPaid += Math.abs(amt);
+                    transferTxIds.push(tx.id);
                     if (tx.category === "credit_card") {
                       bankPrefix = "Cr";
                       tcColor = "blue";
@@ -1584,12 +1699,17 @@ export default function DailyReport({
                 } else if (tx.transaction_type === "revenue") {
                   if (tx.category === "room_charge" || tx.category.includes("ค่าห้องพัก")) {
                     roomChargeTxAmt += amt;
+                    roomChargeTxIds.push(tx.id);
                   } else if (!tx.category.includes("มัดจำ")) {
                     extraAmt += amt;
                     extraLabel = tx.category;
+                    extraTxIds.push(tx.id);
                   }
                 }
               });
+
+              const resolvedTransferBank: "SCB" | "KBANK" | "CREDIT_CARD" =
+                bankPrefix === "Cr" ? "CREDIT_CARD" : bankPrefix === "K" ? "KBANK" : "SCB";
 
               if (b.status === "reserved") {
                 const rNo = `R${seqBookingNo++}`;
@@ -1609,6 +1729,28 @@ export default function DailyReport({
                   reservationCreditDisplay: depTotal > 0 ? `+${depTotal.toLocaleString()}` : null,
                   reservationCreditPositive: true,
                   powerWindowDisplay: `เข้า ~${fmtHmShort(b.check_in_time)} น.`,
+                  editMeta: {
+                    bookingId: b.id,
+                    roomId: b.room_id,
+                    roomNo,
+                    guestName: b.guest_name || "ลูกค้าจอง",
+                    slotIdx: slot,
+                    shiftId: firstTx?.shift_id || slottedShifts[slot]?.id || null,
+                    staffName,
+                    dailyRateId: null,
+                    targetDate: reportDateStr,
+                    roomRate: 0,
+                    extraLabel: "",
+                    extraAmount: 0,
+                    cashPaid,
+                    keyDepPlaced: 0,
+                    transferPaid,
+                    transferBank: resolvedTransferBank,
+                    cashTxIds,
+                    transferTxIds,
+                    extraTxIds,
+                    roomChargeTxIds,
+                  },
                 });
                 slotTotals[slot].cash += cashPaid;
                 slotTotals[slot].transferCard += transferPaid;
@@ -1685,6 +1827,28 @@ export default function DailyReport({
                   b.status === "checked_out"
                     ? `${fmtHmShort(b.actual_check_in_time || b.check_in_time)} - ${fmtHmShort(b.check_out_time)}`
                     : `${fmtHmShort(b.actual_check_in_time || b.check_in_time)} - ปัจจุบัน`,
+                editMeta: {
+                  bookingId: b.id,
+                  roomId: b.room_id,
+                  roomNo,
+                  guestName: b.guest_name || "ผู้เข้าพัก",
+                  slotIdx: slot,
+                  shiftId: firstTx?.shift_id || slottedShifts[slot]?.id || null,
+                  staffName,
+                  dailyRateId: todayRateRow?.id || null,
+                  targetDate: reportDateStr,
+                  roomRate: roomAmt,
+                  extraLabel,
+                  extraAmount: extraAmt,
+                  cashPaid,
+                  keyDepPlaced,
+                  transferPaid,
+                  transferBank: resolvedTransferBank,
+                  cashTxIds,
+                  transferTxIds,
+                  extraTxIds,
+                  roomChargeTxIds,
+                },
               });
 
               slotTotals[slot].roomRate += roomAmt;
@@ -1783,6 +1947,8 @@ export default function DailyReport({
           crossLocCollectedByHere,
           liveShiftSections,
           mgrBroughtForward,
+          mgrOutExpenseOverride,
+          mgrBankDeposit,
         };
       };
 
@@ -2037,6 +2203,548 @@ export default function DailyReport({
   const effectiveTransferCardItems =
     dataMode === "prototype" ? PROTOTYPE_TRANSFER_CARD_ITEMS : transferCardItems;
 
+  const isManagerOrAdminLoggedIn =
+    currentUser?.role === "admin" || currentUser?.role === "manager" || !currentUser;
+
+  const resolveEditorName = async (): Promise<string | null> => {
+    if (editPin.trim()) {
+      const mgr = await verifyManagerPin(editPin.trim());
+      if (!mgr) {
+        setEditError("รหัส PIN ผู้จัดการ/แอดมิน ไม่ถูกต้อง");
+        return null;
+      }
+      return mgr.name;
+    }
+    if (currentUser?.role === "admin" || currentUser?.role === "manager") {
+      return currentUser.name || "ADMIN";
+    }
+    if (!currentUser) {
+      return "ADMIN";
+    }
+    setEditError("กรุณากรอกรหัส PIN ผู้จัดการหรือแอดมินเพื่อยืนยันการแก้ไข");
+    return null;
+  };
+
+  const persistAuditEdits = async (newEntries: Record<string, AuditEditEntry>) => {
+    const merged = { ...auditEditsMap, ...newEntries };
+    setAuditEditsMap(merged);
+    await supabase.from("system_settings").upsert(
+      {
+        key: `audit_report_edits_${businessDateStr}`,
+        value: merged,
+      },
+      { onConflict: "key" }
+    );
+  };
+
+  const openRowEditModal = (row: AuditLogRowItem) => {
+    if (!row.editMeta) return;
+    const m = row.editMeta;
+    setEditingRow(row);
+    setRowEditRoomRate(String(m.roomRate || 0));
+    setRowEditExtraLabel(m.extraLabel || "ค่าปรับออกช้า");
+    setRowEditExtraAmount(String(m.extraAmount || 0));
+    setRowEditCashPaid(String(m.cashPaid || 0));
+    setRowEditTransferPaid(String(m.transferPaid || 0));
+    setRowEditTransferBank(m.transferBank || "SCB");
+    setEditError("");
+    setEditPin("");
+  };
+
+  const handleSaveRowEdit = async (override?: {
+    roomRate?: number;
+    extraLabel?: string;
+    extraAmount?: number;
+    cashPaid?: number;
+    transferPaid?: number;
+    transferBank?: "SCB" | "KBANK" | "CREDIT_CARD";
+  }) => {
+    if (!editingRow || !editingRow.editMeta) return;
+    setEditError("");
+    setEditSaving(true);
+    const editorName = await resolveEditorName();
+    if (!editorName) {
+      setEditSaving(false);
+      return;
+    }
+
+    const meta = editingRow.editMeta;
+    const newRoomRate = Math.max(0, Number(override?.roomRate ?? (rowEditRoomRate || 0)));
+    const newExtraLabel = String(override?.extraLabel ?? (rowEditExtraLabel || "บริการเสริม")).trim();
+    const newExtraAmount = Math.max(0, Number(override?.extraAmount ?? (rowEditExtraAmount || 0)));
+    const newCashPaid = Math.max(0, Number(override?.cashPaid ?? (rowEditCashPaid || 0)));
+    const newTransferPaid = Math.max(0, Number(override?.transferPaid ?? (rowEditTransferPaid || 0)));
+    const newTransferBank = override?.transferBank ?? rowEditTransferBank;
+
+    const targetShift =
+      dayShifts.find((s) => s.id === meta.shiftId) ||
+      dayShifts[meta.slotIdx] ||
+      dayShifts[0] ||
+      null;
+    const targetShiftId = targetShift?.id || meta.shiftId || "";
+    const txTimestamp = targetShift?.start_time
+      ? new Date(new Date(targetShift.start_time).getTime() + 60 * 1000).toISOString()
+      : atLocalTime(businessDateStr, 12, 0).toISOString();
+
+    try {
+      const nowIso = new Date().toISOString();
+      const newAuditEntries: Record<string, AuditEditEntry> = {};
+      const changeSummaryParts: string[] = [];
+
+      // 1. ค่าห้อง (Room Rate)
+      if (newRoomRate !== meta.roomRate && editingRow.kind !== "booking") {
+        if (meta.dailyRateId) {
+          await supabase
+            .from("booking_daily_rates")
+            .update({ amount: newRoomRate, is_manual_override: true })
+            .eq("id", meta.dailyRateId);
+        } else {
+          await supabase.from("booking_daily_rates").insert({
+            booking_id: meta.bookingId,
+            target_date: meta.targetDate,
+            amount: newRoomRate,
+            is_manual_override: true,
+          });
+        }
+        if (meta.roomChargeTxIds.length > 0) {
+          await supabase
+            .from("ledger_transactions")
+            .update({ amount: newRoomRate })
+            .eq("id", meta.roomChargeTxIds[0]);
+        }
+        newAuditEntries[`row_${editingRow.id}_roomRate`] = {
+          oldDisplay: meta.roomRate.toLocaleString(),
+          newDisplay: newRoomRate.toLocaleString(),
+          editorName,
+          editedAt: nowIso,
+        };
+        changeSummaryParts.push(`ค่าห้อง ${meta.roomRate.toLocaleString()} -> ${newRoomRate.toLocaleString()} ฿`);
+      }
+
+      // 2. บริการเสริม / ค่าปรับออกช้า (Extra Charge)
+      if ((newExtraAmount !== meta.extraAmount || (newExtraAmount > 0 && newExtraLabel !== meta.extraLabel)) && editingRow.kind !== "booking") {
+        if (meta.extraTxIds.length > 0) {
+          if (newExtraAmount > 0) {
+            await supabase
+              .from("ledger_transactions")
+              .update({
+                amount: newExtraAmount,
+                category: newExtraLabel || "บริการเสริม",
+              })
+              .eq("id", meta.extraTxIds[0]);
+            if (meta.extraTxIds.length > 1) {
+              await supabase.from("ledger_transactions").delete().in("id", meta.extraTxIds.slice(1));
+            }
+          } else {
+            await supabase.from("ledger_transactions").delete().in("id", meta.extraTxIds);
+          }
+        } else if (newExtraAmount > 0 && targetShiftId) {
+          await supabase.from("ledger_transactions").insert({
+            shift_id: targetShiftId,
+            staff_name: meta.staffName || editorName,
+            room_id: meta.roomId,
+            booking_id: meta.bookingId,
+            transaction_type: "revenue",
+            category: newExtraLabel || "ค่าปรับออกช้า",
+            amount: newExtraAmount,
+            notes: `แก้ไขรายงานการเงินโดย ${editorName} ประจำวันที่ ${businessDateStr}`,
+            created_at: txTimestamp,
+          });
+        }
+        if (newExtraAmount !== meta.extraAmount) {
+          newAuditEntries[`row_${editingRow.id}_extra`] = {
+            oldDisplay: meta.extraAmount.toLocaleString(),
+            newDisplay: newExtraAmount.toLocaleString(),
+            editorName,
+            editedAt: nowIso,
+          };
+          changeSummaryParts.push(
+            `ค่าเสริม (${newExtraLabel}) ${meta.extraAmount.toLocaleString()} -> ${newExtraAmount.toLocaleString()} ฿`
+          );
+        }
+      }
+
+      // 2.1 รวมเงิน (Total Charge)
+      const oldTotalCharge = meta.roomRate + meta.extraAmount;
+      const newTotalCharge = newRoomRate + newExtraAmount;
+      if (newTotalCharge !== oldTotalCharge && editingRow.kind !== "booking") {
+        newAuditEntries[`row_${editingRow.id}_totalCharge`] = {
+          oldDisplay: oldTotalCharge.toLocaleString(),
+          newDisplay: newTotalCharge.toLocaleString(),
+          editorName,
+          editedAt: nowIso,
+        };
+      }
+
+      // 3. เงินสด (Cash Payment)
+      if (newCashPaid !== meta.cashPaid) {
+        if (meta.cashTxIds.length > 0) {
+          if (newCashPaid > 0) {
+            await supabase
+              .from("ledger_transactions")
+              .update({ amount: -Math.abs(newCashPaid) })
+              .eq("id", meta.cashTxIds[0]);
+            if (meta.cashTxIds.length > 1) {
+              await supabase.from("ledger_transactions").delete().in("id", meta.cashTxIds.slice(1));
+            }
+          } else {
+            await supabase.from("ledger_transactions").delete().in("id", meta.cashTxIds);
+          }
+        } else if (newCashPaid > 0 && targetShiftId) {
+          await supabase.from("ledger_transactions").insert({
+            shift_id: targetShiftId,
+            staff_name: meta.staffName || editorName,
+            room_id: meta.roomId,
+            booking_id: meta.bookingId,
+            transaction_type: "payment",
+            category: "cash",
+            amount: -Math.abs(newCashPaid),
+            notes: `บันทึกรับชำระเงินสดจากหน้ารายงานการเงินโดย ${editorName}`,
+            created_at: txTimestamp,
+          });
+        }
+        const oldCashDisp =
+          meta.cashPaid > 0 && meta.keyDepPlaced > 0
+            ? `${meta.cashPaid.toLocaleString()}-${meta.keyDepPlaced.toLocaleString()}`
+            : meta.cashPaid === 0 && meta.keyDepPlaced > 0
+            ? `-${meta.keyDepPlaced.toLocaleString()}`
+            : meta.cashPaid > 0
+            ? meta.cashPaid.toLocaleString()
+            : "0";
+        const newCashDisp =
+          newCashPaid > 0 && meta.keyDepPlaced > 0
+            ? `${newCashPaid.toLocaleString()}-${meta.keyDepPlaced.toLocaleString()}`
+            : newCashPaid === 0 && meta.keyDepPlaced > 0
+            ? `-${meta.keyDepPlaced.toLocaleString()}`
+            : newCashPaid > 0
+            ? newCashPaid.toLocaleString()
+            : "0";
+        newAuditEntries[`row_${editingRow.id}_cash`] = {
+          oldDisplay: oldCashDisp,
+          newDisplay: newCashDisp,
+          editorName,
+          editedAt: nowIso,
+        };
+        changeSummaryParts.push(`เงินสด ${oldCashDisp} -> ${newCashDisp} ฿`);
+      }
+
+      // 4. โอน / บัตรเครดิต (Transfer / Credit Card Payment)
+      if (newTransferPaid !== meta.transferPaid || (newTransferPaid > 0 && newTransferBank !== meta.transferBank)) {
+        const txCat = newTransferBank === "CREDIT_CARD" ? "credit_card" : "transfer";
+        const txNote =
+          newTransferBank === "CREDIT_CARD"
+            ? `ชำระบัตรเครดิต (แก้ไขจากรายงานการเงินโดย ${editorName})`
+            : `[BANK:${newTransferBank}] รับโอนเงิน (แก้ไขจากรายงานการเงินโดย ${editorName})`;
+
+        if (meta.transferTxIds.length > 0) {
+          if (newTransferPaid > 0) {
+            await supabase
+              .from("ledger_transactions")
+              .update({
+                amount: -Math.abs(newTransferPaid),
+                category: txCat,
+                notes: txNote,
+              })
+              .eq("id", meta.transferTxIds[0]);
+            if (meta.transferTxIds.length > 1) {
+              await supabase.from("ledger_transactions").delete().in("id", meta.transferTxIds.slice(1));
+            }
+          } else {
+            await supabase.from("ledger_transactions").delete().in("id", meta.transferTxIds);
+          }
+        } else if (newTransferPaid > 0 && targetShiftId) {
+          await supabase.from("ledger_transactions").insert({
+            shift_id: targetShiftId,
+            staff_name: meta.staffName || editorName,
+            room_id: meta.roomId,
+            booking_id: meta.bookingId,
+            transaction_type: "payment",
+            category: txCat,
+            amount: -Math.abs(newTransferPaid),
+            notes: txNote,
+            created_at: txTimestamp,
+          });
+        }
+        const oldBankPref =
+          meta.transferBank === "CREDIT_CARD" ? "Cr" : meta.transferBank === "KBANK" ? "K" : "S";
+        const newBankPref =
+          newTransferBank === "CREDIT_CARD" ? "Cr" : newTransferBank === "KBANK" ? "K" : "S";
+        const oldTransDisp =
+          meta.transferPaid > 0 ? `${oldBankPref} ${meta.transferPaid.toLocaleString()}` : "0";
+        const newTransDisp =
+          newTransferPaid > 0 ? `${newBankPref} ${newTransferPaid.toLocaleString()}` : "0";
+        newAuditEntries[`row_${editingRow.id}_transfer`] = {
+          oldDisplay: oldTransDisp,
+          newDisplay: newTransDisp,
+          editorName,
+          editedAt: nowIso,
+        };
+        changeSummaryParts.push(`โอน/บัตร ${oldTransDisp} -> ${newTransDisp} ฿`);
+      }
+
+      if (Object.keys(newAuditEntries).length > 0) {
+        await persistAuditEdits(newAuditEntries);
+        await logActivity({
+          category: "billing",
+          action: "update",
+          staffName: editorName,
+          shiftName: meta.staffName,
+          roomNo: meta.roomNo,
+          target: `แก้ไขรายงานการเงิน ห้อง ${meta.roomNo} (${businessDateStr})`,
+          details: `ผู้จัดการ/แอดมิน (${editorName}) แก้ไขรายการห้อง ${meta.roomNo} ในรายงานการเงินวันที่ ${businessDateStr}: ${changeSummaryParts.join(", ")}`,
+        });
+      }
+
+      setEditingRow(null);
+      setRefreshKey((k) => k + 1);
+    } catch (err: any) {
+      setEditError("บันทึกไม่สำเร็จ: " + (err?.message || String(err)));
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const openShiftSummaryEditModal = (target: ShiftSummaryEditTarget) => {
+    setEditingShiftSummary(target);
+    setShiftEditCarriedIn(String(target.carriedIn || 0));
+    setShiftEditCountedDrawer(String(target.countedDrawer || 0));
+    setShiftEditCloseSent(String(target.closeSent || 0));
+    setShiftEditCarriedOut(String(target.carriedOut || 0));
+    setEditError("");
+    setEditPin("");
+  };
+
+  const handleSaveShiftSummaryEdit = async () => {
+    if (!editingShiftSummary || !editingShiftSummary.sh) return;
+    setEditError("");
+    setEditSaving(true);
+    const editorName = await resolveEditorName();
+    if (!editorName) {
+      setEditSaving(false);
+      return;
+    }
+
+    const t = editingShiftSummary;
+    const sh = t.sh!;
+    const newCarriedIn = Number(shiftEditCarriedIn || 0);
+    const newCountedDrawer = Number(shiftEditCountedDrawer || 0);
+    const newCloseSent = Number(shiftEditCloseSent || 0);
+    const newCarriedOut = Math.max(0, Number(shiftEditCarriedOut || 0));
+
+    try {
+      const nowIso = new Date().toISOString();
+      const newAuditEntries: Record<string, AuditEditEntry> = {};
+      const changeParts: string[] = [];
+
+      // คำนวณเก๊ะระบบใหม่หากมีการแก้ยอดยกมาต้นกะ
+      const deltaCarriedIn = newCarriedIn - t.carriedIn;
+      const newSysDrawer = t.sysDrawer + deltaCarriedIn;
+      const newDiff = newCountedDrawer - newSysDrawer;
+
+      await supabase
+        .from("shifts")
+        .update({
+          initial_cash: newCarriedIn,
+          expected_cash: newSysDrawer,
+          final_cash: newCountedDrawer,
+          discrepancy: newDiff,
+        })
+        .eq("id", sh.id);
+
+      if (t.closeHandoverObj) {
+        const updatedHandover: CashHandover = {
+          ...t.closeHandoverObj,
+          drawer_cash: newSysDrawer,
+          required_amount: newCloseSent,
+          actual_amount: newCloseSent,
+          carried_to_next_shift: newCarriedOut,
+        };
+        await saveHandover(updatedHandover);
+      } else if (sh.status === "closed") {
+        const newHandover: CashHandover = {
+          id: `${businessDateStr}_${Date.now()}_edit_${t.slotIdx}`,
+          kind: "shift_close",
+          business_date: businessDateStr,
+          shift_id: sh.id,
+          shift_staff_name: t.staffName,
+          shift_location: sh.shift_location || selectedLocation || "ซอย1",
+          drawer_cash: newSysDrawer,
+          key_reserve: 0,
+          required_amount: newCloseSent,
+          actual_amount: newCloseSent,
+          carried_to_next_shift: newCarriedOut,
+          staff_name: t.staffName,
+          staff_signature: sh.signature_data || null,
+          staff_signed_at: sh.end_time || nowIso,
+          manager_name: editorName,
+          manager_signature: null,
+          manager_signed_at: nowIso,
+          created_at: sh.end_time || nowIso,
+        };
+        await saveHandover(newHandover);
+      }
+
+      if (newCarriedIn !== t.carriedIn) {
+        newAuditEntries[`shift_slot_${t.slotIdx}_row6`] = {
+          oldDisplay: `(ยกมา ${t.carriedIn.toLocaleString()})`,
+          newDisplay: `(ยกมา ${newCarriedIn.toLocaleString()})`,
+          editorName,
+          editedAt: nowIso,
+        };
+        changeParts.push(`ข้อ 6 ยกมาต้นกะ ${t.carriedIn.toLocaleString()} -> ${newCarriedIn.toLocaleString()} ฿`);
+      }
+      if (newCountedDrawer !== t.countedDrawer) {
+        newAuditEntries[`shift_slot_${t.slotIdx}_row11`] = {
+          oldDisplay: `${t.countedDrawer.toLocaleString()}`,
+          newDisplay: `${newCountedDrawer.toLocaleString()}`,
+          editorName,
+          editedAt: nowIso,
+        };
+        changeParts.push(`ข้อ 11 นับจริงในเก๊ะ ${t.countedDrawer.toLocaleString()} -> ${newCountedDrawer.toLocaleString()} ฿`);
+      }
+      if (newCloseSent !== t.closeSent) {
+        const oldDisp12 =
+          t.closeSent > 0
+            ? `-${t.closeSent.toLocaleString()}`
+            : t.closeSent < 0
+            ? `+${Math.abs(t.closeSent).toLocaleString()}`
+            : "0";
+        const newDisp12 =
+          newCloseSent > 0
+            ? `-${newCloseSent.toLocaleString()}`
+            : newCloseSent < 0
+            ? `+${Math.abs(newCloseSent).toLocaleString()}`
+            : "0";
+        newAuditEntries[`shift_slot_${t.slotIdx}_row12`] = {
+          oldDisplay: oldDisp12,
+          newDisplay: newDisp12,
+          editorName,
+          editedAt: nowIso,
+        };
+        changeParts.push(`ข้อ 12 ส่งเงินปิดกะ ${oldDisp12} -> ${newDisp12} ฿`);
+      }
+      if (newCarriedOut !== t.carriedOut) {
+        newAuditEntries[`shift_slot_${t.slotIdx}_row13`] = {
+          oldDisplay: `${t.carriedOut.toLocaleString()}`,
+          newDisplay: `${newCarriedOut.toLocaleString()}`,
+          editorName,
+          editedAt: nowIso,
+        };
+        changeParts.push(`ข้อ 13 ยกไปกะถัดไป ${t.carriedOut.toLocaleString()} -> ${newCarriedOut.toLocaleString()} ฿`);
+      }
+
+      if (Object.keys(newAuditEntries).length > 0) {
+        await persistAuditEdits(newAuditEntries);
+        await logActivity({
+          category: "shift",
+          action: "update",
+          staffName: editorName,
+          shiftName: t.staffName,
+          target: `แก้ไขสรุปการเงินกะ ${t.staffName} (${businessDateStr})`,
+          details: `ผู้จัดการ/แอดมิน (${editorName}) แก้ไขสรุปกะ ${t.staffName} วันที่ ${businessDateStr}: ${changeParts.join(", ")}`,
+        });
+      }
+
+      setEditingShiftSummary(null);
+      setRefreshKey((k) => k + 1);
+    } catch (err: any) {
+      setEditError("บันทึกไม่สำเร็จ: " + (err?.message || String(err)));
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const openManagerBoxEditModal = (target: ManagerBoxEditTarget) => {
+    setEditingManagerBox(target);
+    setMgrEditBrought(String(target.mgrBrought || 0));
+    setMgrEditOutExp(String(target.mgrOutExp || 0));
+    setMgrEditBankDep(String(target.mgrBankDep || 0));
+    setEditError("");
+    setEditPin("");
+  };
+
+  const handleSaveManagerBoxEdit = async () => {
+    if (!editingManagerBox) return;
+    setEditError("");
+    setEditSaving(true);
+    const editorName = await resolveEditorName();
+    if (!editorName) {
+      setEditSaving(false);
+      return;
+    }
+
+    const t = editingManagerBox;
+    const newBrought = Number(mgrEditBrought || 0);
+    const newOutExp = Math.max(0, Number(mgrEditOutExp || 0));
+    const newBankDep = Math.max(0, Number(mgrEditBankDep || 0));
+
+    try {
+      const nowIso = new Date().toISOString();
+      const newAuditEntries: Record<string, AuditEditEntry> = {};
+      const changeParts: string[] = [];
+
+      await supabase.from("system_settings").upsert(
+        {
+          key: `mgr_cash_box_${selectedLocation}_${businessDateStr}`,
+          value: {
+            broughtOverride: newBrought,
+            outExpOverride: newOutExp,
+            bankDeposit: newBankDep,
+            updatedBy: editorName,
+            updatedAt: nowIso,
+          },
+        },
+        { onConflict: "key" }
+      );
+
+      if (newBrought !== t.mgrBrought) {
+        newAuditEntries[`mgr_${selectedLocation}_box1`] = {
+          oldDisplay: `${t.mgrBrought.toLocaleString()}`,
+          newDisplay: `${newBrought.toLocaleString()}`,
+          editorName,
+          editedAt: nowIso,
+        };
+        changeParts.push(`1. ยกมา ${t.mgrBrought.toLocaleString()} -> ${newBrought.toLocaleString()} ฿`);
+      }
+      if (newOutExp !== t.mgrOutExp) {
+        newAuditEntries[`mgr_${selectedLocation}_box3`] = {
+          oldDisplay: `-${t.mgrOutExp.toLocaleString()}`,
+          newDisplay: `-${newOutExp.toLocaleString()}`,
+          editorName,
+          editedAt: nowIso,
+        };
+        changeParts.push(`3. จ่ายนอกกะ -${t.mgrOutExp.toLocaleString()} -> -${newOutExp.toLocaleString()} ฿`);
+      }
+      if (newBankDep !== t.mgrBankDep) {
+        newAuditEntries[`mgr_${selectedLocation}_box4`] = {
+          oldDisplay: `-${t.mgrBankDep.toLocaleString()}`,
+          newDisplay: `-${newBankDep.toLocaleString()}`,
+          editorName,
+          editedAt: nowIso,
+        };
+        changeParts.push(`4. ฝากเงิน -${t.mgrBankDep.toLocaleString()} -> -${newBankDep.toLocaleString()} ฿`);
+      }
+
+      if (Object.keys(newAuditEntries).length > 0) {
+        await persistAuditEdits(newAuditEntries);
+        await logActivity({
+          category: "billing",
+          action: "update",
+          staffName: editorName,
+          target: `แก้ไขกล่องเงินสดสะสมผู้จัดการ (${selectedLocation} • ${businessDateStr})`,
+          details: `ผู้จัดการ/แอดมิน (${editorName}) แก้ไขกล่องเงินสดสะสมผู้จัดการ (${selectedLocation}) วันที่ ${businessDateStr}: ${changeParts.join(", ")}`,
+        });
+      }
+
+      setEditingManagerBox(null);
+      setRefreshKey((k) => k + 1);
+    } catch (err: any) {
+      setEditError("บันทึกไม่สำเร็จ: " + (err?.message || String(err)));
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   return (
     <div id="daily-report-root" className="space-y-4 print:space-y-0 print:m-0">
       <FinancialReportType2View
@@ -2060,7 +2768,587 @@ export default function DailyReport({
           setSignPin("");
           setSignError("");
         }}
+        canEditReport={true}
+        auditEdits={auditEditsMap}
+        onClickEditRow={openRowEditModal}
+        onClickEditShiftSummary={openShiftSummaryEditModal}
+        onClickEditManagerBox={openManagerBoxEditModal}
       />
+
+      {/* ===================== Modal 1: แก้ไขรายการแถวห้องพักในตาราง 15 คอลัมน์โดยตรง ===================== */}
+      {editingRow && editingRow.editMeta && (() => {
+        const meta = editingRow.editMeta;
+        const currRoomRate = Number(rowEditRoomRate || 0);
+        const currExtraAmt = Number(rowEditExtraAmount || 0);
+        const currTotalCharge = currRoomRate + currExtraAmt;
+        const currCashPaid = Number(rowEditCashPaid || 0);
+        const currCashNet = currCashPaid - meta.keyDepPlaced;
+        const currTransPaid = Number(rowEditTransferPaid || 0);
+        const currNetPaidForRoom = Math.max(0, currCashNet) + currTransPaid;
+        const unpaidInRow = Math.max(0, currTotalCharge - currNetPaidForRoom);
+        const totalNetPaid = Math.max(0, currCashNet) + currTransPaid;
+
+        return (
+          <div className="fixed inset-0 z-[130] bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-3">
+            <div className="bg-white rounded-2xl w-full max-w-lg max-h-[94vh] overflow-y-auto shadow-2xl border border-slate-200">
+              <div className="px-4 py-3 bg-slate-900 text-white flex items-center justify-between">
+                <div>
+                  <h3 className="font-black text-sm sm:text-base flex items-center gap-1.5">
+                    ✏️ แก้ไขรายการห้อง <span className="text-amber-300 text-base sm:text-lg">{meta.roomNo}</span> ในรายงานการเงิน
+                  </h3>
+                  <p className="text-[11px] text-slate-300 mt-0.5">
+                    พนง.กะ: <b>{meta.staffName}</b> • วันที่รายงาน: <b>{businessDateStr}</b>
+                    {meta.keyDepPlaced > 0 ? ` • มีมัดจำกุญแจในแถวนี้ ${meta.keyDepPlaced.toLocaleString()} ฿` : ""}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingRow(null)}
+                  className="text-slate-400 hover:text-white text-lg font-black px-2 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="p-4 space-y-3.5 text-xs">
+                {editError && (
+                  <div className="bg-rose-50 border border-rose-200 text-rose-700 p-2.5 rounded-xl font-bold">
+                    {editError}
+                  </div>
+                )}
+
+                {/* ปุ่มลัด 1-Click: กรณีมียอดค้างชำระในแถวนี้ (เช่น ห้อง 27 ค่าปรับออกช้า 150 ฿ ยังไม่ได้ลงรับชำระ) */}
+                {unpaidInRow > 0 && editingRow.kind !== "booking" && (
+                  <div className="bg-rose-50 border-2 border-rose-300 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-rose-900 text-xs">
+                        ⚡ พบยอดค้างชำระในแถวนี้: <b className="text-rose-700 text-sm">{unpaidInRow.toLocaleString()} ฿</b>
+                      </span>
+                      <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full">
+                        กดปุ่มเดียวบันทึกทันที
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button
+                        type="button"
+                        disabled={editSaving}
+                        onClick={() =>
+                          handleSaveRowEdit({
+                            cashPaid: currCashPaid + unpaidInRow,
+                          })
+                        }
+                        className="py-2 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] shadow-xs cursor-pointer"
+                      >
+                        💵 รับเงินสด +{unpaidInRow.toLocaleString()}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={editSaving}
+                        onClick={() =>
+                          handleSaveRowEdit({
+                            transferPaid: currTransPaid + unpaidInRow,
+                            transferBank: "SCB",
+                          })
+                        }
+                        className="py-2 px-2 rounded-lg bg-purple-700 hover:bg-purple-800 text-white font-black text-[11px] shadow-xs cursor-pointer"
+                      >
+                        🟣 รับโอน S +{unpaidInRow.toLocaleString()}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={editSaving}
+                        onClick={() =>
+                          handleSaveRowEdit({
+                            transferPaid: currTransPaid + unpaidInRow,
+                            transferBank: "KBANK",
+                          })
+                        }
+                        className="py-2 px-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-black text-[11px] shadow-xs cursor-pointer"
+                      >
+                        🟢 รับโอน K +{unpaidInRow.toLocaleString()}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* ปุ่มลัด 1-Click: สลับช่องทางชำระเงินด่วน (เงินสด <-> โอน S / K / บัตร Cr) */}
+                {(totalNetPaid > 0 || currTotalCharge > 0) && (
+                  <div className="bg-indigo-50/80 border border-indigo-200 rounded-xl p-2.5 space-y-1.5">
+                    <div className="font-bold text-indigo-950 text-[11px]">
+                      🔄 สลับช่องทางรับชำระทั้งก้อน ({(totalNetPaid || currTotalCharge).toLocaleString()} ฿):
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const targetAmt = totalNetPaid || currTotalCharge;
+                          setRowEditCashPaid(String(targetAmt + meta.keyDepPlaced));
+                          setRowEditTransferPaid("0");
+                        }}
+                        className="py-1.5 px-1.5 rounded-lg bg-white hover:bg-emerald-50 border border-emerald-300 text-emerald-900 font-bold text-[10.5px] cursor-pointer"
+                      >
+                        💵 เงินสดทั้งหมด
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const targetAmt = totalNetPaid || currTotalCharge;
+                          setRowEditCashPaid("0");
+                          setRowEditTransferPaid(String(targetAmt));
+                          setRowEditTransferBank("SCB");
+                        }}
+                        className="py-1.5 px-1.5 rounded-lg bg-white hover:bg-purple-50 border border-purple-300 text-purple-900 font-bold text-[10.5px] cursor-pointer"
+                      >
+                        🟣 โอน S (SCB)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const targetAmt = totalNetPaid || currTotalCharge;
+                          setRowEditCashPaid("0");
+                          setRowEditTransferPaid(String(targetAmt));
+                          setRowEditTransferBank("KBANK");
+                        }}
+                        className="py-1.5 px-1.5 rounded-lg bg-white hover:bg-emerald-50 border border-teal-300 text-teal-900 font-bold text-[10.5px] cursor-pointer"
+                      >
+                        🟢 โอน K (KBANK)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const targetAmt = totalNetPaid || currTotalCharge;
+                          setRowEditCashPaid("0");
+                          setRowEditTransferPaid(String(targetAmt));
+                          setRowEditTransferBank("CREDIT_CARD");
+                        }}
+                        className="py-1.5 px-1.5 rounded-lg bg-white hover:bg-blue-50 border border-blue-300 text-blue-900 font-bold text-[10.5px] cursor-pointer"
+                      >
+                        💳 บัตรเครดิต Cr
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {editingRow.kind !== "booking" && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">ค่าห้อง (฿)</label>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={rowEditRoomRate}
+                        onChange={(e) => setRowEditRoomRate(e.target.value)}
+                        className="w-full p-2 rounded-xl border border-slate-300 font-black text-slate-900 text-sm focus:border-amber-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">ชื่อรายการเสริม/ค่าปรับ</label>
+                      <input
+                        type="text"
+                        value={rowEditExtraLabel}
+                        onChange={(e) => setRowEditExtraLabel(e.target.value)}
+                        placeholder="เช่น ค่าปรับออกช้า"
+                        className="w-full p-2 rounded-xl border border-slate-300 font-bold text-slate-900 text-sm focus:border-amber-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">ยอดค่าเสริม (฿)</label>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={rowEditExtraAmount}
+                        onChange={(e) => setRowEditExtraAmount(e.target.value)}
+                        className="w-full p-2 rounded-xl border border-slate-300 font-black text-indigo-900 text-sm focus:border-amber-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1 border-t border-slate-200">
+                  <div>
+                    <label className="block font-bold text-emerald-900 mb-1">
+                      💵 เงินสดรับรวม {meta.keyDepPlaced > 0 ? `(รวมมัดจำ ${meta.keyDepPlaced})` : "(฿)"}
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={rowEditCashPaid}
+                      onChange={(e) => setRowEditCashPaid(e.target.value)}
+                      className="w-full p-2 rounded-xl border border-emerald-300 bg-emerald-50/40 font-black text-emerald-950 text-sm focus:border-emerald-600 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-blue-900 mb-1">🏦 ยอดโอน / บัตร (฿)</label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={rowEditTransferPaid}
+                      onChange={(e) => setRowEditTransferPaid(e.target.value)}
+                      className="w-full p-2 rounded-xl border border-blue-300 bg-blue-50/40 font-black text-blue-950 text-sm focus:border-blue-600 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-blue-900 mb-1">ธนาคาร / บัตร</label>
+                    <select
+                      value={rowEditTransferBank}
+                      onChange={(e) => setRowEditTransferBank(e.target.value as "SCB" | "KBANK" | "CREDIT_CARD")}
+                      className="w-full p-2 rounded-xl border border-blue-300 bg-white font-black text-slate-900 text-sm focus:border-blue-600 outline-none"
+                    >
+                      <option value="SCB">S = SCB (ไทยพาณิชย์)</option>
+                      <option value="KBANK">K = KBANK (กสิกรไทย)</option>
+                      <option value="CREDIT_CARD">Cr = บัตรเครดิต</option>
+                    </select>
+                  </div>
+                </div>
+
+                {!isManagerOrAdminLoggedIn && (
+                  <div className="pt-2 border-t border-slate-200">
+                    <label className="block font-bold text-slate-700 mb-1">รหัส PIN ผู้จัดการ / แอดมิน</label>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={editPin}
+                      onChange={(e) => setEditPin(e.target.value.replace(/\D/g, ""))}
+                      placeholder="••••"
+                      className="w-full text-center tracking-[0.4em] text-base p-2 rounded-xl border border-slate-300"
+                    />
+                  </div>
+                )}
+
+                <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-200 text-[11px] text-slate-600 flex items-center justify-between">
+                  <span>
+                    ผู้บันทึกการแก้ไข: <b className="text-slate-900">{currentUser?.name || "ADMIN"}</b>
+                  </span>
+                  <span>แสดงรอยขีดฆ่ายอดเดิม + ({currentUser?.name || "ADMIN"}) บนรายงานอัตโนมัติ</span>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 px-4 py-3 border-t border-slate-200 flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setEditingRow(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-700 font-bold text-xs cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  disabled={editSaving}
+                  onClick={() => handleSaveRowEdit()}
+                  className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs shadow cursor-pointer disabled:opacity-50"
+                >
+                  {editSaving ? "กำลังบันทึก..." : "💾 บันทึกการแก้ไขทันที"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ===================== Modal 2: แก้ไขช่องสรุปการเงินกะ (ข้อ 6, 11, 12, 13) ===================== */}
+      {editingShiftSummary && (() => {
+        const t = editingShiftSummary;
+        const currCarriedIn = Number(shiftEditCarriedIn || 0);
+        const currSysDrawer = t.sysDrawer + (currCarriedIn - t.carriedIn);
+        const currCounted = Number(shiftEditCountedDrawer || 0);
+        const currDiff = currCounted - currSysDrawer;
+
+        return (
+          <div className="fixed inset-0 z-[130] bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-3">
+            <div className="bg-white rounded-2xl w-full max-w-md max-h-[94vh] overflow-y-auto shadow-2xl border border-slate-200">
+              <div className="px-4 py-3 bg-slate-900 text-white flex items-center justify-between">
+                <div>
+                  <h3 className="font-black text-sm sm:text-base">
+                    ✏️ แก้ไขสรุปการเงินกะ ({t.staffName})
+                  </h3>
+                  <p className="text-[11px] text-slate-300 mt-0.5">
+                    ช่วงเวลา: {t.timeRange} • วันที่ {businessDateStr}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingShiftSummary(null)}
+                  className="text-slate-400 hover:text-white text-lg font-black px-2 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="p-4 space-y-3 text-xs">
+                {editError && (
+                  <div className="bg-rose-50 border border-rose-200 text-rose-700 p-2.5 rounded-xl font-bold">
+                    {editError}
+                  </div>
+                )}
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-800">6. เงินสดยกมาต้นกะ (฿)</label>
+                    <button
+                      type="button"
+                      onClick={() => setShiftEditCarriedIn("0")}
+                      className="text-[10.5px] font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 px-2 py-0.5 rounded cursor-pointer"
+                    >
+                      รีเซ็ตเป็น 0 ฿
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={shiftEditCarriedIn}
+                    onChange={(e) => setShiftEditCarriedIn(e.target.value)}
+                    className="w-full p-2 rounded-xl border border-slate-300 font-black text-slate-900 text-sm"
+                  />
+                </div>
+
+                <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-2.5 flex items-center justify-between">
+                  <span className="font-bold text-slate-700">10. เงินสดในเก๊ะตามระบบ (คำนวณอัตโนมัติ):</span>
+                  <b className="text-sm font-black text-slate-900">{currSysDrawer.toLocaleString()} ฿</b>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-800">11. เงินสดตรวจนับจริงในเก๊ะ (฿)</label>
+                    <button
+                      type="button"
+                      onClick={() => setShiftEditCountedDrawer(String(currSysDrawer))}
+                      className="text-[10.5px] font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 px-2 py-0.5 rounded cursor-pointer"
+                    >
+                      ⚡ ให้ตรงตามระบบ ({currSysDrawer.toLocaleString()} ฿)
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={shiftEditCountedDrawer}
+                    onChange={(e) => setShiftEditCountedDrawer(e.target.value)}
+                    className="w-full p-2 rounded-xl border border-slate-300 font-black text-slate-900 text-sm"
+                  />
+                  <div className="mt-1 text-[11px] font-bold">
+                    สถานะเงินขาด/เกิน:{" "}
+                    <span
+                      className={
+                        currDiff < 0
+                          ? "text-rose-700"
+                          : currDiff > 0
+                          ? "text-emerald-700"
+                          : "text-slate-600"
+                      }
+                    >
+                      {currDiff < 0
+                        ? `ขาด -${Math.abs(currDiff).toLocaleString()} ฿`
+                        : currDiff > 0
+                        ? `เกิน +${currDiff.toLocaleString()} ฿`
+                        : "ตรงตามระบบ (0 ฿)"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5 pt-1 border-t border-slate-200">
+                  <div>
+                    <label className="block font-bold text-rose-900 mb-1">
+                      12. ส่งเงินปิดกะ (+เก็บ / -เบิก)
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={shiftEditCloseSent}
+                      onChange={(e) => setShiftEditCloseSent(e.target.value)}
+                      className="w-full p-2 rounded-xl border border-rose-300 bg-rose-50/40 font-black text-rose-950 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-blue-900 mb-1">
+                      13. เงินทอนส่งมอบยกไป (฿)
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={shiftEditCarriedOut}
+                      onChange={(e) => setShiftEditCarriedOut(e.target.value)}
+                      className="w-full p-2 rounded-xl border border-blue-300 bg-blue-50/40 font-black text-blue-950 text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShiftEditCloseSent(String(currCounted));
+                      setShiftEditCarriedOut("0");
+                    }}
+                    className="py-1.5 px-2 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-950 font-bold text-[11px] cursor-pointer"
+                  >
+                    📥 เก็บส่งผู้จัดการทั้งหมด (ยกไป = 0)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShiftEditCloseSent("0");
+                      setShiftEditCarriedOut(String(Math.max(0, currCounted)));
+                    }}
+                    className="py-1.5 px-2 rounded-lg bg-blue-100 hover:bg-blue-200 text-blue-950 font-bold text-[11px] cursor-pointer"
+                  >
+                    ➡️ ส่งต่อกะถัดไปทั้งหมด (ส่ง = 0)
+                  </button>
+                </div>
+
+                {!isManagerOrAdminLoggedIn && (
+                  <div className="pt-2 border-t border-slate-200">
+                    <label className="block font-bold text-slate-700 mb-1">รหัส PIN ผู้จัดการ / แอดมิน</label>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={editPin}
+                      onChange={(e) => setEditPin(e.target.value.replace(/\D/g, ""))}
+                      placeholder="••••"
+                      className="w-full text-center tracking-[0.4em] text-base p-2 rounded-xl border border-slate-300"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-slate-50 px-4 py-3 border-t border-slate-200 flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setEditingShiftSummary(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-700 font-bold text-xs cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  disabled={editSaving}
+                  onClick={handleSaveShiftSummaryEdit}
+                  className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs shadow cursor-pointer disabled:opacity-50"
+                >
+                  {editSaving ? "กำลังบันทึก..." : "💾 บันทึกสรุปกะ"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ===================== Modal 3: แก้ไขกล่องเงินสดสะสมผู้จัดการ (กล่อง 1, 3, 4) ===================== */}
+      {editingManagerBox && (() => {
+        const t = editingManagerBox;
+        const currBrought = Number(mgrEditBrought || 0);
+        const currOutExp = Math.max(0, Number(mgrEditOutExp || 0));
+        const currBankDep = Math.max(0, Number(mgrEditBankDep || 0));
+        const currCarried = currBrought + t.mgrNetShifts - currOutExp - currBankDep;
+
+        return (
+          <div className="fixed inset-0 z-[130] bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-3">
+            <div className="bg-white rounded-2xl w-full max-w-md max-h-[94vh] overflow-y-auto shadow-2xl border border-slate-200">
+              <div className="px-4 py-3 bg-slate-900 text-white flex items-center justify-between">
+                <div>
+                  <h3 className="font-black text-sm sm:text-base">
+                    ✏️ แก้ไขกล่องเงินสดสะสมผู้จัดการ ({selectedLocation})
+                  </h3>
+                  <p className="text-[11px] text-slate-300 mt-0.5">
+                    วันที่รายงาน: {businessDateStr} • อัปเดตยอดยกไปวันถัดไปอัตโนมัติ
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingManagerBox(null)}
+                  className="text-slate-400 hover:text-white text-lg font-black px-2 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="p-4 space-y-3 text-xs">
+                {editError && (
+                  <div className="bg-rose-50 border border-rose-200 text-rose-700 p-2.5 rounded-xl font-bold">
+                    {editError}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">1. ยกมา (เงินสดสะสมผู้จัดการยกมา) (฿)</label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={mgrEditBrought}
+                    onChange={(e) => setMgrEditBrought(e.target.value)}
+                    className="w-full p-2 rounded-xl border border-slate-300 font-black text-slate-900 text-sm"
+                  />
+                </div>
+
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 flex items-center justify-between">
+                  <span className="font-bold text-emerald-950">2. รับสุทธิจากกะวันนี้:</span>
+                  <b className="text-sm font-black text-emerald-700">+{t.mgrNetShifts.toLocaleString()} ฿</b>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-rose-900 mb-1">3. จ่ายนอกกะ (฿)</label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={mgrEditOutExp}
+                    onChange={(e) => setMgrEditOutExp(e.target.value)}
+                    className="w-full p-2 rounded-xl border border-rose-300 bg-rose-50/40 font-black text-rose-900 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-blue-900 mb-1">4. ฝากเงินธนาคาร (฿)</label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={mgrEditBankDep}
+                    onChange={(e) => setMgrEditBankDep(e.target.value)}
+                    className="w-full p-2 rounded-xl border border-blue-300 bg-blue-50/40 font-black text-blue-900 text-sm"
+                  />
+                </div>
+
+                <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-2.5 flex items-center justify-between">
+                  <span className="font-black text-amber-950">5. ยกไปวันถัดไป (คำนวณอัตโนมัติ):</span>
+                  <b className="text-base font-black text-amber-900">{currCarried.toLocaleString()} ฿</b>
+                </div>
+
+                {!isManagerOrAdminLoggedIn && (
+                  <div className="pt-2 border-t border-slate-200">
+                    <label className="block font-bold text-slate-700 mb-1">รหัส PIN ผู้จัดการ / แอดมิน</label>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={editPin}
+                      onChange={(e) => setEditPin(e.target.value.replace(/\D/g, ""))}
+                      placeholder="••••"
+                      className="w-full text-center tracking-[0.4em] text-base p-2 rounded-xl border border-slate-300"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-slate-50 px-4 py-3 border-t border-slate-200 flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setEditingManagerBox(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-700 font-bold text-xs cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  disabled={editSaving}
+                  onClick={handleSaveManagerBoxEdit}
+                  className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs shadow cursor-pointer disabled:opacity-50"
+                >
+                  {editSaving ? "กำลังบันทึก..." : "💾 บันทึกกล่องผู้จัดการ"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* หน้าต่างผู้จัดการเซ็นรับ/ส่งเงิน */}
       {signTarget && (() => {

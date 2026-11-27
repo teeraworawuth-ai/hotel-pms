@@ -1,8 +1,40 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Shift } from "@/contexts/ShiftContext";
 import { CashHandover, ShiftDrawer } from "@/lib/cashHandover";
+
+export type AuditEditEntry = {
+  key?: string;
+  oldDisplay: string;
+  newDisplay: string;
+  editorName: string;
+  editedAt: string;
+  note?: string;
+};
+
+export type RowEditMeta = {
+  bookingId: string;
+  roomId: string;
+  roomNo: string;
+  guestName: string;
+  slotIdx: 0 | 1 | 2;
+  shiftId: string | null;
+  staffName: string;
+  dailyRateId: string | null;
+  targetDate: string;
+  roomRate: number;
+  extraLabel: string;
+  extraAmount: number;
+  cashPaid: number;
+  keyDepPlaced: number;
+  transferPaid: number;
+  transferBank: "SCB" | "KBANK" | "CREDIT_CARD";
+  cashTxIds: string[];
+  transferTxIds: string[];
+  extraTxIds: string[];
+  roomChargeTxIds: string[];
+};
 
 export type AuditLogRowItem = {
   id: string;
@@ -34,6 +66,7 @@ export type AuditLogRowItem = {
   // Electricity usage / note
   powerWindowDisplay?: string | null;
   isDebtCollection?: boolean;
+  editMeta?: RowEditMeta;
 };
 
 export type ShiftSectionData = {
@@ -100,6 +133,30 @@ export type LocationReportSnapshot = {
   liveRequiredTotal?: number;
   liveShiftSections?: ShiftSectionData[];
   mgrBroughtForward?: number;
+  mgrOutExpenseOverride?: number | null;
+  mgrBankDeposit?: number;
+};
+
+export type ShiftSummaryEditTarget = {
+  slotIdx: 0 | 1 | 2;
+  sh?: Shift;
+  staffName: string;
+  timeRange: string;
+  carriedIn: number;
+  sysDrawer: number;
+  countedDrawer: number;
+  closeSent: number;
+  carriedOut: number;
+  closeHandoverObj: CashHandover | null;
+};
+
+export type ManagerBoxEditTarget = {
+  boxType: "box1" | "box3" | "box4";
+  mgrBrought: number;
+  mgrNetShifts: number;
+  mgrOutExp: number;
+  mgrBankDep: number;
+  mgrCarried: number;
 };
 
 type Props = {
@@ -119,6 +176,11 @@ type Props = {
   onChangeDataMode: (mode: "prototype" | "live") => void;
   onOpenTransferModal: () => void;
   onRequestManagerSign?: (handover: CashHandover) => void;
+  canEditReport?: boolean;
+  auditEdits?: Record<string, AuditEditEntry>;
+  onClickEditRow?: (row: AuditLogRowItem) => void;
+  onClickEditShiftSummary?: (target: ShiftSummaryEditTarget) => void;
+  onClickEditManagerBox?: (target: ManagerBoxEditTarget) => void;
 };
 
 // ข้อมูลต้นแบบ 3 กะ (ตรงตามไฟล์ PDF ฉบับสมบูรณ์ 100%)
@@ -876,31 +938,59 @@ export default function FinancialReportType2View({
   onChangeDataMode,
   onOpenTransferModal,
   onRequestManagerSign,
+  canEditReport = false,
+  auditEdits = {},
+  onClickEditRow,
+  onClickEditShiftSummary,
+  onClickEditManagerBox,
 }: Props) {
   const [rowFilter, setRowFilter] = useState<"all" | "checkin" | "anomaly" | "booking">("all");
   const [isShortOverDemo, setIsShortOverDemo] = useState(false);
 
-  // การควบคุมขนาดและการซูมแสดงผลสำหรับมือถือและเดสก์ท็อป (ตั้งต้น 130% บนจอคอมพิวเตอร์)
+  // การควบคุมขนาดและการซูมแสดงผลสำหรับมือถือและเดสก์ท็อป (ตั้งต้น 130% บนจอคอมพิวเตอร์ และวัดความกว้างจริงบนมือถือ)
   const [scaleMode, setScaleMode] = useState<"fit" | "default" | "custom">("default");
   const [customZoom, setCustomZoom] = useState<number>(1.3);
   const [viewportWidth, setViewportWidth] = useState<number>(1200);
+  const [containerWidth, setContainerWidth] = useState<number>(1066);
+  const [sheetHeight, setSheetHeight] = useState<number>(0);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const didInitScaleRef = useRef<boolean>(false);
 
   useEffect(() => {
-    const handleResize = () => {
+    const measureAll = () => {
       if (typeof window !== "undefined") {
         const w = window.innerWidth;
         setViewportWidth(w);
-        if (w < 820) {
-          setScaleMode("fit");
+        const cw = scrollContainerRef.current?.clientWidth || document.documentElement.clientWidth - 16 || w - 16;
+        setContainerWidth(cw);
+        if (sheetRef.current) {
+          setSheetHeight(sheetRef.current.offsetHeight);
+        }
+        if (!didInitScaleRef.current) {
+          didInitScaleRef.current = true;
+          if (w < 820) {
+            setScaleMode("fit");
+          }
         }
       }
     };
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    measureAll();
+    window.addEventListener("resize", measureAll);
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => measureAll());
+      if (scrollContainerRef.current) ro.observe(scrollContainerRef.current);
+      if (sheetRef.current) ro.observe(sheetRef.current);
+    }
+    return () => {
+      window.removeEventListener("resize", measureAll);
+      if (ro) ro.disconnect();
+    };
   }, []);
 
-  const fitScale = viewportWidth < 820 ? Math.max(0.35, Math.min(1, (viewportWidth - 16) / 820)) : 1;
+  const availW = Math.min(containerWidth, viewportWidth - 16);
+  const fitScale = availW < 820 ? Math.max(0.3, Math.min(1, +(Math.floor(((availW - 4) / 820) * 1000) / 1000).toFixed(3))) : 1;
   const currentZoomLevel =
     scaleMode === "fit"
       ? fitScale
@@ -1226,9 +1316,27 @@ export default function FinancialReportType2View({
 
   const mgrBrought = isProto ? 15000 : Number(report.mgrBroughtForward ?? 0);
   const mgrNetShifts = isProto ? 12150 : liveNetFromShifts;
-  const mgrOutExp = outShiftExpAmount;
-  const mgrBankDep = isProto ? 18000 : 0;
+  const mgrOutExp = isProto ? outShiftExpAmount : Number(report.mgrOutExpenseOverride ?? outShiftExpAmount);
+  const mgrBankDep = isProto ? 18000 : Number(report.mgrBankDeposit ?? 0);
   const mgrCarried = mgrBrought + mgrNetShifts - mgrOutExp - mgrBankDep;
+
+  // ตัวช่วยแสดงยอดเดิมขีดฆ่าสีจาง + (ชื่อผู้แก้ไข) ทางซ้ายของยอดจริง
+  const renderAuditTrail = (editKey: string) => {
+    if (isProto || !auditEdits) return null;
+    const entry = auditEdits[editKey];
+    if (!entry) return null;
+    return (
+      <span
+        className="inline-flex items-baseline mr-1 text-slate-400 font-normal text-[7.1px] leading-none whitespace-nowrap"
+        title={`แก้ไขจาก "${entry.oldDisplay}" เป็น "${entry.newDisplay}" โดย ${entry.editorName}${
+          entry.editedAt ? ` (${safeFormatTime(entry.editedAt)} น.)` : ""
+        }`}
+      >
+        <span className="line-through decoration-slate-400">{entry.oldDisplay}</span>
+        <span className="no-underline ml-[1px]">({entry.editorName})</span>
+      </span>
+    );
+  };
 
   // คำนวณยอดรวมท้ายตาราง 15 คอลัมน์ (24 ชม.)
   const grandTotals = activeSections.reduce(
@@ -1401,9 +1509,6 @@ export default function FinancialReportType2View({
       />
       <style>{`
         @media screen and (min-width: 1024px) {
-          #a4-financial-report-sheet {
-            zoom: 1.30;
-          }
           .report-control-bar {
             max-width: 1066px !important;
           }
@@ -1423,6 +1528,8 @@ export default function FinancialReportType2View({
           border: 1px solid #cbd5e1;
           padding: 8px 10px;
           border-radius: 4px;
+          -webkit-text-size-adjust: 100%;
+          text-size-adjust: 100%;
         }
         #a4-financial-report-sheet table.audit-table {
           width: 100%;
@@ -1536,6 +1643,11 @@ export default function FinancialReportType2View({
           .space-y-4 > :not(:first-child) {
             margin-top: 0 !important;
           }
+          .a4-scale-stage {
+            width: 100% !important;
+            height: auto !important;
+            margin: 0 !important;
+          }
           #a4-financial-report-sheet {
             box-sizing: border-box !important;
             box-shadow: none !important;
@@ -1546,6 +1658,7 @@ export default function FinancialReportType2View({
             min-width: 100% !important;
             width: 100% !important;
             zoom: 1 !important;
+            transform: none !important;
           }
           #a4-financial-report-sheet div.overflow-x-auto,
           #a4-financial-report-sheet .overflow-x-auto {
@@ -1882,12 +1995,33 @@ export default function FinancialReportType2View({
       </div>
 
       {/* ================= หน้ากระดาษรายงาน A4 Portrait ================= */}
-      <div className="w-full overflow-x-auto pb-4 print:p-0 print:overflow-visible flex flex-col items-center">
+      {canEditReport && !isProto && (
+        <div className="no-print mb-2 px-2.5 py-1.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-950 text-[11px] font-bold flex items-center justify-between gap-2 shadow-2xs">
+          <span>
+            ✏️ โหมดแก้ไขรายงานการเงินโดยตรง (ผู้จัดการ/แอดมิน): แตะที่ <b>แถวรายการห้องพัก</b>,{" "}
+            <b>ช่องสรุปกะ (ข้อ 6, 11, 12, 13)</b> หรือ <b>กล่องผู้จัดการ (1, 3, 4)</b> เพื่อแก้ไขข้อมูลด่วน
+          </span>
+        </div>
+      )}
+      <div ref={scrollContainerRef} className="w-full overflow-x-auto pb-4 print:p-0 print:overflow-visible">
         <div
-          id="a4-financial-report-sheet"
-          className="a4-portrait-container shrink-0"
-          style={scaleMode !== "default" ? { zoom: currentZoomLevel } : undefined}
+          className="a4-scale-stage mx-auto"
+          style={{
+            width: `${Math.round(820 * currentZoomLevel)}px`,
+            height: sheetHeight > 0 ? `${Math.round(sheetHeight * currentZoomLevel)}px` : "auto",
+            position: "relative",
+          }}
         >
+          <div
+            ref={sheetRef}
+            id="a4-financial-report-sheet"
+            className="a4-portrait-container shrink-0"
+            style={{
+              transform: `scale(${currentZoomLevel})`,
+              transformOrigin: "top left",
+              margin: 0,
+            }}
+          >
         <div className="mb-1.5 border border-slate-300 rounded bg-slate-50 p-1.5">
           {/* แถวหัวกระดาษ: ซ้าย=สถานที่ (ไม่มีป้ายปิดวันสมบูรณ์) | กลาง=วันที่ (อยู่กึ่งกลางระหว่างสถานที่กับค้างชำระ) | ขวา=ค้างชำระ/รับจอง/ล่วงหน้า */}
           <div className="flex justify-between items-center border-b border-slate-300 pb-1 mb-1.5 gap-1.5 text-[8.2px]">
@@ -2521,9 +2655,34 @@ export default function FinancialReportType2View({
                       6. บวก เงินสดยกมาต้นกะ
                     </td>
                     {[liveS1, liveS2, liveS3].map((s, i) => (
-                      <td key={i} className="border border-slate-300 px-1.5 py-0.5 text-right">
+                      <td
+                        key={i}
+                        onClick={() =>
+                          canEditReport &&
+                          !isProto &&
+                          s.hasShift &&
+                          onClickEditShiftSummary?.({
+                            slotIdx: i as 0 | 1 | 2,
+                            sh: s.sh,
+                            staffName: s.staffName,
+                            timeRange: s.timeRange,
+                            carriedIn: s.carriedIn,
+                            sysDrawer: s.sysDrawer,
+                            countedDrawer: s.countedDrawer,
+                            closeSent: s.closeSent,
+                            carriedOut: s.carriedOut,
+                            closeHandoverObj: s.closeHandoverObj,
+                          })
+                        }
+                        className={`border border-slate-300 px-1.5 py-0.5 text-right ${
+                          canEditReport && !isProto && s.hasShift
+                            ? "cursor-pointer hover:bg-amber-50/80 hover:ring-1 hover:ring-amber-400"
+                            : ""
+                        }`}
+                      >
                         {s.hasShift ? (
                           <>
+                            {renderAuditTrail(`shift_slot_${i}_row6`)}
                             <span className="text-[7.8px] text-slate-500 mr-1">(ยกมา {fmtNum(s.carriedIn)})</span>
                             <b
                               className={`text-[9.8px] ${
@@ -2637,8 +2796,29 @@ export default function FinancialReportType2View({
                     {[liveS1, liveS2, liveS3].map((s, i) => (
                       <td
                         key={i}
+                        onClick={() =>
+                          canEditReport &&
+                          !isProto &&
+                          s.hasShift &&
+                          onClickEditShiftSummary?.({
+                            slotIdx: i as 0 | 1 | 2,
+                            sh: s.sh,
+                            staffName: s.staffName,
+                            timeRange: s.timeRange,
+                            carriedIn: s.carriedIn,
+                            sysDrawer: s.sysDrawer,
+                            countedDrawer: s.countedDrawer,
+                            closeSent: s.closeSent,
+                            carriedOut: s.carriedOut,
+                            closeHandoverObj: s.closeHandoverObj,
+                          })
+                        }
                         className={`border border-slate-300 px-1 py-0.5 ${
                           i === 0 ? "bg-amber-50/40" : i === 1 ? "bg-blue-50/40" : "bg-indigo-50/40"
+                        } ${
+                          canEditReport && !isProto && s.hasShift
+                            ? "cursor-pointer hover:ring-1 hover:ring-amber-400"
+                            : ""
                         }`}
                       >
                         {s.hasShift ? (
@@ -2653,6 +2833,7 @@ export default function FinancialReportType2View({
                                 เกิน +{fmtNum(s.diff)} ฿
                               </span>
                             )}
+                            {renderAuditTrail(`shift_slot_${i}_row11`)}
                             <b
                               className={`text-[9.8px] leading-tight font-black ${
                                 s.countedDrawer < 0 ? "text-rose-700" : "text-slate-900"
@@ -2698,14 +2879,36 @@ export default function FinancialReportType2View({
                     {[liveS1, liveS2, liveS3].map((s, i) => (
                       <td
                         key={i}
+                        onClick={() =>
+                          canEditReport &&
+                          !isProto &&
+                          s.hasShift &&
+                          onClickEditShiftSummary?.({
+                            slotIdx: i as 0 | 1 | 2,
+                            sh: s.sh,
+                            staffName: s.staffName,
+                            timeRange: s.timeRange,
+                            carriedIn: s.carriedIn,
+                            sysDrawer: s.sysDrawer,
+                            countedDrawer: s.countedDrawer,
+                            closeSent: s.closeSent,
+                            carriedOut: s.carriedOut,
+                            closeHandoverObj: s.closeHandoverObj,
+                          })
+                        }
                         className={`border border-slate-300 px-1.5 py-0.5 text-right ${
                           s.closeSent > 0
                             ? "bg-rose-50/60"
                             : s.closeSent < 0
                             ? "bg-emerald-50/90"
                             : "text-slate-400"
+                        } ${
+                          canEditReport && !isProto && s.hasShift
+                            ? "cursor-pointer hover:ring-1 hover:ring-amber-400"
+                            : ""
                         }`}
                       >
+                        {renderAuditTrail(`shift_slot_${i}_row12`)}
                         {s.closeSent > 0 ? (
                           <>
                             <span className="text-[7.8px] text-rose-800 mr-1">(เก็บ)</span>
@@ -2734,12 +2937,34 @@ export default function FinancialReportType2View({
                     {[liveS1, liveS2, liveS3].map((s, i) => (
                       <td
                         key={i}
+                        onClick={() =>
+                          canEditReport &&
+                          !isProto &&
+                          s.hasShift &&
+                          onClickEditShiftSummary?.({
+                            slotIdx: i as 0 | 1 | 2,
+                            sh: s.sh,
+                            staffName: s.staffName,
+                            timeRange: s.timeRange,
+                            carriedIn: s.carriedIn,
+                            sysDrawer: s.sysDrawer,
+                            countedDrawer: s.countedDrawer,
+                            closeSent: s.closeSent,
+                            carriedOut: s.carriedOut,
+                            closeHandoverObj: s.closeHandoverObj,
+                          })
+                        }
                         className={`border border-slate-300 px-1.5 py-0.5 text-right ${
                           s.carriedOut > 0
                             ? "font-black text-emerald-800 text-[9.8px]"
                             : "font-bold text-slate-400 text-[8.5px]"
+                        } ${
+                          canEditReport && !isProto && s.hasShift
+                            ? "cursor-pointer hover:ring-1 hover:ring-amber-400"
+                            : ""
                         }`}
                       >
+                        {renderAuditTrail(`shift_slot_${i}_row13`)}
                         {fmtNum(s.carriedOut)} ฿
                       </td>
                     ))}
@@ -2897,11 +3122,30 @@ export default function FinancialReportType2View({
                 style={{ flex: "0 0 44%" }}
               >
                 <div className="grid grid-cols-5 gap-[2.5px] text-center">
-                  <div className="bg-white px-[2px] py-[4.5px] min-w-0 rounded border border-slate-200 flex flex-col justify-center">
+                  <div
+                    onClick={() =>
+                      canEditReport &&
+                      !isProto &&
+                      onClickEditManagerBox?.({
+                        boxType: "box1",
+                        mgrBrought,
+                        mgrNetShifts,
+                        mgrOutExp,
+                        mgrBankDep,
+                        mgrCarried,
+                      })
+                    }
+                    className={`bg-white px-[2px] py-[4.5px] min-w-0 rounded border border-slate-200 flex flex-col justify-center ${
+                      canEditReport && !isProto
+                        ? "cursor-pointer hover:ring-1 hover:ring-amber-400 hover:bg-amber-50/40"
+                        : ""
+                    }`}
+                  >
                     <div className="text-[8.2px] leading-tight text-slate-600 font-bold whitespace-nowrap">
                       1. ยกมา
                     </div>
                     <div className="text-[11.9px] font-black text-slate-800 mt-0.5 tracking-tighter leading-none whitespace-nowrap">
+                      {renderAuditTrail(`mgr_${selectedLocation}_box1`)}
                       {fmtNum(mgrBrought)} ฿
                     </div>
                   </div>
@@ -2913,20 +3157,56 @@ export default function FinancialReportType2View({
                       +{fmtNum(mgrNetShifts)} ฿
                     </div>
                   </div>
-                  <div className="bg-rose-50/70 px-[2px] py-[4.5px] min-w-0 rounded border border-rose-200 flex flex-col justify-center">
+                  <div
+                    onClick={() =>
+                      canEditReport &&
+                      !isProto &&
+                      onClickEditManagerBox?.({
+                        boxType: "box3",
+                        mgrBrought,
+                        mgrNetShifts,
+                        mgrOutExp,
+                        mgrBankDep,
+                        mgrCarried,
+                      })
+                    }
+                    className={`bg-rose-50/70 px-[2px] py-[4.5px] min-w-0 rounded border border-rose-200 flex flex-col justify-center ${
+                      canEditReport && !isProto
+                        ? "cursor-pointer hover:ring-1 hover:ring-amber-400 hover:bg-rose-100/70"
+                        : ""
+                    }`}
+                  >
                     <div className="text-[8.2px] leading-tight text-rose-900 font-bold whitespace-nowrap">
                       3. จ่ายนอกกะ
                     </div>
                     <div className="text-[11.9px] font-black text-rose-700 mt-0.5 tracking-tighter leading-none whitespace-nowrap">
-                      -{fmtNum(mgrOutExp)} ฿
+                      {renderAuditTrail(`mgr_${selectedLocation}_box3`)}-{fmtNum(mgrOutExp)} ฿
                     </div>
                   </div>
-                  <div className="bg-blue-50/70 px-[2px] py-[4.5px] min-w-0 rounded border border-blue-200 flex flex-col justify-center">
+                  <div
+                    onClick={() =>
+                      canEditReport &&
+                      !isProto &&
+                      onClickEditManagerBox?.({
+                        boxType: "box4",
+                        mgrBrought,
+                        mgrNetShifts,
+                        mgrOutExp,
+                        mgrBankDep,
+                        mgrCarried,
+                      })
+                    }
+                    className={`bg-blue-50/70 px-[2px] py-[4.5px] min-w-0 rounded border border-blue-200 flex flex-col justify-center ${
+                      canEditReport && !isProto
+                        ? "cursor-pointer hover:ring-1 hover:ring-amber-400 hover:bg-blue-100/70"
+                        : ""
+                    }`}
+                  >
                     <div className="text-[8.2px] leading-tight text-blue-900 font-bold whitespace-nowrap">
                       4. ฝากเงิน
                     </div>
                     <div className="text-[11.9px] font-black text-blue-800 mt-0.5 tracking-tighter leading-none whitespace-nowrap">
-                      -{fmtNum(mgrBankDep)} ฿
+                      {renderAuditTrail(`mgr_${selectedLocation}_box4`)}-{fmtNum(mgrBankDep)} ฿
                     </div>
                   </div>
                   <div className="bg-amber-50 px-[2px] py-[4.5px] min-w-0 rounded border border-amber-300 flex flex-col justify-center">
@@ -3168,67 +3448,172 @@ export default function FinancialReportType2View({
               </tr>
             </thead>
             <tbody className="text-slate-800">
-              {activeSections.map((sec) => {
-                if (!isProto && sec.rows.length === 0 && !slottedShifts[sec.shiftIndex - 1]) {
-                  return null;
-                }
-                const visibleRows = sec.rows.filter(
-                  (r) => rowFilter === "all" || r.kind === rowFilter
-                );
-                return (
-                  <React.Fragment key={sec.shiftIndex}>
-                    {visibleRows.map((r) => {
-                      if (r.kind === "anomaly" && !r.roomRate) {
-                        return (
-                          <tr
-                            key={r.id}
-                            className="bg-rose-200 border-y border-rose-400 font-bold text-rose-950 item-anomaly"
-                          >
-                            <td className="text-center font-black text-rose-950 border-l-2 border-slate-700">{r.rowNo}</td>
-                            <td className="text-right pr-1.5 font-black text-rose-950">{r.checkInLabel}</td>
-                            <td className="text-center font-black text-rose-950">{r.roomNo}</td>
-                            <td className="text-center text-rose-800 boundary-col-1-prev">{r.staffName}</td>
-                            <td className="text-center text-rose-800 boundary-col-1"></td>
-                            <td className="text-center text-rose-800"></td>
-                            <td className="text-center text-rose-800"></td>
-                            <td className="text-center text-rose-800"></td>
-                            <td className="text-center text-rose-800 font-black boundary-col-2-prev"></td>
-                            <td className="text-center text-rose-800 boundary-col-2"></td>
-                            <td className="text-center text-rose-800"></td>
-                            <td className="text-center text-rose-800"></td>
-                            <td className="text-center text-rose-800"></td>
-                            <td className="text-center font-black text-rose-950">{r.powerWindowDisplay}</td>
-                            <td className="text-center border-r-2 border-slate-700"></td>
-                          </tr>
-                        );
-                      }
+              {activeSections
+                .filter((sec) => isProto || sec.rows.length > 0)
+                .map((sec, visibleSecIdx) => {
+                  const displayShiftNo = isProto ? sec.shiftIndex : visibleSecIdx + 1;
+                  const displaySummaryTitle = String(sec.summaryTitle)
+                    .replace(/\)\s*:\s*$/, ")")
+                    .replace(/รวมกะที่\s*\d+/, `รวมกะที่ ${displayShiftNo}`);
+                  const visibleRows = sec.rows.filter(
+                    (r) => rowFilter === "all" || r.kind === rowFilter
+                  );
+                  return (
+                    <React.Fragment key={sec.shiftIndex}>
+                      {visibleRows.map((r) => {
+                        if (r.kind === "anomaly" && !r.roomRate) {
+                          return (
+                            <tr
+                              key={r.id}
+                              onClick={() => canEditReport && !isProto && onClickEditRow?.(r)}
+                              className={`bg-rose-200 border-y border-rose-400 font-bold text-rose-950 item-anomaly ${
+                                canEditReport && !isProto ? "cursor-pointer hover:bg-rose-300/80" : ""
+                              }`}
+                            >
+                              <td className="text-center font-black text-rose-950 border-l-2 border-slate-700">{r.rowNo}</td>
+                              <td className="text-right pr-1.5 font-black text-rose-950">{r.checkInLabel}</td>
+                              <td className="text-center font-black text-rose-950">{r.roomNo}</td>
+                              <td className="text-center text-rose-800 boundary-col-1-prev">{r.staffName}</td>
+                              <td className="text-center text-rose-800 boundary-col-1">
+                                {renderAuditTrail(`row_${r.id}_roomRate`)}
+                              </td>
+                              <td className="text-center text-rose-800">
+                                {renderAuditTrail(`row_${r.id}_adjust`)}
+                              </td>
+                              <td className="text-center text-rose-800">
+                                {renderAuditTrail(`row_${r.id}_extra`)}
+                              </td>
+                              <td className="text-center text-rose-800">
+                                {renderAuditTrail(`row_${r.id}_minibar`)}
+                              </td>
+                              <td className="text-center text-rose-800 font-black boundary-col-2-prev">
+                                {renderAuditTrail(`row_${r.id}_totalCharge`)}
+                              </td>
+                              <td className="text-center text-rose-800 boundary-col-2">
+                                {renderAuditTrail(`row_${r.id}_cash`)}
+                              </td>
+                              <td className="text-center text-rose-800">
+                                {renderAuditTrail(`row_${r.id}_transfer`)}
+                              </td>
+                              <td className="text-center text-rose-800"></td>
+                              <td className="text-center text-rose-800"></td>
+                              <td className="text-center font-black text-rose-950">{r.powerWindowDisplay}</td>
+                              <td className="text-center border-r-2 border-slate-700"></td>
+                            </tr>
+                          );
+                        }
 
-                      if (r.kind === "anomaly" && r.roomRate) {
-                        return (
-                          <tr
-                            key={r.id}
-                            className="bg-rose-200 border-y border-rose-400 font-bold text-rose-950 item-anomaly"
-                          >
-                            <td className="text-center font-black text-rose-950 border-l-2 border-slate-700">{r.rowNo}</td>
-                            <td className="text-center font-black text-rose-950">{r.checkInLabel}</td>
-                            <td className="text-center font-black text-rose-950">{r.roomNo}</td>
-                            <td className="text-center text-rose-950 font-bold boundary-col-1-prev">{r.staffName}</td>
-                            <td className="text-right font-black text-rose-950 boundary-col-1">{fmtNum(r.roomRate)}</td>
-                            <td className="text-center text-rose-800"></td>
-                            <td className="text-center text-rose-800"></td>
-                            <td className="text-center text-rose-800"></td>
-                            <td className="text-right font-black text-rose-950 boundary-col-2-prev">{fmtNum(r.totalCharge)}</td>
-                            <td className="text-center text-rose-800 boundary-col-2"></td>
-                            <td className="text-center text-rose-800"></td>
-                            <td className="text-center text-rose-800"></td>
-                            <td className="text-center text-rose-800"></td>
-                            <td className="text-center font-black text-rose-950">{r.powerWindowDisplay}</td>
-                            <td className="text-center border-r-2 border-slate-700"></td>
-                          </tr>
-                        );
-                      }
+                        if (r.kind === "anomaly" && r.roomRate) {
+                          return (
+                            <tr
+                              key={r.id}
+                              onClick={() => canEditReport && !isProto && onClickEditRow?.(r)}
+                              className={`bg-rose-200 border-y border-rose-400 font-bold text-rose-950 item-anomaly ${
+                                canEditReport && !isProto ? "cursor-pointer hover:bg-rose-300/80" : ""
+                              }`}
+                            >
+                              <td className="text-center font-black text-rose-950 border-l-2 border-slate-700">{r.rowNo}</td>
+                              <td className="text-center font-black text-rose-950">{r.checkInLabel}</td>
+                              <td className="text-center font-black text-rose-950">{r.roomNo}</td>
+                              <td className="text-center text-rose-950 font-bold boundary-col-1-prev">{r.staffName}</td>
+                              <td className="text-right font-black text-rose-950 boundary-col-1">
+                                {renderAuditTrail(`row_${r.id}_roomRate`)}
+                                {fmtNum(r.roomRate)}
+                              </td>
+                              <td className="text-center text-rose-800">
+                                {renderAuditTrail(`row_${r.id}_adjust`)}
+                                {r.adjust ? fmtSignedNum(r.adjust) : ""}
+                              </td>
+                              <td className="text-center text-rose-800">
+                                {renderAuditTrail(`row_${r.id}_extra`)}
+                                {r.extraAmount ? fmtNum(r.extraAmount) : ""}
+                              </td>
+                              <td className="text-center text-rose-800">
+                                {renderAuditTrail(`row_${r.id}_minibar`)}
+                                {r.minibarAmount ? fmtNum(r.minibarAmount) : ""}
+                              </td>
+                              <td className="text-right font-black text-rose-950 boundary-col-2-prev">
+                                {renderAuditTrail(`row_${r.id}_totalCharge`)}
+                                {fmtNum(r.totalCharge)}
+                              </td>
+                              <td className="text-center text-rose-800 boundary-col-2">
+                                {renderAuditTrail(`row_${r.id}_cash`)}
+                                {r.cashDisplay || ""}
+                              </td>
+                              <td className="text-center text-rose-800">
+                                {renderAuditTrail(`row_${r.id}_transfer`)}
+                                {r.transferCardDisplay || ""}
+                              </td>
+                              <td className="text-center text-rose-800"></td>
+                              <td className="text-center text-rose-800"></td>
+                              <td className="text-center font-black text-rose-950">{r.powerWindowDisplay}</td>
+                              <td className="text-center border-r-2 border-slate-700"></td>
+                            </tr>
+                          );
+                        }
 
-                      if (r.kind === "booking") {
+                        if (r.kind === "booking") {
+                          const tcColor =
+                            r.transferCardColor === "purple"
+                              ? "text-purple-700"
+                              : r.transferCardColor === "emerald"
+                              ? "text-emerald-700"
+                              : r.transferCardColor === "blue"
+                              ? "text-blue-800"
+                              : "text-slate-700";
+                          return (
+                            <tr
+                              key={r.id}
+                              onClick={() => canEditReport && !isProto && onClickEditRow?.(r)}
+                              className={`bg-indigo-50/60 border-y border-indigo-200 item-booking ${
+                                canEditReport && !isProto ? "cursor-pointer hover:bg-indigo-100/80" : ""
+                              }`}
+                            >
+                              <td className="text-center font-bold text-indigo-900 border-l-2 border-slate-700">{r.rowNo}</td>
+                              <td className="text-center font-black text-indigo-950 bg-indigo-100/70">
+                                {r.checkInLabel}
+                              </td>
+                              <td className="text-center font-black text-indigo-950">{r.roomNo}</td>
+                              <td className="text-center boundary-col-1-prev">{r.staffName}</td>
+                              <td
+                                colSpan={5}
+                                className="text-center font-bold text-indigo-950 bg-indigo-50/70 text-[6.6px] boundary-col-1 boundary-col-2-prev"
+                              >
+                                {r.bookingRateSummary}
+                              </td>
+                              <td
+                                className={`${
+                                  r.cashDisplay
+                                    ? "text-right font-bold text-blue-900 bg-emerald-50/70"
+                                    : "text-center text-slate-400"
+                                } boundary-col-2`}
+                              >
+                                {renderAuditTrail(`row_${r.id}_cash`)}
+                                {r.cashDisplay || ""}
+                              </td>
+                              <td
+                                className={
+                                  r.transferCardDisplay
+                                    ? `text-center font-bold ${tcColor}`
+                                    : "text-center text-slate-400"
+                                }
+                              >
+                                {renderAuditTrail(`row_${r.id}_transfer`)}
+                                {r.transferCardDisplay || ""}
+                              </td>
+                              <td className="text-center font-black text-emerald-800 bg-emerald-100/70">
+                                {r.reservationCreditDisplay || ""}
+                              </td>
+                              <td className="text-center text-slate-400">{r.advanceCreditDisplay || ""}</td>
+                              <td className="text-center px-1 text-indigo-950 bg-indigo-50/50 text-[6.4px] max-w-[85px] truncate">
+                                {r.powerWindowDisplay || ""}
+                              </td>
+                              <td className="text-center border-r-2 border-slate-700"></td>
+                            </tr>
+                          );
+                        }
+
+                        // Regular check-in or debt collection row
                         const tcColor =
                           r.transferCardColor === "purple"
                             ? "text-purple-700"
@@ -3237,247 +3622,204 @@ export default function FinancialReportType2View({
                             : r.transferCardColor === "blue"
                             ? "text-blue-800"
                             : "text-slate-700";
+
                         return (
-                          <tr key={r.id} className="bg-indigo-50/60 border-y border-indigo-200 item-booking">
-                            <td className="text-center font-bold text-indigo-900 border-l-2 border-slate-700">{r.rowNo}</td>
-                            <td className="text-center font-black text-indigo-950 bg-indigo-100/70">
+                          <tr
+                            key={r.id}
+                            onClick={() => canEditReport && !isProto && onClickEditRow?.(r)}
+                            className={`item-checkin ${
+                              r.isDebtCollection ? "bg-emerald-50/60 border border-emerald-200" : ""
+                            } ${canEditReport && !isProto ? "cursor-pointer hover:bg-amber-50/80 transition-colors" : ""}`}
+                          >
+                            <td
+                              className={`text-center font-bold border-l-2 border-slate-700 ${
+                                r.isDebtCollection ? "text-emerald-900" : ""
+                              }`}
+                            >
+                              {r.rowNo}
+                            </td>
+                            <td
+                              className={`text-center ${
+                                r.isDebtCollection ? "font-bold text-emerald-800" : ""
+                              }`}
+                            >
                               {r.checkInLabel}
                             </td>
-                            <td className="text-center font-black text-indigo-950">{r.roomNo}</td>
-                            <td className="text-center boundary-col-1-prev">{r.staffName}</td>
                             <td
-                              colSpan={5}
-                              className="text-center font-bold text-indigo-950 bg-indigo-50/70 text-[6.6px] boundary-col-1 boundary-col-2-prev"
+                              className={`text-center font-black ${
+                                r.isDebtCollection ? "text-emerald-950" : ""
+                              }`}
                             >
-                              {r.bookingRateSummary}
+                              {r.roomNo}
+                            </td>
+                            <td className="text-center boundary-col-1-prev">{r.staffName}</td>
+                            <td className={`${r.roomRate || auditEdits[`row_${r.id}_roomRate`] ? "text-right" : "text-center text-slate-400"} boundary-col-1`}>
+                              {renderAuditTrail(`row_${r.id}_roomRate`)}
+                              {r.roomRate ? fmtNum(r.roomRate) : ""}
+                            </td>
+                            <td className="text-center text-slate-700 font-bold">
+                              {renderAuditTrail(`row_${r.id}_adjust`)}
+                              {r.adjust ? fmtSignedNum(r.adjust) : ""}
+                            </td>
+                            <td
+                              className={
+                                r.extraAmount || auditEdits[`row_${r.id}_extra`]
+                                  ? "px-1 py-0.5 text-[7px] bg-indigo-50/20 whitespace-normal"
+                                  : "text-center text-slate-400"
+                              }
+                              style={r.extraAmount || auditEdits[`row_${r.id}_extra`] ? { whiteSpace: "normal" } : undefined}
+                            >
+                              {r.extraAmount || auditEdits[`row_${r.id}_extra`] ? (
+                                <div className="flex flex-col justify-center w-full leading-[1.05]">
+                                  {r.extraLabel && (
+                                    <div className="text-left text-indigo-900 font-semibold text-[6.3px] truncate">
+                                      {r.extraLabel}
+                                    </div>
+                                  )}
+                                  <div className="text-right font-bold text-indigo-950 text-[8.3px] leading-none">
+                                    {renderAuditTrail(`row_${r.id}_extra`)}
+                                    {r.extraAmount ? fmtNum(r.extraAmount) : ""}
+                                  </div>
+                                </div>
+                              ) : (
+                                ""
+                              )}
+                            </td>
+                            <td className={r.minibarAmount || auditEdits[`row_${r.id}_minibar`] ? "text-right font-bold" : "text-center text-slate-400"}>
+                              {renderAuditTrail(`row_${r.id}_minibar`)}
+                              {r.minibarAmount ? fmtNum(r.minibarAmount) : ""}
                             </td>
                             <td
                               className={`${
-                                r.cashDisplay
-                                   ? "text-right font-bold text-blue-900 bg-emerald-50/70"
-                                   : "text-center text-slate-400"
+                                r.totalCharge || auditEdits[`row_${r.id}_totalCharge`]
+                                  ? "text-right font-bold bg-blue-50/30"
+                                  : "text-center text-slate-400"
+                              } boundary-col-2-prev`}
+                            >
+                              {renderAuditTrail(`row_${r.id}_totalCharge`)}
+                              {r.totalCharge ? fmtNum(r.totalCharge) : ""}
+                            </td>
+                            <td
+                              className={`${
+                                r.cashDisplay || auditEdits[`row_${r.id}_cash`]
+                                  ? r.cashHighlight
+                                    ? "text-right font-black text-emerald-900 bg-emerald-100/70"
+                                    : r.cashNegative
+                                    ? "text-center font-bold text-rose-700"
+                                    : "text-center font-bold"
+                                  : "text-center text-slate-400"
                               } boundary-col-2`}
                             >
+                              {renderAuditTrail(`row_${r.id}_cash`)}
                               {r.cashDisplay || ""}
                             </td>
                             <td
                               className={
-                                r.transferCardDisplay
+                                r.transferCardDisplay || auditEdits[`row_${r.id}_transfer`]
                                   ? `text-center font-bold ${tcColor}`
                                   : "text-center text-slate-400"
                               }
                             >
+                              {renderAuditTrail(`row_${r.id}_transfer`)}
                               {r.transferCardDisplay || ""}
                             </td>
-                            <td className="text-center font-black text-emerald-800 bg-emerald-100/70">
+                            <td
+                              className={
+                                r.reservationCreditDisplay
+                                  ? r.reservationCreditPositive
+                                    ? "text-center font-bold text-emerald-800 bg-emerald-50/50"
+                                    : "text-center font-bold text-rose-700 bg-rose-50/40"
+                                  : "text-center text-slate-400"
+                              }
+                            >
                               {r.reservationCreditDisplay || ""}
                             </td>
-                            <td className="text-center text-slate-400">{r.advanceCreditDisplay || ""}</td>
-                            <td className="text-center px-1 text-indigo-950 bg-indigo-50/50 text-[6.4px] max-w-[85px] truncate">
-                              {r.powerWindowDisplay || ""}
+                            <td
+                              className={
+                                r.advanceCreditDisplay
+                                  ? r.advanceCreditPositive
+                                    ? "text-center font-bold text-emerald-800 bg-emerald-50/50"
+                                    : "text-center font-bold text-rose-700 bg-rose-50/40"
+                                  : "text-center text-slate-400"
+                              }
+                            >
+                              {r.advanceCreditDisplay || ""}
                             </td>
+                            <td className="text-center">{r.powerWindowDisplay || ""}</td>
                             <td className="text-center border-r-2 border-slate-700"></td>
                           </tr>
                         );
-                      }
+                      })}
 
-                      // Regular check-in or debt collection row
-                      const tcColor =
-                        r.transferCardColor === "purple"
-                          ? "text-purple-700"
-                          : r.transferCardColor === "emerald"
-                          ? "text-emerald-700"
-                          : r.transferCardColor === "blue"
-                          ? "text-blue-800"
-                          : "text-slate-700";
-
-                      return (
-                        <tr
-                          key={r.id}
-                          className={`item-checkin ${
-                            r.isDebtCollection ? "bg-emerald-50/60 border border-emerald-200" : ""
+                      {/* แถวยอดรวมประจำกะ */}
+                      <tr
+                        className="bg-amber-100/70 font-bold text-[8px] leading-tight border-b-2 border-slate-400 section-row"
+                        style={{ height: "18px" }}
+                      >
+                        <td colSpan={4} className="boundary-col-1-prev text-center text-amber-950 py-0.5 border-l-2 border-slate-700" style={{ borderRight: "2px solid #1e293b" }}>
+                          {sec.icon} {displaySummaryTitle} {sec.totals.countSummaryText}
+                        </td>
+                        <td className="boundary-col-1 text-right text-amber-950 py-0.5" style={{ borderLeft: "2px solid #1e293b" }}>
+                          {sec.totals.roomRate ? fmtNum(sec.totals.roomRate) : ""}
+                        </td>
+                        <td className="text-center text-slate-700 py-0.5">
+                          {sec.totals.adjust ? fmtSignedNum(sec.totals.adjust) : ""}
+                        </td>
+                        <td className="text-right text-amber-950 font-bold py-0.5">
+                          {sec.totals.extra ? fmtNum(sec.totals.extra) : ""}
+                        </td>
+                        <td className="text-right text-amber-950 font-bold py-0.5">
+                          {sec.totals.minibar ? fmtNum(sec.totals.minibar) : ""}
+                        </td>
+                        <td className="boundary-col-2-prev text-right font-black text-amber-950 bg-amber-200/50 py-0.5" style={{ borderRight: "2px solid #1e293b" }}>
+                          {sec.totals.totalCharge ? fmtNum(sec.totals.totalCharge) : ""}
+                        </td>
+                        <td
+                          className={`boundary-col-2 text-right font-black py-0.5 ${
+                            sec.totals.cash < 0 ? "text-rose-700" : "text-emerald-900"
                           }`}
+                          style={{ borderLeft: "2px solid #1e293b" }}
                         >
-                          <td
-                            className={`text-center font-bold border-l-2 border-slate-700 ${
-                              r.isDebtCollection ? "text-emerald-900" : ""
-                            }`}
-                          >
-                            {r.rowNo}
-                          </td>
-                          <td
-                            className={`text-center ${
-                              r.isDebtCollection ? "font-bold text-emerald-800" : ""
-                            }`}
-                          >
-                            {r.checkInLabel}
-                          </td>
-                          <td
-                            className={`text-center font-black ${
-                              r.isDebtCollection ? "text-emerald-950" : ""
-                            }`}
-                          >
-                            {r.roomNo}
-                          </td>
-                          <td className="text-center boundary-col-1-prev">{r.staffName}</td>
-                          <td className={`${r.roomRate ? "text-right" : "text-center text-slate-400"} boundary-col-1`}>
-                            {r.roomRate ? fmtNum(r.roomRate) : ""}
-                          </td>
-                          <td className="text-center text-slate-700 font-bold">
-                            {r.adjust ? fmtSignedNum(r.adjust) : ""}
-                          </td>
-                          <td
-                            className={
-                              r.extraAmount
-                                ? "px-1 text-[7px] bg-indigo-50/20 whitespace-normal"
-                                : "text-center text-slate-400"
-                            }
-                            style={r.extraAmount ? { whiteSpace: "normal" } : undefined}
-                          >
-                            {r.extraAmount ? (
-                              <div className="flex flex-wrap justify-between items-baseline gap-x-0.5 w-full leading-[1.08]">
-                                <span className="text-indigo-900 font-semibold text-[6.5px] break-words">
-                                  {r.extraLabel || "เสริม"}
-                                </span>
-                                <span className="font-bold text-indigo-950 text-[8.5px] shrink-0 ml-auto">
-                                  {fmtNum(r.extraAmount)}
-                                </span>
-                              </div>
-                            ) : (
-                              ""
-                            )}
-                          </td>
-                          <td className={r.minibarAmount ? "text-right font-bold" : "text-center text-slate-400"}>
-                            {r.minibarAmount ? fmtNum(r.minibarAmount) : ""}
-                          </td>
-                          <td
-                            className={`${
-                              r.totalCharge
-                                ? "text-right font-bold bg-blue-50/30"
-                                : "text-center text-slate-400"
-                            } boundary-col-2-prev`}
-                          >
-                            {r.totalCharge ? fmtNum(r.totalCharge) : ""}
-                          </td>
-                          <td
-                            className={`${
-                              r.cashDisplay
-                                ? r.cashHighlight
-                                  ? "text-right font-black text-emerald-900 bg-emerald-100/70"
-                                  : r.cashNegative
-                                  ? "text-center font-bold text-rose-700"
-                                  : "text-center font-bold"
-                                : "text-center text-slate-400"
-                            } boundary-col-2`}
-                          >
-                            {r.cashDisplay || ""}
-                          </td>
-                          <td
-                            className={
-                              r.transferCardDisplay
-                                ? `text-center font-bold ${tcColor}`
-                                : "text-center text-slate-400"
-                            }
-                          >
-                            {r.transferCardDisplay || ""}
-                          </td>
-                          <td
-                            className={
-                              r.reservationCreditDisplay
-                                ? r.reservationCreditPositive
-                                  ? "text-center font-bold text-emerald-800 bg-emerald-50/50"
-                                  : "text-center font-bold text-rose-700 bg-rose-50/40"
-                                : "text-center text-slate-400"
-                            }
-                          >
-                            {r.reservationCreditDisplay || ""}
-                          </td>
-                          <td
-                            className={
-                              r.advanceCreditDisplay
-                                ? r.advanceCreditPositive
-                                  ? "text-center font-bold text-emerald-800 bg-emerald-50/50"
-                                  : "text-center font-bold text-rose-700 bg-rose-50/40"
-                                : "text-center text-slate-400"
-                            }
-                          >
-                            {r.advanceCreditDisplay || ""}
-                          </td>
-                          <td className="text-center">{r.powerWindowDisplay || ""}</td>
-                          <td className="text-center border-r-2 border-slate-700"></td>
-                        </tr>
-                      );
-                    })}
-
-                    {/* แถวยอดรวมประจำกะ */}
-                    <tr
-                      className="bg-amber-100/70 font-bold text-[8px] leading-tight border-b-2 border-slate-400 section-row"
-                      style={{ height: "18px" }}
-                    >
-                      <td colSpan={4} className="boundary-col-1-prev text-center text-amber-950 py-0.5 border-l-2 border-slate-700" style={{ borderRight: "2px solid #1e293b" }}>
-                        {sec.icon} {String(sec.summaryTitle).replace(/\)\s*:\s*$/, ")")} {sec.totals.countSummaryText}
-                      </td>
-                      <td className="boundary-col-1 text-right text-amber-950 py-0.5" style={{ borderLeft: "2px solid #1e293b" }}>
-                        {sec.totals.roomRate ? fmtNum(sec.totals.roomRate) : ""}
-                      </td>
-                      <td className="text-center text-slate-700 py-0.5">
-                        {sec.totals.adjust ? fmtSignedNum(sec.totals.adjust) : ""}
-                      </td>
-                      <td className="text-right text-amber-950 font-bold py-0.5">
-                        {sec.totals.extra ? fmtNum(sec.totals.extra) : ""}
-                      </td>
-                      <td className="text-right text-amber-950 font-bold py-0.5">
-                        {sec.totals.minibar ? fmtNum(sec.totals.minibar) : ""}
-                      </td>
-                      <td className="boundary-col-2-prev text-right font-black text-amber-950 bg-amber-200/50 py-0.5" style={{ borderRight: "2px solid #1e293b" }}>
-                        {sec.totals.totalCharge ? fmtNum(sec.totals.totalCharge) : ""}
-                      </td>
-                      <td
-                        className={`boundary-col-2 text-right font-black py-0.5 ${
-                          sec.totals.cash < 0 ? "text-rose-700" : "text-emerald-900"
-                        }`}
-                        style={{ borderLeft: "2px solid #1e293b" }}
-                      >
-                        {sec.totals.cash !== 0 ? fmtNum(sec.totals.cash) : ""}
-                      </td>
-                      <td className="text-right font-bold text-blue-900 py-0.5">
-                        {sec.totals.transferCard ? fmtNum(sec.totals.transferCard) : ""}
-                      </td>
-                      <td
-                        className={`text-center font-bold py-0.5 ${
-                          sec.totals.reservationCredit > 0
-                            ? "text-emerald-800"
-                            : sec.totals.reservationCredit < 0
-                            ? "text-rose-700"
-                            : "text-slate-400"
-                        }`}
-                        style={{ borderLeft: "2px solid #312e81" }}
-                      >
-                        {sec.totals.reservationCredit !== 0
-                          ? fmtSignedNum(sec.totals.reservationCredit)
-                          : ""}
-                      </td>
-                      <td
-                        className={`text-center font-bold py-0.5 ${
-                          sec.totals.advanceCredit > 0
-                            ? "text-emerald-800"
-                            : sec.totals.advanceCredit < 0
-                            ? "text-rose-700"
-                            : "text-slate-400"
-                        }`}
-                        style={{ borderRight: "1.8px solid #334155" }}
-                      >
-                        {sec.totals.advanceCredit !== 0 ? fmtSignedNum(sec.totals.advanceCredit) : ""}
-                      </td>
-                      <td
-                        colSpan={2}
-                        className="text-center text-[7.6px] font-semibold text-slate-700 py-0.5 whitespace-nowrap border-r-2 border-slate-700"
-                        style={{ fontSize: "7.6px" }}
-                      ></td>
-                    </tr>
-                  </React.Fragment>
-                );
-              })}
+                          {sec.totals.cash !== 0 ? fmtNum(sec.totals.cash) : ""}
+                        </td>
+                        <td className="text-right font-bold text-blue-900 py-0.5">
+                          {sec.totals.transferCard ? fmtNum(sec.totals.transferCard) : ""}
+                        </td>
+                        <td
+                          className={`text-center font-bold py-0.5 ${
+                            sec.totals.reservationCredit > 0
+                              ? "text-emerald-800"
+                              : sec.totals.reservationCredit < 0
+                              ? "text-rose-700"
+                              : "text-slate-400"
+                          }`}
+                          style={{ borderLeft: "2px solid #312e81" }}
+                        >
+                          {sec.totals.reservationCredit !== 0
+                            ? fmtSignedNum(sec.totals.reservationCredit)
+                            : ""}
+                        </td>
+                        <td
+                          className={`text-center font-bold py-0.5 ${
+                            sec.totals.advanceCredit > 0
+                              ? "text-emerald-800"
+                              : sec.totals.advanceCredit < 0
+                              ? "text-rose-700"
+                              : "text-slate-400"
+                          }`}
+                          style={{ borderRight: "1.8px solid #334155" }}
+                        >
+                          {sec.totals.advanceCredit !== 0 ? fmtSignedNum(sec.totals.advanceCredit) : ""}
+                        </td>
+                        <td
+                          colSpan={2}
+                          className="text-center text-[7.6px] font-semibold text-slate-700 py-0.5 whitespace-nowrap border-r-2 border-slate-700"
+                          style={{ fontSize: "7.6px" }}
+                        ></td>
+                      </tr>
+                    </React.Fragment>
+                  );
+                })}
             </tbody>
           </table>
         </div>
@@ -3489,7 +3831,8 @@ export default function FinancialReportType2View({
             ระบบจะลงบันทึกในช่อง <em>&quot;ขาด/เกิน&quot;</em> ของกะบ่ายโดยอัตโนมัติ
           </div>
         )}
-      </div>
+          </div>
+        </div>
       </div>
     </div>
   );
