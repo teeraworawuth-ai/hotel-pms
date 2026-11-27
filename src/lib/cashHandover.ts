@@ -32,6 +32,9 @@ export type CashHandover = {
   manager_name: string | null;
   manager_signature: string | null;
   manager_signed_at: string | null;
+  next_shift_receiver_name?: string | null;
+  next_shift_receiver_signature?: string | null;
+  next_shift_receiver_signed_at?: string | null;
   note?: string | null;
   created_at: string;
 };
@@ -47,6 +50,8 @@ export type LastClosedDrawerInfo = {
   carried_cash: number; // เงินทอน/เงินสดที่เหลือติดลิ้นชักส่งต่อให้กะถัดไป
   total_in_drawer: number; // รวมเงินสดที่ทิ้งไว้ในลิ้นชักตอนปิดกะ = key_reserve + carried_cash
   sent_to_manager: number; // ยอดที่นำส่งผู้จัดการตอนปิดกะ
+  next_shift_receiver_name?: string | null;
+  next_shift_receiver_signature?: string | null;
   consumed_by_shift_id?: string | null;
   consumed_at?: string | null;
   confirmed_initial_cash?: number | null;

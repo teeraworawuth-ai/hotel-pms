@@ -75,21 +75,26 @@ export default function SettingsPage() {
   async function fetchRooms() {
     setLoading(true);
     
-        // Fetch system settings
+    // Fetch targeted system settings keys so it never hits PostgREST 1000-row cap
     const { data: allSettings } = await supabase
       .from("system_settings")
-      .select("*");
+      .select("key, value")
+      .in("key", ["locations_order", "room_types", "room_options", "room_icons_map", "room_options_map"]);
       
     let settingsData = null;
+    let loadedRoomTypes: string[] = [];
     if (allSettings) {
       const locOrder = allSettings.find(s => s.key === "locations_order");
       if (locOrder) settingsData = locOrder;
       
       const rTypes = allSettings.find(s => s.key === "room_types")?.value;
-      if (rTypes) setSavedRoomTypes(rTypes);
+      if (Array.isArray(rTypes)) {
+        loadedRoomTypes = rTypes;
+        setSavedRoomTypes(rTypes);
+      }
       
       const rOpts = allSettings.find(s => s.key === "room_options")?.value;
-      if (rOpts) setSavedRoomOptions(rOpts);
+      if (Array.isArray(rOpts)) setSavedRoomOptions(rOpts);
       
       const rIcons = allSettings.find(s => s.key === "room_icons_map")?.value;
       if (rIcons) setRoomIconsMap(rIcons);
@@ -108,6 +113,24 @@ export default function SettingsPage() {
       console.error("Error fetching rooms:", error);
     } else {
       let fetchedRooms = roomsData || [];
+
+      // ซิงค์ประเภทห้องทั้งหมดที่มีอยู่จริงในตาราง rooms เข้าสู่ savedRoomTypes อัตโนมัติ
+      const mergedTypesSet = new Set<string>(loadedRoomTypes.filter(Boolean));
+      let addedNewTypeFromRooms = false;
+      fetchedRooms.forEach((r: any) => {
+        const rt = String(r.room_type || "").trim();
+        if (rt && !mergedTypesSet.has(rt)) {
+          mergedTypesSet.add(rt);
+          addedNewTypeFromRooms = true;
+        }
+      });
+      if (mergedTypesSet.size > 0) {
+        const mergedTypesList = Array.from(mergedTypesSet);
+        setSavedRoomTypes(mergedTypesList);
+        if (addedNewTypeFromRooms) {
+          await supabase.from("system_settings").upsert({ key: "room_types", value: mergedTypesList }, { onConflict: "key" });
+        }
+      }
       
       // Apply location-based grouping/sorting if available
       if (settingsData && settingsData.value) {
@@ -249,17 +272,31 @@ export default function SettingsPage() {
 
     
     
+    const trimmedRoomType = String(payload.room_type || roomTypeInput || "").trim();
+    if (trimmedRoomType && !savedRoomTypes.includes(trimmedRoomType)) {
+      const nextTypes = [...savedRoomTypes, trimmedRoomType];
+      setSavedRoomTypes(nextTypes);
+      await supabase.from("system_settings").upsert({ key: "room_types", value: nextTypes }, { onConflict: "key" });
+    }
+
+    const trimmedRoomOption = String(roomOptionInput || "").trim();
+    if (trimmedRoomOption && !savedRoomOptions.includes(trimmedRoomOption)) {
+      const nextOpts = [...savedRoomOptions, trimmedRoomOption];
+      setSavedRoomOptions(nextOpts);
+      await supabase.from("system_settings").upsert({ key: "room_options", value: nextOpts }, { onConflict: "key" });
+    }
+
     const newMap = { ...roomOptionsMap };
     if (savedRoomId) {
       const newIconMap = { ...roomIconsMap };
       if (formIcons.length > 0) newIconMap[savedRoomId] = formIcons;
       else delete newIconMap[savedRoomId];
-      await supabase.from("system_settings").upsert({ key: "room_icons_map", value: newIconMap });
+      await supabase.from("system_settings").upsert({ key: "room_icons_map", value: newIconMap }, { onConflict: "key" });
       setRoomIconsMap(newIconMap);
 
-      if (roomOptionInput) newMap[savedRoomId] = roomOptionInput;
+      if (trimmedRoomOption) newMap[savedRoomId] = trimmedRoomOption;
       else delete newMap[savedRoomId];
-      await supabase.from("system_settings").upsert({ key: "room_options_map", value: newMap });
+      await supabase.from("system_settings").upsert({ key: "room_options_map", value: newMap }, { onConflict: "key" });
     }
       closeModal();
       fetchRooms();

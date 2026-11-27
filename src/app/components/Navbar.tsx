@@ -41,9 +41,16 @@ export default function Navbar() {
     window.location.href = '/';
   };
 
-  // สำหรับผู้ใช้ระดับต่ำกว่า Admin/Manager เมื่ออยู่ในหน้า /checkin ให้ซ่อน Navbar ด้านบนทั้งหมด
+  // สำหรับผู้ใช้ระดับต่ำกว่า Admin/Manager/Executive เมื่ออยู่ในหน้า /checkin ให้ซ่อน Navbar ด้านบนทั้งหมด
   // เพื่อประหยัดพื้นที่ โดยมีแถบ กะ/วันที่/Logout รวมอยู่ที่หัวตารางในหน้า Check-in แล้ว
-  if (mounted && pathname === '/checkin' && userRole && userRole !== 'admin' && userRole !== 'manager') {
+  if (
+    mounted &&
+    pathname === '/checkin' &&
+    userRole &&
+    userRole !== 'admin' &&
+    userRole !== 'manager' &&
+    userRole !== 'executive'
+  ) {
     return null;
   }
 
@@ -86,7 +93,13 @@ export default function Navbar() {
           </nav>
           
           <div className="hidden md:flex items-center ml-auto">
-            {userRole !== "staff" && <ShiftManager />}
+            {userRole === "executive" ? (
+              <span className="px-2.5 py-1 rounded-lg bg-purple-100 text-purple-900 border border-purple-300 text-xs font-black">
+                👁️ โหมดผู้บริหาร (ดูอย่างเดียว)
+              </span>
+            ) : (
+              userRole !== "staff" && <ShiftManager />
+            )}
             <button onClick={handleLogout} className="text-red-600 font-bold text-xs ml-3 px-2.5 py-1.5 rounded-lg border border-red-200 bg-red-50/60 hover:bg-red-100 transition-colors">🚪 Logout</button>
           </div>
 

@@ -7,7 +7,7 @@ interface Staff {
   id: string;
   name: string;
   pin: string;
-  role: 'admin' | 'manager' | 'staff' | 'housekeeper';
+  role: 'admin' | 'manager' | 'executive' | 'staff' | 'housekeeper';
   is_active: boolean;
 }
 
@@ -16,6 +16,7 @@ export default function StaffSettings() {
   const [staffLocations, setStaffLocations] = useState<Record<string, string[]>>({});
   const [staffPrimaryLocations, setStaffPrimaryLocations] = useState<Record<string, string>>({});
   const [cleanFlags, setCleanFlags] = useState<Record<string, boolean>>({});
+  const [readOnlyFlags, setReadOnlyFlags] = useState<Record<string, boolean>>({});
   const [canClean, setCanClean] = useState(false);
   const [locations, setLocations] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,7 +24,7 @@ export default function StaffSettings() {
   // Form State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
-  const [formData, setFormData] = useState<{name: string, pin: string, role: 'admin'|'manager'|'staff'|'housekeeper'}>({
+  const [formData, setFormData] = useState<{name: string, pin: string, role: 'admin'|'manager'|'executive'|'staff'|'housekeeper'}>({
     name: '', pin: '', role: 'staff'
   });
   const [primaryLocation, setPrimaryLocation] = useState<string>('');
@@ -48,17 +49,28 @@ export default function StaffSettings() {
     }
 
     // Fetch Staff Locations & Primary Locations from system_settings
-    const [{ data: settingsData }, { data: primaryData }, { data: hkData }] = await Promise.all([
+    const [{ data: settingsData }, { data: primaryData }, { data: hkData }, { data: roData }] = await Promise.all([
       supabase.from('system_settings').select('value').eq('key', 'staff_locations').maybeSingle(),
       supabase.from('system_settings').select('value').eq('key', 'staff_primary_locations').maybeSingle(),
       supabase.from('system_settings').select('value').eq('key', 'staff_housekeeping').maybeSingle(),
+      supabase.from('system_settings').select('value').eq('key', 'staff_read_only').maybeSingle(),
     ]);
 
     const locMap = (settingsData?.value as Record<string, string[]>) || {};
     const primMap = (primaryData?.value as Record<string, string>) || {};
+    const roMap = (roData?.value as Record<string, boolean>) || {};
     setStaffLocations(locMap);
     setStaffPrimaryLocations(primMap);
+    setReadOnlyFlags(roMap);
     if (hkData && hkData.value) setCleanFlags(hkData.value);
+    if (staffData) {
+      setStaffList(
+        staffData.map((s: any) => ({
+          ...s,
+          role: roMap[s.id] || s.role === 'executive' ? 'executive' : s.role,
+        }))
+      );
+    }
     
     setLoading(false);
   };
@@ -127,22 +139,53 @@ export default function StaffSettings() {
 
     let savedStaffId = '';
 
+    const isExecRole = formData.role === 'executive';
+    const dbRoleToTry = isExecRole ? 'executive' : formData.role;
+
     if (editingStaff) {
-      const { error } = await supabase.from('staff').update({
+      let { error } = await supabase.from('staff').update({
         name: formData.name,
         pin: formData.pin,
-        role: formData.role
+        role: dbRoleToTry
       }).eq('id', editingStaff.id);
+      if (error && isExecRole) {
+        const retry = await supabase.from('staff').update({
+          name: formData.name,
+          pin: formData.pin,
+          role: 'admin'
+        }).eq('id', editingStaff.id);
+        error = retry.error;
+      }
       if (error) { setFormError(error.message); return; }
       savedStaffId = editingStaff.id;
     } else {
-      const { data, error } = await supabase.from('staff').insert({
+      let { data, error } = await supabase.from('staff').insert({
         name: formData.name,
         pin: formData.pin,
-        role: formData.role
+        role: dbRoleToTry
       }).select().single();
+      if (error && isExecRole) {
+        const retry = await supabase.from('staff').insert({
+          name: formData.name,
+          pin: formData.pin,
+          role: 'admin'
+        }).select().single();
+        data = retry.data;
+        error = retry.error;
+      }
       if (error) { setFormError(error.message); return; }
       savedStaffId = data.id;
+    }
+
+    // Save Read-Only Executive flag in system_settings
+    {
+      const { data: curRo } = await supabase.from('system_settings').select('value').eq('key', 'staff_read_only').maybeSingle();
+      const roBase = (curRo?.value as Record<string, boolean>) || {};
+      const roNew = { ...roBase };
+      if (isExecRole) roNew[savedStaffId] = true;
+      else delete roNew[savedStaffId];
+      await supabase.from('system_settings').upsert({ key: 'staff_read_only', value: roNew }, { onConflict: 'key' });
+      setReadOnlyFlags(roNew);
     }
 
     // Save Locations for staff / housekeeper
@@ -233,7 +276,11 @@ export default function StaffSettings() {
                   <td className="p-4 font-medium text-slate-800">{staff.name}</td>
                   <td className="p-4 text-slate-600 font-mono tracking-widest">{staff.pin}</td>
                   <td className="p-4">
-                    {staff.role === 'admin' ? (
+                    {staff.role === 'executive' || readOnlyFlags[staff.id] ? (
+                      <span className="bg-purple-100 text-purple-900 border border-purple-300 px-2.5 py-1 rounded-md text-xs font-black">
+                        👁️ ผู้บริหาร (ดูอย่างเดียว)
+                      </span>
+                    ) : staff.role === 'admin' ? (
                       <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-md text-xs font-bold">แอดมิน / ผู้จัดการ</span>
                     ) : staff.role === 'manager' ? (
                       <span className="bg-indigo-100 text-indigo-800 px-2 py-1 rounded-md text-xs font-bold">ผู้จัดการ</span>
@@ -244,7 +291,11 @@ export default function StaffSettings() {
                     )}
                   </td>
                   <td className="p-4 text-slate-600 text-sm">
-                    {staff.role === 'staff' ? (
+                    {staff.role === 'executive' || readOnlyFlags[staff.id] ? (
+                      <span className="text-purple-700 font-bold text-xs">
+                        👁️ ดูได้ทุกหน้า &amp; ทุกสถานที่ (ล็อกห้ามแก้ไขข้อมูล)
+                      </span>
+                    ) : staff.role === 'staff' ? (
                       allLocs.length > 0 ? (
                         <div className="flex flex-wrap items-center gap-1.5">
                           {primLoc && (
@@ -321,8 +372,8 @@ export default function StaffSettings() {
 
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">ระดับสิทธิ์</label>
-                <div className="flex flex-wrap gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <label className={`flex items-center gap-2 cursor-pointer p-2.5 rounded-xl border ${formData.role === 'admin' ? 'bg-blue-50 border-blue-400 font-bold' : 'border-slate-200'}`}>
                     <input 
                       type="radio" 
                       name="role" 
@@ -331,9 +382,20 @@ export default function StaffSettings() {
                       onChange={() => setFormData({...formData, role: 'admin'})}
                       className="w-4 h-4 text-blue-600"
                     />
-                    <span className="font-medium text-slate-700">แอดมิน / ผู้จัดการ</span>
+                    <span className="text-sm text-slate-800">แอดมิน / ผู้จัดการ (แก้ไขได้)</span>
                   </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label className={`flex items-center gap-2 cursor-pointer p-2.5 rounded-xl border ${formData.role === 'executive' ? 'bg-purple-50 border-purple-400 font-black' : 'border-slate-200'}`}>
+                    <input 
+                      type="radio" 
+                      name="role" 
+                      value="executive" 
+                      checked={formData.role === 'executive'}
+                      onChange={() => setFormData({...formData, role: 'executive'})}
+                      className="w-4 h-4 text-purple-600"
+                    />
+                    <span className="text-sm text-purple-900">👁️ ผู้บริหาร (ดูได้ทุกหน้า • ห้ามแก้ไข)</span>
+                  </label>
+                  <label className={`flex items-center gap-2 cursor-pointer p-2.5 rounded-xl border ${formData.role === 'staff' ? 'bg-amber-50 border-amber-400 font-bold' : 'border-slate-200'}`}>
                     <input 
                       type="radio" 
                       name="role" 
@@ -342,9 +404,9 @@ export default function StaffSettings() {
                       onChange={() => setFormData({...formData, role: 'staff'})}
                       className="w-4 h-4 text-amber-600"
                     />
-                    <span className="font-medium text-slate-700">พนักงาน (Staff)</span>
+                    <span className="text-sm text-slate-800">พนักงาน (Staff)</span>
                   </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label className={`flex items-center gap-2 cursor-pointer p-2.5 rounded-xl border ${formData.role === 'housekeeper' ? 'bg-teal-50 border-teal-400 font-bold' : 'border-slate-200'}`}>
                     <input 
                       type="radio" 
                       name="role" 
@@ -353,10 +415,22 @@ export default function StaffSettings() {
                       onChange={() => setFormData({...formData, role: 'housekeeper'})}
                       className="w-4 h-4 text-teal-600"
                     />
-                    <span className="font-medium text-slate-700">แม่บ้าน</span>
+                    <span className="text-sm text-slate-800">แม่บ้าน</span>
                   </label>
                 </div>
               </div>
+
+              {formData.role === 'executive' && (
+                <div className="bg-purple-50 p-4 rounded-2xl border border-purple-200 text-xs text-purple-900 space-y-1">
+                  <div className="font-black text-sm">👁️ สิทธิ์สำหรับผู้บริหาร (Read-Only 100%)</div>
+                  <p>
+                    • เข้าเปิดดูข้อมูลได้ครบทุกหน้า (Dashboard, รายงานการเงิน &amp; Audit, Log 30 วัน, Energy, Booking, Check-in, Smart Pricing, Settings) และดูได้ทุกสถานที่
+                  </p>
+                  <p>
+                    • ระบบจะล็อกไม่ให้กดเพิ่ม แก้ไข ลบ เช็คอิน เช็คเอาท์ เปิด/ปิดกะ หรือปรับเปลี่ยนข้อมูลใดๆ ในระบบโดยเด็ดขาด
+                  </p>
+                </div>
+              )}
 
               {formData.role === 'staff' && (
                 <div className="space-y-4">

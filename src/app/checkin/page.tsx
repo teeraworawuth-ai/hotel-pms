@@ -210,9 +210,11 @@ export default function CheckinPage() {
   }, [currentUser]);
 
   const effectiveUser = currentUser || authUser;
-  const isManagerOrAdmin = !effectiveUser || effectiveUser.role === 'admin' || effectiveUser.role === 'manager';
-  const isHousekeeper = effectiveUser?.role === 'housekeeper' || activeShift?.housekeeper_only === true;
-  const isStaff = !isManagerOrAdmin && !isHousekeeper;
+  const isExecutiveReadOnly = effectiveUser?.role === 'executive';
+  const isManagerOrAdmin =
+    !isExecutiveReadOnly && (!effectiveUser || effectiveUser.role === 'admin' || effectiveUser.role === 'manager');
+  const isHousekeeper = !isExecutiveReadOnly && (effectiveUser?.role === 'housekeeper' || activeShift?.housekeeper_only === true);
+  const isStaff = !isManagerOrAdmin && !isHousekeeper && !isExecutiveReadOnly;
 
   // สถานที่หลักของพนักงาน (1 แห่งเท่านั้น)
   const userPrimaryLocation =
@@ -999,7 +1001,7 @@ export default function CheckinPage() {
   // กรองสถานที่ที่ผู้ใช้นี้ได้รับสิทธิ์ตามที่ตั้งไว้ใน Settings (effectiveUser.locations)
   // โดยนำสถานที่หลัก (userPrimaryLocation) มาไว้เป็นปุ่มแรกเสมอ
   const userVisibleLocations = (() => {
-    const base = isManagerOrAdmin
+    const base = isManagerOrAdmin || isExecutiveReadOnly
       ? sortedLocations
       : sortedLocations.filter(loc => effectiveUser?.locations?.includes(loc));
     if (userPrimaryLocation && base.includes(userPrimaryLocation)) {

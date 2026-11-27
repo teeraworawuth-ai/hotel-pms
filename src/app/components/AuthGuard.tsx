@@ -9,6 +9,7 @@ export interface AuthUser {
   name: string;
   role: string;
   pin: string;
+  read_only?: boolean;
   locations?: string[];
   primary_location?: string | null;
   can_clean?: boolean;
@@ -98,12 +99,21 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         .limit(1)
         .maybeSingle();
 
-      if (error || !data) {
+      if ( error || !data) {
         setErrorMsg('รหัส PIN ไม่ถูกต้อง');
         setPinInput('');
         setLoading(false);
       } else {
-        const normalizedRole = String(data.role || 'staff').toLowerCase();
+        const { data: roData } = await supabase
+          .from('system_settings')
+          .select('value')
+          .eq('key', 'staff_read_only')
+          .maybeSingle();
+        const isExecReadOnly =
+          Boolean(roData?.value?.[data.id]) || String(data.role || '').toLowerCase() === 'executive';
+        const normalizedRole = isExecReadOnly
+          ? 'executive'
+          : String(data.role || 'staff').toLowerCase();
         let locations: string[] = [];
         let primary_location: string | null = null;
         if (normalizedRole === 'staff' || normalizedRole === 'housekeeper') {
@@ -131,7 +141,14 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           can_clean = !!(hk && hk.value && hk.value[data.id]);
         }
 
-        const authUser: AuthUser = { ...data, role: normalizedRole, locations, primary_location, can_clean };
+        const authUser: AuthUser = {
+          ...data,
+          role: normalizedRole,
+          read_only: isExecReadOnly,
+          locations,
+          primary_location,
+          can_clean,
+        };
         localStorage.setItem('auth_user', JSON.stringify(authUser));
         setUser(authUser);
         setLoading(false);

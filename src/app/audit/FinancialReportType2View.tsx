@@ -45,7 +45,9 @@ export type AuditLogRowItem = {
   staffName: string;
   // For checkin / anomaly rows (5 charge columns)
   roomRate?: number | null;
+  isShortStay?: boolean;
   adjust?: number | null;
+  adjustBy?: string | null;
   extraLabel?: string | null;
   extraAmount?: number | null;
   minibarAmount?: number | null;
@@ -1210,7 +1212,14 @@ export default function FinancialReportType2View({
     const midSent = midHandovers.reduce((s, h) => s + Number(h.actual_amount || 0), 0);
     const sysDrawer = hasShift ? beforeHandover - midSent : 0;
     const closeSent = closeHandover ? Number(closeHandover.actual_amount || 0) : 0;
-    const carriedOut = closeHandover ? Number(closeHandover.carried_to_next_shift || 0) : 0;
+    // ห้ามส่งยอดยกไปกะถัดไปเด็ดขาด หากไม่มีการส่งมอบกะถัดไปโดยมีการเซ็นทั้งสองฝ่ายระหว่างผู้ส่งกับผู้รับ
+    const hasDualSignedCarryOut = Boolean(
+      closeHandover &&
+        Number(closeHandover.carried_to_next_shift || 0) > 0 &&
+        closeHandover.staff_signature &&
+        (closeHandover.next_shift_receiver_signature || closeHandover.manager_signature)
+    );
+    const carriedOut = hasDualSignedCarryOut ? Number(closeHandover!.carried_to_next_shift || 0) : 0;
     const countedDrawer = hasShift
       ? closeHandover
         ? closeSent + carriedOut
@@ -1320,7 +1329,7 @@ export default function FinancialReportType2View({
   const mgrBankDep = isProto ? 18000 : Number(report.mgrBankDeposit ?? 0);
   const mgrCarried = mgrBrought + mgrNetShifts - mgrOutExp - mgrBankDep;
 
-  // ตัวช่วยแสดงยอดเดิมขีดฆ่าสีจาง + (ชื่อผู้แก้ไข) ทางซ้ายของยอดจริง
+  // ตัวช่วยแสดงยอดเดิมขีดฆ่าสีจาง + (ชื่อผู้แก้ไข) ทางซ้ายของยอดจริง (เส้นขีดกลางสีจางกว่าตัวเลขเดิมเพื่อให้อ่านข้อมูลเดิมได้ชัดเจน)
   const renderAuditTrail = (editKey: string, compact = false) => {
     if (isProto || !auditEdits) return null;
     const entry = auditEdits[editKey];
@@ -1334,7 +1343,15 @@ export default function FinancialReportType2View({
           entry.editedAt ? ` (${safeFormatTime(entry.editedAt)} น.)` : ""
         }`}
       >
-        <span className="line-through decoration-slate-400">{entry.oldDisplay}</span>
+        <span
+          className="line-through text-slate-400"
+          style={{
+            textDecorationColor: "rgba(148, 163, 184, 0.42)",
+            textDecorationThickness: "0.75px",
+          }}
+        >
+          {entry.oldDisplay}
+        </span>
         <span className="no-underline ml-[1px]">({entry.editorName})</span>
       </span>
     );
@@ -3261,19 +3278,19 @@ export default function FinancialReportType2View({
           <table className="audit-table">
             <colgroup>
               <col style={{ width: "3.3%" }} />
-              <col style={{ width: "12.2%" }} />
+              <col style={{ width: "12.0%" }} />
               <col style={{ width: "3.6%" }} />
               <col style={{ width: "3.8%" }} />
-              <col style={{ width: "7.2%" }} />
-              <col style={{ width: "4.2%" }} />
+              <col style={{ width: "6.8%" }} />
+              <col style={{ width: "6.4%" }} />
+              <col style={{ width: "9.0%" }} />
+              <col style={{ width: "4.0%" }} />
+              <col style={{ width: "7.8%" }} />
               <col style={{ width: "9.2%" }} />
-              <col style={{ width: "4.2%" }} />
-              <col style={{ width: "8.0%" }} />
-              <col style={{ width: "9.4%" }} />
-              <col style={{ width: "9.4%" }} />
-              <col style={{ width: "4.6%" }} />
-              <col style={{ width: "4.6%" }} />
-              <col style={{ width: "13.1%" }} />
+              <col style={{ width: "9.2%" }} />
+              <col style={{ width: "4.5%" }} />
+              <col style={{ width: "4.5%" }} />
+              <col style={{ width: "12.7%" }} />
               <col style={{ width: "3.2%" }} />
             </colgroup>
             <thead>
@@ -3680,18 +3697,40 @@ export default function FinancialReportType2View({
                               }
                             >
                               {renderAuditTrail(`row_${r.id}_roomRate`, true)}
-                              {r.roomRate ? fmtNum(r.roomRate) : ""}
+                              {r.roomRate ? (
+                                <span title={r.isShortStay ? "ราคาชั่วคราว (*)" : undefined}>
+                                  {fmtNum(r.roomRate)}
+                                  {r.isShortStay && <b className="text-amber-700 font-black ml-[0.5px]">*</b>}
+                                </span>
+                              ) : (
+                                ""
+                              )}
                             </td>
                             <td
                               className="text-center text-slate-700 font-bold"
                               style={
-                                auditEdits[`row_${r.id}_adjust`]
+                                r.adjust || auditEdits[`row_${r.id}_adjust`]
                                   ? { whiteSpace: "normal", overflow: "visible", textOverflow: "clip" }
                                   : undefined
                               }
                             >
                               {renderAuditTrail(`row_${r.id}_adjust`, true)}
-                              {r.adjust ? fmtSignedNum(r.adjust) : ""}
+                              {r.adjust ? (
+                                <span
+                                  className={`inline-flex items-baseline justify-center whitespace-nowrap ${
+                                    r.adjust > 0 ? "text-emerald-700 font-black" : "text-rose-700 font-black"
+                                  }`}
+                                >
+                                  <span>{fmtSignedNum(r.adjust)}</span>
+                                  {r.adjustBy && (
+                                    <span className="text-[6px] text-slate-500 font-normal ml-[0.5px]">
+                                      ({r.adjustBy})
+                                    </span>
+                                  )}
+                                </span>
+                              ) : (
+                                ""
+                              )}
                             </td>
                             <td
                               className={

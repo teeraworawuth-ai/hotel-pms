@@ -71,6 +71,7 @@ type DailyRateRow = {
 type RoomRow = {
   id: string;
   room_no: string;
+  room_type?: string | null;
   location?: string | null;
   price_night: number;
   price_temp: number;
@@ -346,6 +347,9 @@ export default function DailyReport({
         extraSettingsRes,
         posItemsRes,
         allSettingsRows,
+        dailyPricingRes,
+        ratePlanRoomTypesRes,
+        ratePlanCalRes,
       ] = await Promise.all([
         supabase
           .from("shifts")
@@ -388,7 +392,7 @@ export default function DailyReport({
         ),
         supabase
           .from("rooms")
-          .select("id, room_no, location, price_night, price_temp"),
+          .select("id, room_no, room_type, location, price_night, price_temp"),
         supabase
           .from("extra_charge_settings")
           .select("name"),
@@ -404,7 +408,34 @@ export default function DailyReport({
             .order("key", { ascending: true })
             .range(from, to)
         ),
+        supabase
+          .from("daily_pricing_settings")
+          .select("rate_plan_id")
+          .eq("target_date", reportDateStr)
+          .maybeSingle(),
+        supabase
+          .from("rate_plan_room_types")
+          .select("rate_plan_id, room_type, base_price"),
+        supabase
+          .from("rate_plan_calendar")
+          .select("rate_plan_id, room_type, price")
+          .eq("target_date", reportDateStr),
       ]);
+
+      const todaySmartPricesMap: Record<string, number> = {};
+      const activeRatePlanId = dailyPricingRes?.data?.rate_plan_id;
+      if (activeRatePlanId) {
+        (ratePlanRoomTypesRes?.data || []).forEach((row: any) => {
+          if (row.rate_plan_id === activeRatePlanId && row.room_type) {
+            todaySmartPricesMap[row.room_type] = Number(row.base_price || 0);
+          }
+        });
+        (ratePlanCalRes?.data || []).forEach((row: any) => {
+          if (row.rate_plan_id === activeRatePlanId && row.room_type) {
+            todaySmartPricesMap[row.room_type] = Number(row.price || 0);
+          }
+        });
+      }
 
       if (shiftRes.data) setShifts(shiftRes.data);
 
@@ -1785,6 +1816,51 @@ export default function DailyReport({
               const roomAmt = todayRateRow ? Number(todayRateRow.amount || 0) : roomChargeTxAmt;
               const totalRowCharge = roomAmt + extraAmt;
 
+              const bMeta = bookingMetaMap[b.id];
+              const isShortStayRow =
+                bMeta?.targetPrices?.stayType === "short_stay" ||
+                (!todayRateRow &&
+                  bRates.length === 0 &&
+                  roomAmt > 0 &&
+                  Boolean(
+                    b.check_in_time &&
+                      b.check_out_time &&
+                      new Date(b.check_out_time).getTime() - new Date(b.check_in_time).getTime() <=
+                        10 * 3600 * 1000
+                  ));
+
+              // คำนวณราคาตั้งต้น (Base Target Price) และส่วนต่าง เพิ่ม/ลด (Adjustment) ให้ตรงกับการ์ดหน้าเช็คอิน
+              let baseTargetRoomRate = roomAmt;
+              if (roomAmt > 0) {
+                if (isShortStayRow) {
+                  const rmTemp = Number(rm?.price_temp || 0);
+                  const metaTemp = Number(bMeta?.targetPrices?.totalTargetPrice || 0);
+                  baseTargetRoomRate = rmTemp > 0 ? rmTemp : metaTemp > 0 ? metaTemp : roomAmt;
+                } else {
+                  const smartNight = rm?.room_type ? Number(todaySmartPricesMap[rm.room_type] || 0) : 0;
+                  const rmNight = Number(rm?.price_night || 0);
+                  const metaDaily = Number(bMeta?.targetPrices?.dailyTargets?.[reportDateStr] || 0);
+                  const metaTotal = bRates.length <= 1 ? Number(bMeta?.targetPrices?.totalTargetPrice || 0) : 0;
+                  baseTargetRoomRate =
+                    smartNight > 0
+                      ? smartNight
+                      : rmNight > 0
+                      ? rmNight
+                      : metaDaily > 0
+                      ? metaDaily
+                      : metaTotal > 0
+                      ? metaTotal
+                      : roomAmt;
+                }
+              }
+              const rowAdjustAmt = roomAmt > 0 ? roomAmt - baseTargetRoomRate : 0;
+              const rowAdjustActor =
+                rowAdjustAmt !== 0
+                  ? loadedAuditEdits[`row_live-c-${b.id}-${slot}_roomRate`]?.editorName ||
+                    b.staff_name ||
+                    staffName
+                  : null;
+
               // กรณีรายการทดลองกดรับมัดจำและคืนมัดจำทันทีโดยไม่มีค่าห้อง (เช่น ห้อง 2 ตอน 06:54) ให้ตัดออก
               if (totalRowCharge === 0 && keyDepPlaced > 0 && keyDepPlaced === keyDepRefunded && cashPaid === keyDepPlaced && transferPaid === 0) {
                 return;
@@ -1845,7 +1921,10 @@ export default function DailyReport({
                 checkInLabel: rowCheckInLabel,
                 roomNo,
                 staffName,
-                roomRate: roomAmt || null,
+                roomRate: baseTargetRoomRate || null,
+                isShortStay: isShortStayRow && baseTargetRoomRate > 0,
+                adjust: rowAdjustAmt !== 0 ? rowAdjustAmt : null,
+                adjustBy: rowAdjustActor,
                 extraLabel: extraLabel || null,
                 extraAmount: extraAmt || null,
                 totalCharge: totalRowCharge || null,
@@ -1885,7 +1964,8 @@ export default function DailyReport({
                 },
               });
 
-              slotTotals[slot].roomRate += roomAmt;
+              slotTotals[slot].roomRate += baseTargetRoomRate;
+              slotTotals[slot].adjust += rowAdjustAmt;
               slotTotals[slot].extra += extraAmt;
               slotTotals[slot].totalCharge += totalRowCharge;
               slotTotals[slot].cash += netCash;
@@ -2857,12 +2937,16 @@ export default function DailyReport({
         dataMode={dataMode}
         onChangeDataMode={setDataMode}
         onOpenTransferModal={() => setShowTransferCardModal(true)}
-        onRequestManagerSign={(h) => {
-          setSignTarget(h);
-          setSignPin("");
-          setSignError("");
-        }}
-        canEditReport={true}
+        onRequestManagerSign={
+          currentUser?.role === "executive"
+            ? undefined
+            : (h) => {
+                setSignTarget(h);
+                setSignPin("");
+                setSignError("");
+              }
+        }
+        canEditReport={currentUser?.role !== "executive"}
         auditEdits={auditEditsMap}
         onClickEditRow={openRowEditModal}
         onClickEditShiftSummary={openShiftSummaryEditModal}

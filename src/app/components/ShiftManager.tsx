@@ -68,11 +68,14 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
   const [actualSend, setActualSend] = useState<number | "">("");
   const [closePin, setClosePin] = useState("");
   const [closeManagerPin, setCloseManagerPin] = useState("");
+  const [nextShiftReceiverPin, setNextShiftReceiverPin] = useState("");
   const [isEndOfDay, setIsEndOfDay] = useState(false);
   const staffSigRef = useRef<SignaturePadHandle>(null);
   const managerSigRef = useRef<SignaturePadHandle>(null);
+  const nextShiftReceiverSigRef = useRef<SignaturePadHandle>(null);
 
-  const isMgr = !currentUser || currentUser.role === "admin" || currentUser.role === "manager";
+  const isExecutiveReadOnly = currentUser?.role === "executive";
+  const isMgr = !isExecutiveReadOnly && (!currentUser || currentUser.role === "admin" || currentUser.role === "manager");
   const staffPrimaryLocation =
     currentUser?.role === "staff"
       ? currentUser.primary_location ||
@@ -145,9 +148,13 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       setSuggestedReserve(r.total);
       setSuggestedReserveRoomsCount(r.rooms.length);
       setLastClosedDrawer(lastDrawer);
-      // ยอดเงินสดยกมาต้นกะ (initial_cash) ต้องมาจากเงินทอนส่งมอบยกไปจากกะก่อนหน้า (ข้อ 13 carried_cash) เท่านั้น หากกะก่อนหน้าไม่ได้ส่งมอบเงินทอนให้กะถัดไป ให้เริ่มต้นเป็น 0 ฿
-      const unconsumedCarry =
-        lastDrawer && !lastDrawer.consumed_by_shift_id ? Math.max(0, Number(lastDrawer.carried_cash || 0)) : 0;
+      // ยอดเงินสดยกมาต้นกะ (initial_cash) ต้องมาจากเงินทอนส่งมอบยกไปจากกะก่อนหน้า (ข้อ 13 carried_cash) ที่มีการเซ็นส่งมอบทั้งสองฝ่าย (ผู้ส่งและผู้รับ) เท่านั้น หากไม่มีการเซ็นส่งมอบสองฝ่าย ให้เริ่มต้นเป็น 0 ฿ เด็ดขาด
+      const hasDualSignedCarry =
+        lastDrawer &&
+        !lastDrawer.consumed_by_shift_id &&
+        Number(lastDrawer.carried_cash || 0) > 0 &&
+        Boolean(lastDrawer.next_shift_receiver_signature);
+      const unconsumedCarry = hasDualSignedCarry ? Math.max(0, Number(lastDrawer!.carried_cash || 0)) : 0;
       const expectedTotal = unconsumedCarry;
       setInitialCash(expectedTotal);
       setOpenCashMode("matched");
@@ -205,7 +212,10 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
   }, [showCloseModal, activeShift?.id, activeShift?.shift_location]);
 
   const unconsumedCarryFromPrev =
-    lastClosedDrawer && !lastClosedDrawer.consumed_by_shift_id
+    lastClosedDrawer &&
+    !lastClosedDrawer.consumed_by_shift_id &&
+    Number(lastClosedDrawer.carried_cash || 0) > 0 &&
+    Boolean(lastClosedDrawer.next_shift_receiver_signature)
       ? Math.max(0, Number(lastClosedDrawer.carried_cash || 0))
       : 0;
   const expectedOpenDrawerTotal = unconsumedCarryFromPrev;
@@ -378,6 +388,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
     setShowCloseModal(false);
     setClosePin("");
     setCloseManagerPin("");
+    setNextShiftReceiverPin("");
     setCarriedToNextShift(0);
     setNegCloseMode("manager_topup");
     setActualSend("");
@@ -385,6 +396,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
     setErrorMsg("");
     staffSigRef.current?.clear();
     managerSigRef.current?.clear();
+    nextShiftReceiverSigRef.current?.clear();
   };
 
   const drawerCash = closeDrawer?.drawer || 0;
@@ -437,6 +449,15 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       setErrorMsg("กรุณาให้ผู้จัดการเซ็นชื่อผู้ส่งเงิน (เติมเงินเข้าลิ้นชัก) คู่กับพนักงาน หรือเลือก '⏭️ ยังไม่เติม' หากผู้จัดการไม่อยู่");
       return;
     }
+
+    const nextReceiverSig = carriedNum > 0 ? nextShiftReceiverSigRef.current?.toDataURL() || null : null;
+    if (carriedNum > 0 && (!nextReceiverSig || !nextShiftReceiverPin)) {
+      setErrorMsg(
+        "⚠️ ห้ามส่งยอดเงินทอนยกไปกะถัดไปโดยไม่มีการเซ็นรับทั้งสองฝ่าย! กรุณาให้พนักงานผู้รับกะถัดไปเซ็นรับและกรอกรหัส PIN หรือกดปุ่ม '💵 ส่งผู้จัดการทั้งหมด' (เพื่อให้ยอดยกไปกะถัดไปเป็น 0 ฿)"
+      );
+      return;
+    }
+
     setCloseSaving(true);
 
     const { data: staffData, error: staffError } = await supabase
@@ -450,6 +471,21 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       setCloseSaving(false);
       setErrorMsg("รหัส PIN พนักงานไม่ถูกต้อง (ต้องเป็น PIN ของเจ้าของกะ)");
       return;
+    }
+
+    let verifiedNextReceiverName: string | null = null;
+    if (carriedNum > 0) {
+      const { data: recStaff, error: recErr } = await supabase
+        .from("staff")
+        .select("name")
+        .eq("pin", nextShiftReceiverPin.trim())
+        .maybeSingle();
+      if (recErr || !recStaff) {
+        setCloseSaving(false);
+        setErrorMsg("รหัส PIN ของพนักงานผู้รับมอบกะถัดไปไม่ถูกต้อง");
+        return;
+      }
+      verifiedNextReceiverName = recStaff.name;
     }
 
     let verifiedManager: { name: string; role: string } | null = null;
@@ -515,6 +551,9 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       manager_name: verifiedManager ? verifiedManager.name : null,
       manager_signature: verifiedManager ? managerSig : null,
       manager_signed_at: verifiedManager ? nowIso : null,
+      next_shift_receiver_name: carriedNum > 0 ? verifiedNextReceiverName : null,
+      next_shift_receiver_signature: carriedNum > 0 ? nextReceiverSig : null,
+      next_shift_receiver_signed_at: carriedNum > 0 ? nowIso : null,
       note: handoverNote,
       created_at: nowIso,
     };
@@ -530,6 +569,8 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
       carried_cash: carriedNum,
       total_in_drawer: nextShiftDrawerTotal,
       sent_to_manager: actualSendNum,
+      next_shift_receiver_name: carriedNum > 0 ? verifiedNextReceiverName : null,
+      next_shift_receiver_signature: carriedNum > 0 ? nextReceiverSig : null,
       consumed_by_shift_id: null,
     });
 
@@ -589,6 +630,19 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
   };
 
   if (loading) return <div className="text-xs opacity-50">Checking shift...</div>;
+
+  if (isExecutiveReadOnly) {
+    return (
+      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-50 border border-purple-300 text-purple-900 text-[11px] font-black">
+        <span>👁️ ผู้บริหาร ({currentUser?.name || "ดูอย่างเดียว"})</span>
+        {activeShift && (
+          <span className="text-[10px] font-bold text-purple-700">
+            • กะปัจจุบัน: {activeShift.staff_name} ({activeShift.shift_location || "ซอย1"})
+          </span>
+        )}
+      </div>
+    );
+  }
 
   const isRealShift = !!activeShift && activeShift.id !== "dummy-shift-id";
 
@@ -1179,6 +1233,8 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
                   label={
                     isManagerTopupNow
                       ? "2. ลายเซ็นพนักงาน (ผู้รับเงินเข้าลิ้นชัก & ปิดกะ)"
+                      : carriedNum > 0
+                      ? "1. ลายเซ็นพนักงานผู้ส่งกะ (ผู้ส่งมอบเงินทอนให้กะถัดไป)"
                       : "ลายเซ็นพนักงานผู้ส่งกะ"
                   }
                 />
@@ -1201,6 +1257,32 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
                     placeholder="••••"
                   />
                 </div>
+
+                {carriedNum > 0 && (
+                  <div className="rounded-xl border-2 border-indigo-300 bg-indigo-50/60 p-3 space-y-2.5">
+                    <div className="text-xs font-black text-indigo-950">
+                      🤝 ยืนยันการส่งมอบเงินทอนให้กะถัดไป ({fmt(carriedNum)}): ต้องเซ็นรับทั้งสองฝ่าย
+                    </div>
+                    <SignaturePad
+                      ref={nextShiftReceiverSigRef}
+                      label="2. ลายเซ็นพนักงานกะถัดไป (ผู้รับมอบเงินทอน)"
+                    />
+                    <div>
+                      <label className="block text-xs font-bold text-indigo-900 mb-1">
+                        รหัส PIN พนักงานผู้รับมอบกะถัดไป (4 หลัก)
+                      </label>
+                      <input
+                        type="password"
+                        inputMode="numeric"
+                        maxLength={4}
+                        value={nextShiftReceiverPin}
+                        onChange={(e) => setNextShiftReceiverPin(e.target.value.replace(/\D/g, ""))}
+                        className="w-full text-center tracking-[0.5em] text-lg p-2.5 rounded-xl border border-indigo-300 bg-white focus:border-indigo-600 outline-none"
+                        placeholder="••••"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <label
                   className={`flex items-start gap-3 border p-3.5 rounded-xl ${
