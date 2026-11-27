@@ -3708,8 +3708,16 @@ export default function FinancialReportType2View({
                               {r.extraAmount || auditEdits[`row_${r.id}_extra`] ? (
                                 <div className="flex flex-col justify-center w-full leading-[1.05]">
                                   {r.extraAmount && r.extraLabel ? (
-                                    <div className="text-left text-indigo-900 font-semibold text-[6.3px] truncate">
-                                      {r.extraLabel}
+                                    <div className="flex items-center justify-between gap-0.5 text-left text-indigo-900 font-semibold text-[6.3px]">
+                                      <span className="truncate">{r.extraLabel}</span>
+                                      {canEditReport && !isProto && (
+                                        <span
+                                          className="no-print text-[7px] text-rose-600 shrink-0 leading-none"
+                                          title="แตะเพื่อแก้ไขหรือลบรายการค่าเสริมนี้"
+                                        >
+                                          🗑️
+                                        </span>
+                                      )}
                                     </div>
                                   ) : null}
                                   <div className="text-right font-bold text-indigo-950 text-[8.3px] leading-none">

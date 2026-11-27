@@ -1190,17 +1190,25 @@ export default function CheckinPage() {
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path></svg>
               </button>
 
-              <span className="text-[11px] sm:text-xs font-black text-slate-800 px-1 whitespace-nowrap">
-                {displayDate.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}
+              <span
+                className={`text-[11px] sm:text-xs font-black px-2 py-0.5 h-7 rounded-lg flex items-center whitespace-nowrap border ${
+                  dateOffset === 0
+                    ? "bg-blue-50 text-blue-900 border-blue-200"
+                    : "bg-amber-50 text-amber-900 border-amber-300"
+                }`}
+              >
+                {dateOffset === 0
+                  ? `📌 วันนี้: ${displayDate.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}`
+                  : `📅 กำลังดู: ${displayDate.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}`}
               </span>
 
               {dateOffset !== 0 && (
                 <button 
                   onClick={() => setDateOffset(0)}
                   className="px-2 py-0.5 bg-blue-600 text-white text-[10.5px] font-bold rounded-lg hover:bg-blue-700 transition-colors h-7 flex items-center shadow-2xs whitespace-nowrap cursor-pointer"
-                  title="กลับไปวันธุรกิจปัจจุบัน (วันนี้)"
+                  title="กดเพื่อกลับไปหน้าวันธุรกิจปัจจุบัน (วันนี้)"
                 >
-                  ↩ กลับวันนี้
+                  ↩ กลับวันนี้ ({getActiveBusinessDate().toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })})
                 </button>
               )}
 
@@ -1219,7 +1227,7 @@ export default function CheckinPage() {
               >
                 <span>{isCloseDayMatched ? "✅" : "⚠️"}</span>
                 <span>
-                  Close: <strong>{formatShortThaiDate(closeDayBusinessDate)}</strong>
+                  รอบบัญชีวันนี้: <strong>{formatShortThaiDate(closeDayBusinessDate)}</strong>
                 </span>
               </div>
             </div>

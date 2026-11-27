@@ -2911,6 +2911,33 @@ export default function DailyReport({
                   </div>
                 )}
 
+                {/* ปุ่มลัด 1-Click ด้านบนสุด: ลบรายการค่าเสริม / ค่าปรับออกช้า ที่เกิดจากความเข้าใจผิด (ตัดยอดออกจากรายงานและระบบบัญชีทันที พร้อมแสดงรอยขีดฆ่าสีจาง) */}
+                {meta.extraAmount > 0 && editingRow.kind !== "booking" && (
+                  <div className="bg-amber-50 border-2 border-rose-500 rounded-xl p-3 space-y-2 shadow-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-black text-slate-900 text-xs">
+                        🗑️ พบรายการค่าเสริม/ค่าปรับ: <b className="text-rose-700">&quot;{meta.extraLabel || "ค่าปรับออกช้า"}&quot; ({meta.extraAmount.toLocaleString()} ฿)</b>
+                      </span>
+                      <span className="text-[10px] font-bold text-white bg-rose-600 px-2 py-0.5 rounded-full">
+                        กดลบได้ในคลิกเดียว
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={editSaving}
+                      onClick={() =>
+                        handleSaveRowEdit({
+                          extraAmount: 0,
+                          extraLabel: "",
+                        })
+                      }
+                      className="w-full py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      🗑️ กดปุ่มนี้เพื่อลบ &quot;{meta.extraLabel || "ค่าปรับออกช้า"}&quot; ({meta.extraAmount.toLocaleString()} ฿) ออกจากรายงาน &amp; บัญชีทันที
+                    </button>
+                  </div>
+                )}
+
                 {/* ปุ่มลัด 1-Click: กรณีมียอดค้างชำระในแถวนี้ (เช่น ห้อง 27 ค่าปรับออกช้า 150 ฿ ยังไม่ได้ลงรับชำระ) */}
                 {unpaidInRow > 0 && editingRow.kind !== "booking" && (
                   <div className="bg-rose-50 border-2 border-rose-300 rounded-xl p-3 space-y-2">
@@ -3023,30 +3050,6 @@ export default function DailyReport({
                   </div>
                 )}
 
-                {/* ปุ่มลัด 1-Click: ลบรายการค่าเสริม / ค่าปรับออกช้า ที่เกิดจากความเข้าใจผิด (ตัดยอดออกจากรายงานและระบบบัญชีทันที พร้อมแสดงรอยขีดฆ่าสีจาง) */}
-                {meta.extraAmount > 0 && editingRow.kind !== "booking" && (
-                  <div className="bg-amber-50 border-2 border-amber-400 rounded-xl p-3 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-black text-amber-950 text-xs">
-                        🗑️ ต้องการยกเลิก/ลบรายการ <b className="text-rose-700">&quot;{meta.extraLabel || "ค่าปรับออกช้า"}&quot; ({meta.extraAmount.toLocaleString()} ฿)</b> ออกใช่หรือไม่?
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={editSaving}
-                      onClick={() =>
-                        handleSaveRowEdit({
-                          extraAmount: 0,
-                          extraLabel: "",
-                        })
-                      }
-                      className="w-full py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      🗑️ ลบรายการ &quot;{meta.extraLabel || "ค่าปรับออกช้า"}&quot; ({meta.extraAmount.toLocaleString()} ฿) ออกจากรายงาน &amp; บัญชีทันที (แสดงขีดฆ่าสีจาง)
-                    </button>
-                  </div>
-                )}
-
                 {editingRow.kind !== "booking" && (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     <div>
@@ -3079,9 +3082,9 @@ export default function DailyReport({
                               setRowEditExtraAmount("0");
                               setRowEditExtraLabel("");
                             }}
-                            className="text-[10px] font-bold text-rose-700 bg-rose-100 hover:bg-rose-200 px-1.5 py-0.5 rounded cursor-pointer"
+                            className="text-[10.5px] font-black text-white bg-rose-600 hover:bg-rose-700 px-2 py-0.5 rounded-md cursor-pointer flex items-center gap-0.5"
                           >
-                            เคลียร์เป็น 0
+                            🗑️ ลบยอดนี้
                           </button>
                         )}
                       </div>
