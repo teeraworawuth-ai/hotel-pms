@@ -1321,13 +1321,15 @@ export default function FinancialReportType2View({
   const mgrCarried = mgrBrought + mgrNetShifts - mgrOutExp - mgrBankDep;
 
   // ตัวช่วยแสดงยอดเดิมขีดฆ่าสีจาง + (ชื่อผู้แก้ไข) ทางซ้ายของยอดจริง
-  const renderAuditTrail = (editKey: string) => {
+  const renderAuditTrail = (editKey: string, compact = false) => {
     if (isProto || !auditEdits) return null;
     const entry = auditEdits[editKey];
     if (!entry) return null;
     return (
       <span
-        className="inline-flex items-baseline mr-1 text-slate-400 font-normal text-[7.1px] leading-none whitespace-nowrap"
+        className={`inline-flex items-baseline text-slate-400 font-normal leading-none whitespace-nowrap ${
+          compact ? "mr-0.5 text-[6.2px] tracking-tighter" : "mr-1 text-[7.1px]"
+        }`}
         title={`แก้ไขจาก "${entry.oldDisplay}" เป็น "${entry.newDisplay}" โดย ${entry.editorName}${
           entry.editedAt ? ` (${safeFormatTime(entry.editedAt)} น.)` : ""
         }`}
@@ -3258,20 +3260,20 @@ export default function FinancialReportType2View({
         <div className="overflow-x-auto">
           <table className="audit-table">
             <colgroup>
-              <col style={{ width: "3.6%" }} />
-              <col style={{ width: "15.3%" }} />
-              <col style={{ width: "3.75%" }} />
-              <col style={{ width: "3.9%" }} />
-              <col style={{ width: "6.45%" }} />
-              <col style={{ width: "6.45%" }} />
-              <col style={{ width: "6.45%" }} />
-              <col style={{ width: "6.45%" }} />
-              <col style={{ width: "6.45%" }} />
-              <col style={{ width: "6.45%" }} />
-              <col style={{ width: "6.45%" }} />
-              <col style={{ width: "6.45%" }} />
-              <col style={{ width: "6.45%" }} />
+              <col style={{ width: "3.3%" }} />
               <col style={{ width: "12.2%" }} />
+              <col style={{ width: "3.6%" }} />
+              <col style={{ width: "3.8%" }} />
+              <col style={{ width: "7.2%" }} />
+              <col style={{ width: "4.2%" }} />
+              <col style={{ width: "9.2%" }} />
+              <col style={{ width: "4.2%" }} />
+              <col style={{ width: "8.0%" }} />
+              <col style={{ width: "9.4%" }} />
+              <col style={{ width: "9.4%" }} />
+              <col style={{ width: "4.6%" }} />
+              <col style={{ width: "4.6%" }} />
+              <col style={{ width: "13.1%" }} />
               <col style={{ width: "3.2%" }} />
             </colgroup>
             <thead>
@@ -3316,11 +3318,17 @@ export default function FinancialReportType2View({
                 >
                   {activeTransferItems.length === 0 ? null : activeTransferItems.length === 1 ? (
                     <div className="flex items-center justify-end h-full w-full pr-0.5">
-                      <div className="flex items-baseline justify-end gap-1">
-                        <span className={`font-extrabold ${activeTransferItems[0].colorClass} text-[9px]`}>
+                      <div className="flex items-baseline justify-end gap-1 leading-none">
+                        <span
+                          className={`font-black ${activeTransferItems[0].colorClass} text-[11.3px] leading-none`}
+                          style={{ fontSize: "11.3px" }}
+                        >
                           {activeTransferItems[0].label}
                         </span>
-                        <span className="font-black text-slate-900 text-[10.5px] font-mono">
+                        <span
+                          className="font-black text-slate-900 text-[11.3px] font-mono leading-none"
+                          style={{ fontSize: "11.3px" }}
+                        >
                           {fmtNum(activeTransferItems[0].amount)}
                         </span>
                       </div>
@@ -3330,10 +3338,16 @@ export default function FinancialReportType2View({
                       <div className="inline-grid grid-cols-[auto_auto] items-baseline gap-x-1.5 text-right">
                         {activeTransferItems.map((item) => (
                           <React.Fragment key={item.key}>
-                            <span className={`font-extrabold ${item.colorClass} text-[8px] text-right`}>
+                            <span
+                              className={`font-black ${item.colorClass} text-[9.2px] text-right leading-none`}
+                              style={{ fontSize: "9.2px" }}
+                            >
                               {item.label}
                             </span>
-                            <span className={`font-black ${item.textColor} text-[8.8px] font-mono text-right`}>
+                            <span
+                              className={`font-black ${item.textColor} text-[9.2px] font-mono text-right leading-none`}
+                              style={{ fontSize: "9.2px" }}
+                            >
                               {fmtNum(item.amount)}
                             </span>
                           </React.Fragment>
@@ -3653,12 +3667,30 @@ export default function FinancialReportType2View({
                               {r.roomNo}
                             </td>
                             <td className="text-center boundary-col-1-prev">{r.staffName}</td>
-                            <td className={`${r.roomRate || auditEdits[`row_${r.id}_roomRate`] ? "text-right" : "text-center text-slate-400"} boundary-col-1`}>
-                              {renderAuditTrail(`row_${r.id}_roomRate`)}
+                            <td
+                              className={`${
+                                r.roomRate || auditEdits[`row_${r.id}_roomRate`]
+                                  ? "text-right"
+                                  : "text-center text-slate-400"
+                              } boundary-col-1`}
+                              style={
+                                auditEdits[`row_${r.id}_roomRate`]
+                                  ? { whiteSpace: "normal", overflow: "visible", textOverflow: "clip" }
+                                  : undefined
+                              }
+                            >
+                              {renderAuditTrail(`row_${r.id}_roomRate`, true)}
                               {r.roomRate ? fmtNum(r.roomRate) : ""}
                             </td>
-                            <td className="text-center text-slate-700 font-bold">
-                              {renderAuditTrail(`row_${r.id}_adjust`)}
+                            <td
+                              className="text-center text-slate-700 font-bold"
+                              style={
+                                auditEdits[`row_${r.id}_adjust`]
+                                  ? { whiteSpace: "normal", overflow: "visible", textOverflow: "clip" }
+                                  : undefined
+                              }
+                            >
+                              {renderAuditTrail(`row_${r.id}_adjust`, true)}
                               {r.adjust ? fmtSignedNum(r.adjust) : ""}
                             </td>
                             <td
@@ -3667,17 +3699,21 @@ export default function FinancialReportType2View({
                                   ? "px-1 py-0.5 text-[7px] bg-indigo-50/20 whitespace-normal"
                                   : "text-center text-slate-400"
                               }
-                              style={r.extraAmount || auditEdits[`row_${r.id}_extra`] ? { whiteSpace: "normal" } : undefined}
+                              style={
+                                r.extraAmount || auditEdits[`row_${r.id}_extra`]
+                                  ? { whiteSpace: "normal", overflow: "visible", textOverflow: "clip" }
+                                  : undefined
+                              }
                             >
                               {r.extraAmount || auditEdits[`row_${r.id}_extra`] ? (
                                 <div className="flex flex-col justify-center w-full leading-[1.05]">
-                                  {r.extraLabel && (
+                                  {r.extraAmount && r.extraLabel ? (
                                     <div className="text-left text-indigo-900 font-semibold text-[6.3px] truncate">
                                       {r.extraLabel}
                                     </div>
-                                  )}
+                                  ) : null}
                                   <div className="text-right font-bold text-indigo-950 text-[8.3px] leading-none">
-                                    {renderAuditTrail(`row_${r.id}_extra`)}
+                                    {renderAuditTrail(`row_${r.id}_extra`, true)}
                                     {r.extraAmount ? fmtNum(r.extraAmount) : ""}
                                   </div>
                                 </div>
@@ -3685,8 +3721,19 @@ export default function FinancialReportType2View({
                                 ""
                               )}
                             </td>
-                            <td className={r.minibarAmount || auditEdits[`row_${r.id}_minibar`] ? "text-right font-bold" : "text-center text-slate-400"}>
-                              {renderAuditTrail(`row_${r.id}_minibar`)}
+                            <td
+                              className={
+                                r.minibarAmount || auditEdits[`row_${r.id}_minibar`]
+                                  ? "text-right font-bold"
+                                  : "text-center text-slate-400"
+                              }
+                              style={
+                                auditEdits[`row_${r.id}_minibar`]
+                                  ? { whiteSpace: "normal", overflow: "visible", textOverflow: "clip" }
+                                  : undefined
+                              }
+                            >
+                              {renderAuditTrail(`row_${r.id}_minibar`, true)}
                               {r.minibarAmount ? fmtNum(r.minibarAmount) : ""}
                             </td>
                             <td
@@ -3695,8 +3742,13 @@ export default function FinancialReportType2View({
                                   ? "text-right font-bold bg-blue-50/30"
                                   : "text-center text-slate-400"
                               } boundary-col-2-prev`}
+                              style={
+                                auditEdits[`row_${r.id}_totalCharge`]
+                                  ? { whiteSpace: "normal", overflow: "visible", textOverflow: "clip" }
+                                  : undefined
+                              }
                             >
-                              {renderAuditTrail(`row_${r.id}_totalCharge`)}
+                              {renderAuditTrail(`row_${r.id}_totalCharge`, true)}
                               {r.totalCharge ? fmtNum(r.totalCharge) : ""}
                             </td>
                             <td
@@ -3709,8 +3761,13 @@ export default function FinancialReportType2View({
                                     : "text-center font-bold"
                                   : "text-center text-slate-400"
                               } boundary-col-2`}
+                              style={
+                                auditEdits[`row_${r.id}_cash`]
+                                  ? { whiteSpace: "normal", overflow: "visible", textOverflow: "clip" }
+                                  : undefined
+                              }
                             >
-                              {renderAuditTrail(`row_${r.id}_cash`)}
+                              {renderAuditTrail(`row_${r.id}_cash`, true)}
                               {r.cashDisplay || ""}
                             </td>
                             <td
@@ -3719,8 +3776,13 @@ export default function FinancialReportType2View({
                                   ? `text-center font-bold ${tcColor}`
                                   : "text-center text-slate-400"
                               }
+                              style={
+                                auditEdits[`row_${r.id}_transfer`]
+                                  ? { whiteSpace: "normal", overflow: "visible", textOverflow: "clip" }
+                                  : undefined
+                              }
                             >
-                              {renderAuditTrail(`row_${r.id}_transfer`)}
+                              {renderAuditTrail(`row_${r.id}_transfer`, true)}
                               {r.transferCardDisplay || ""}
                             </td>
                             <td

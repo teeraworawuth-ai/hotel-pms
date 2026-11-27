@@ -1190,17 +1190,18 @@ export default function CheckinPage() {
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path></svg>
               </button>
 
-              {dateOffset !== 0 ? (
+              <span className="text-[11px] sm:text-xs font-black text-slate-800 px-1 whitespace-nowrap">
+                {displayDate.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}
+              </span>
+
+              {dateOffset !== 0 && (
                 <button 
                   onClick={() => setDateOffset(0)}
-                  className="px-2 py-0.5 bg-blue-600 text-white text-[11px] font-bold rounded-lg hover:bg-blue-700 transition-colors h-7 flex items-center shadow-2xs"
+                  className="px-2 py-0.5 bg-blue-600 text-white text-[10.5px] font-bold rounded-lg hover:bg-blue-700 transition-colors h-7 flex items-center shadow-2xs whitespace-nowrap cursor-pointer"
+                  title="กลับไปวันธุรกิจปัจจุบัน (วันนี้)"
                 >
-                  วันนี้
+                  ↩ กลับวันนี้
                 </button>
-              ) : (
-                <span className="text-[11px] font-black text-slate-700 hidden sm:inline">
-                  {displayDate.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}
-                </span>
               )}
 
               {/* ป้าย Close Day แบบกระชับ */}

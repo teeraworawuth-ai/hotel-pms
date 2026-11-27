@@ -1620,6 +1620,20 @@ export default function DailyReport({
             activeBookingIdsToday.add(tx.booking_id);
           }
         });
+        // รวมรายการห้องที่มีประวัติการแก้ไข/ลบในรายงานวันนี้ด้วย เพื่อคงแถวที่ถูกลบยอดเป็น 0 ให้แสดงรอยขีดฆ่าสีจางและ (ชื่อผู้แก้ไข) บนรายงานเสมอ
+        const editedSlotsByBooking = new Map<string, Set<0 | 1 | 2>>();
+        Object.keys(loadedAuditEdits).forEach((editKey) => {
+          const m = editKey.match(/^row_live-[cb]-([0-9a-fA-F-]+)-([012])_/);
+          if (m) {
+            const bId = m[1];
+            const sIdx = Number(m[2]) as 0 | 1 | 2;
+            if (bookingMap[bId] && matchBooking(bookingMap[bId])) {
+              activeBookingIdsToday.add(bId);
+              if (!editedSlotsByBooking.has(bId)) editedSlotsByBooking.set(bId, new Set());
+              editedSlotsByBooking.get(bId)!.add(sIdx);
+            }
+          }
+        });
 
         let seqCheckinNo = 1;
         let seqBookingNo = 1;
@@ -1644,6 +1658,13 @@ export default function DailyReport({
               if (!txsBySlot.has(s)) txsBySlot.set(s, []);
               txsBySlot.get(s)!.push(tx);
             });
+
+            const editedSlots = editedSlotsByBooking.get(b.id);
+            if (editedSlots) {
+              editedSlots.forEach((sIdx) => {
+                if (!txsBySlot.has(sIdx)) txsBySlot.set(sIdx, []);
+              });
+            }
 
             if (txsBySlot.size === 0) {
               const defaultSlot = getSlotForShiftOrTime(undefined, b.actual_check_in_time || b.check_in_time);
@@ -1786,8 +1807,21 @@ export default function DailyReport({
               const resNetRow = resBreak ? resBreak.addedToday - resBreak.usedToday : 0;
               const advNetRow = advBreak ? advBreak.addedToday - advBreak.usedToday : 0;
 
-              // ข้ามแถวที่ไม่มีค่าห้องและไม่มีรายการรับชำระ/เครดิตในกะนี้ (เช่น แถวคืนมัดจำกุญแจของห้องที่เช็คเอาท์จากวันก่อน)
-              if (totalRowCharge === 0 && cashPaid === 0 && keyDepPlaced === 0 && transferPaid === 0 && resNetRow === 0 && advNetRow === 0) {
+              const rowCandidateId = `live-c-${b.id}-${slot}`;
+              const hasAuditEditOnRow = Object.keys(loadedAuditEdits).some((k) =>
+                k.startsWith(`row_${rowCandidateId}_`)
+              );
+
+              // ข้ามแถวที่ไม่มีค่าห้องและไม่มีรายการรับชำระ/เครดิตในกะนี้ (ยกเว้นแถวที่มีประวัติการลบ/แก้ไขในรายงานวันนี้ เพื่อให้ยังคงแสดงรอยขีดฆ่าสีจางและชื่อผู้แก้ไข)
+              if (
+                !hasAuditEditOnRow &&
+                totalRowCharge === 0 &&
+                cashPaid === 0 &&
+                keyDepPlaced === 0 &&
+                transferPaid === 0 &&
+                resNetRow === 0 &&
+                advNetRow === 0
+              ) {
                 return;
               }
 
@@ -2269,9 +2303,21 @@ export default function DailyReport({
     }
 
     const meta = editingRow.editMeta;
+    const rawExtraLabelInput =
+      override?.extraLabel !== undefined ? override.extraLabel : rowEditExtraLabel;
+    const rawExtraAmountInput =
+      override?.extraAmount !== undefined ? override.extraAmount : Number(rowEditExtraAmount || 0);
+    // หากผู้ใช้ลบชื่อรายการเสริมออกเป็นค่าว่าง หรือใส่ยอดเงินเป็น 0 ให้ถือเป็นการลบรายการค่าเสริมออก (0 ฿)
+    const isClearingExtraByEmptyLabel =
+      override?.extraAmount === undefined &&
+      meta.extraAmount > 0 &&
+      String(rawExtraLabelInput || "").trim() === "";
     const newRoomRate = Math.max(0, Number(override?.roomRate ?? (rowEditRoomRate || 0)));
-    const newExtraLabel = String(override?.extraLabel ?? (rowEditExtraLabel || "บริการเสริม")).trim();
-    const newExtraAmount = Math.max(0, Number(override?.extraAmount ?? (rowEditExtraAmount || 0)));
+    const newExtraAmount = isClearingExtraByEmptyLabel ? 0 : Math.max(0, Number(rawExtraAmountInput || 0));
+    const newExtraLabel =
+      newExtraAmount === 0
+        ? ""
+        : String(rawExtraLabelInput || meta.extraLabel || "บริการเสริม").trim();
     const newCashPaid = Math.max(0, Number(override?.cashPaid ?? (rowEditCashPaid || 0)));
     const newTransferPaid = Math.max(0, Number(override?.transferPaid ?? (rowEditTransferPaid || 0)));
     const newTransferBank = override?.transferBank ?? rowEditTransferBank;
@@ -2298,7 +2344,7 @@ export default function DailyReport({
             .from("booking_daily_rates")
             .update({ amount: newRoomRate, is_manual_override: true })
             .eq("id", meta.dailyRateId);
-        } else {
+        } else if (newRoomRate > 0) {
           await supabase.from("booking_daily_rates").insert({
             booking_id: meta.bookingId,
             target_date: meta.targetDate,
@@ -2307,10 +2353,23 @@ export default function DailyReport({
           });
         }
         if (meta.roomChargeTxIds.length > 0) {
-          await supabase
-            .from("ledger_transactions")
-            .update({ amount: newRoomRate })
-            .eq("id", meta.roomChargeTxIds[0]);
+          if (newRoomRate > 0) {
+            await supabase
+              .from("ledger_transactions")
+              .update({ amount: newRoomRate })
+              .eq("id", meta.roomChargeTxIds[0]);
+            if (meta.roomChargeTxIds.length > 1) {
+              await supabase
+                .from("ledger_transactions")
+                .update({ amount: 0, category: "room_charge (Voided)" })
+                .in("id", meta.roomChargeTxIds.slice(1));
+            }
+          } else {
+            await supabase
+              .from("ledger_transactions")
+              .update({ amount: 0, category: "room_charge (Voided)" })
+              .in("id", meta.roomChargeTxIds);
+          }
         }
         newAuditEntries[`row_${editingRow.id}_roomRate`] = {
           oldDisplay: meta.roomRate.toLocaleString(),
@@ -2321,8 +2380,9 @@ export default function DailyReport({
         changeSummaryParts.push(`ค่าห้อง ${meta.roomRate.toLocaleString()} -> ${newRoomRate.toLocaleString()} ฿`);
       }
 
-      // 2. บริการเสริม / ค่าปรับออกช้า (Extra Charge)
+      // 2. บริการเสริม / ค่าปรับออกช้า (Extra Charge) — ใช้ UPDATE เป็น (Voided) แทน DELETE เพื่อไม่ให้ติดสิทธิ์ RLS ของ Supabase
       if ((newExtraAmount !== meta.extraAmount || (newExtraAmount > 0 && newExtraLabel !== meta.extraLabel)) && editingRow.kind !== "booking") {
+        const voidCategoryName = `${meta.extraLabel || "ค่าปรับออกช้า"} (Voided)`;
         if (meta.extraTxIds.length > 0) {
           if (newExtraAmount > 0) {
             await supabase
@@ -2333,10 +2393,26 @@ export default function DailyReport({
               })
               .eq("id", meta.extraTxIds[0]);
             if (meta.extraTxIds.length > 1) {
-              await supabase.from("ledger_transactions").delete().in("id", meta.extraTxIds.slice(1));
+              await supabase
+                .from("ledger_transactions")
+                .update({ amount: 0, category: voidCategoryName })
+                .in("id", meta.extraTxIds.slice(1));
             }
           } else {
-            await supabase.from("ledger_transactions").delete().in("id", meta.extraTxIds);
+            await supabase
+              .from("ledger_transactions")
+              .update({
+                amount: 0,
+                category: voidCategoryName,
+                notes: `ยกเลิกรายการจากหน้ารายงานการเงินโดย ${editorName} (${nowIso})`,
+              })
+              .in("id", meta.extraTxIds);
+            // ยกเลิกใน booking_daily_extras ด้วยหากมี
+            await supabase
+              .from("booking_daily_extras")
+              .update({ amount: 0, category: voidCategoryName })
+              .eq("booking_id", meta.bookingId)
+              .eq("target_date", meta.targetDate);
           }
         } else if (newExtraAmount > 0 && targetShiftId) {
           await supabase.from("ledger_transactions").insert({
@@ -2352,14 +2428,20 @@ export default function DailyReport({
           });
         }
         if (newExtraAmount !== meta.extraAmount) {
+          const oldExtraDisplay =
+            newExtraAmount === 0 && meta.extraLabel
+              ? `${meta.extraLabel} ${meta.extraAmount.toLocaleString()}`
+              : meta.extraAmount.toLocaleString();
           newAuditEntries[`row_${editingRow.id}_extra`] = {
-            oldDisplay: meta.extraAmount.toLocaleString(),
+            oldDisplay: oldExtraDisplay,
             newDisplay: newExtraAmount.toLocaleString(),
             editorName,
             editedAt: nowIso,
           };
           changeSummaryParts.push(
-            `ค่าเสริม (${newExtraLabel}) ${meta.extraAmount.toLocaleString()} -> ${newExtraAmount.toLocaleString()} ฿`
+            newExtraAmount === 0
+              ? `ลบรายการ ${meta.extraLabel || "ค่าเสริม"} ${meta.extraAmount.toLocaleString()} ฿ ออก (0 ฿)`
+              : `ค่าเสริม (${newExtraLabel}) ${meta.extraAmount.toLocaleString()} -> ${newExtraAmount.toLocaleString()} ฿`
           );
         }
       }
@@ -2385,10 +2467,16 @@ export default function DailyReport({
               .update({ amount: -Math.abs(newCashPaid) })
               .eq("id", meta.cashTxIds[0]);
             if (meta.cashTxIds.length > 1) {
-              await supabase.from("ledger_transactions").delete().in("id", meta.cashTxIds.slice(1));
+              await supabase
+                .from("ledger_transactions")
+                .update({ amount: 0, category: "cash (Voided)" })
+                .in("id", meta.cashTxIds.slice(1));
             }
           } else {
-            await supabase.from("ledger_transactions").delete().in("id", meta.cashTxIds);
+            await supabase
+              .from("ledger_transactions")
+              .update({ amount: 0, category: "cash (Voided)" })
+              .in("id", meta.cashTxIds);
           }
         } else if (newCashPaid > 0 && targetShiftId) {
           await supabase.from("ledger_transactions").insert({
@@ -2447,10 +2535,16 @@ export default function DailyReport({
               })
               .eq("id", meta.transferTxIds[0]);
             if (meta.transferTxIds.length > 1) {
-              await supabase.from("ledger_transactions").delete().in("id", meta.transferTxIds.slice(1));
+              await supabase
+                .from("ledger_transactions")
+                .update({ amount: 0, category: "transfer (Voided)" })
+                .in("id", meta.transferTxIds.slice(1));
             }
           } else {
-            await supabase.from("ledger_transactions").delete().in("id", meta.transferTxIds);
+            await supabase
+              .from("ledger_transactions")
+              .update({ amount: 0, category: "transfer (Voided)" })
+              .in("id", meta.transferTxIds);
           }
         } else if (newTransferPaid > 0 && targetShiftId) {
           await supabase.from("ledger_transactions").insert({
@@ -2929,6 +3023,30 @@ export default function DailyReport({
                   </div>
                 )}
 
+                {/* ปุ่มลัด 1-Click: ลบรายการค่าเสริม / ค่าปรับออกช้า ที่เกิดจากความเข้าใจผิด (ตัดยอดออกจากรายงานและระบบบัญชีทันที พร้อมแสดงรอยขีดฆ่าสีจาง) */}
+                {meta.extraAmount > 0 && editingRow.kind !== "booking" && (
+                  <div className="bg-amber-50 border-2 border-amber-400 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-black text-amber-950 text-xs">
+                        🗑️ ต้องการยกเลิก/ลบรายการ <b className="text-rose-700">&quot;{meta.extraLabel || "ค่าปรับออกช้า"}&quot; ({meta.extraAmount.toLocaleString()} ฿)</b> ออกใช่หรือไม่?
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={editSaving}
+                      onClick={() =>
+                        handleSaveRowEdit({
+                          extraAmount: 0,
+                          extraLabel: "",
+                        })
+                      }
+                      className="w-full py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      🗑️ ลบรายการ &quot;{meta.extraLabel || "ค่าปรับออกช้า"}&quot; ({meta.extraAmount.toLocaleString()} ฿) ออกจากรายงาน &amp; บัญชีทันที (แสดงขีดฆ่าสีจาง)
+                    </button>
+                  </div>
+                )}
+
                 {editingRow.kind !== "booking" && (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     <div>
@@ -2952,7 +3070,21 @@ export default function DailyReport({
                       />
                     </div>
                     <div>
-                      <label className="block font-bold text-slate-700 mb-1">ยอดค่าเสริม (฿)</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block font-bold text-slate-700">ยอดค่าเสริม (฿)</label>
+                        {Number(rowEditExtraAmount || 0) > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRowEditExtraAmount("0");
+                              setRowEditExtraLabel("");
+                            }}
+                            className="text-[10px] font-bold text-rose-700 bg-rose-100 hover:bg-rose-200 px-1.5 py-0.5 rounded cursor-pointer"
+                          >
+                            เคลียร์เป็น 0
+                          </button>
+                        )}
+                      </div>
                       <input
                         type="number"
                         inputMode="numeric"
