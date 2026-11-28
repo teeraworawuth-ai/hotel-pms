@@ -1724,7 +1724,7 @@ export default function CheckinPage() {
                               const nowTime = getNow().getTime();
                               if (nowTime >= coTime) {
                                 overdueMinutes = (nowTime - coTime) / (1000 * 60);
-                                if (overdueMinutes >= 45) {
+                                if (overdueMinutes >= 105) {
                                   isOverdue = true;
                                 }
                               }

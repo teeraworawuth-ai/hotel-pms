@@ -3812,11 +3812,6 @@ export default function FinancialReportType2View({
                                   }`}
                                 >
                                   <span>{fmtSignedNum(r.adjust)}</span>
-                                  {r.adjustBy && (
-                                    <span className="text-[6px] text-slate-500 font-normal ml-[0.5px]">
-                                      ({r.adjustBy})
-                                    </span>
-                                  )}
                                 </span>
                               ) : (
                                 ""

@@ -1279,15 +1279,14 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
          return; 
       }
 
-      // 12:00 ถึง 12:44 (ผ่อนผัน 44 นาที) ยังไม่มีค่าปรับ
-      if (overdueMinutes < 45) {
+      // 12:00 ถึง 13:44 (ผ่อนผันจนถึง 13:44 น.) ยังไม่มีค่าปรับ เมื่อถึง 13:45 น. ดำเนินการคิดค่าปรับทันที
+      if (overdueMinutes < 105) {
          setCurrentLateFee(0);
          return;
       }
       
-      let hoursLate = 1; // 12:45 - 13:44
-      if (overdueMinutes >= 165) hoursLate = 3; // 14:45 - 15:44
-      else if (overdueMinutes >= 105) hoursLate = 2; // 13:45 - 14:44
+      let hoursLate = 1; // 13:45 - 14:44 (เริ่มคิดค่าปรับชั่วโมงแรกเมื่อถึง 13:45 น.)
+      if (overdueMinutes >= 165) hoursLate = 2; // 14:45 - 15:44 (ชั่วโมงที่ 2)
       
       const type = (room.room_type || '').toLowerCase();
       let baseHour1 = 150, addHour = 100; // Single
@@ -1296,8 +1295,7 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
 
       let expectedFee = 0;
       if (hoursLate === 1) expectedFee = baseHour1;
-      else if (hoursLate === 2) expectedFee = baseHour1 + addHour;
-      else if (hoursLate >= 3) expectedFee = baseHour1 + (addHour * 2);
+      else if (hoursLate >= 2) expectedFee = baseHour1 + addHour;
 
       setCurrentLateFee(expectedFee);
 
