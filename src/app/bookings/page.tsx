@@ -1258,7 +1258,7 @@ export default function BookingsPage() {
                         {/* ระยะเวลาเข้าพัก (แสดงวันที่ออกเป็น วว/ดด/ปปปป พ.ศ.) */}
                         <td className="py-1.5 px-2 text-center leading-tight whitespace-nowrap">
                           <div className="font-bold text-slate-800 text-[11px]">
-                            {item.nights} คืน <span className="text-[9.5px] text-emerald-700 font-semibold">(ถึง {item.checkInTimeStr})</span>
+                            {item.nights} คืน <span className="text-[9.5px] text-emerald-700 font-semibold">(เข้า {item.checkInTimeStr})</span>
                           </div>
                           <div className="text-[9.5px] text-slate-500 font-medium mt-0.5">
                             ออก: {formatBuddhistSlashDate(item.checkOutDate)}
