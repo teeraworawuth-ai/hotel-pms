@@ -1276,14 +1276,16 @@ export default function BookingsPage() {
                           </div>
                         </td>
 
-                        {/* แจกแจงยอดรวม */}
+                        {/* แจกแจงยอดรวม (หากยอดรวมตรงกับค่าห้อง ไม่ต้องใส่วงเล็บค่าห้องซ้ำซ้อน) */}
                         <td className="py-1.5 px-1.5 text-right leading-tight">
                           <div className="font-black text-slate-900 text-[11.5px]">
                             ฿{item.totalPrice.toLocaleString()}
                           </div>
-                          <div className="text-[9px] text-slate-500 font-medium">
-                            (ห้อง ฿{item.baseRoomPrice.toLocaleString()})
-                          </div>
+                          {item.totalPrice !== item.baseRoomPrice && (
+                            <div className="text-[9px] text-slate-500 font-medium">
+                              (ห้อง ฿{item.baseRoomPrice.toLocaleString()})
+                            </div>
+                          )}
                         </td>
 
                         {/* มัดจำแล้ว */}
