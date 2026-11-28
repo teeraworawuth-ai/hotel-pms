@@ -525,7 +525,7 @@ export default function BookingsPage() {
             .select(`
               id, room_id, guest_name, guest_phone, guest_count,
               check_in_time, check_out_time, status, actual_price,
-              staff_name, created_at, notes, key_deposit
+              staff_name, created_at, key_deposit
             `)
             .order("check_in_time", { ascending: true })
             .limit(500),
@@ -827,6 +827,20 @@ export default function BookingsPage() {
     }
   };
 
+  // จัดรูปแบบวันที่ออกเป็น วว/ดด/ปปปป พ.ศ. คั่นด้วย Slash (/) สำหรับรายงานการจองล่วงหน้าโดยเฉพาะ
+  const formatBuddhistSlashDate = (ymdStr: string) => {
+    if (!ymdStr) return "-";
+    const parts = ymdStr.split("-");
+    if (parts.length === 3) {
+      const y = parseInt(parts[0], 10);
+      const m = parts[1];
+      const d = parts[2];
+      const bYear = y > 2400 ? y : y + 543;
+      return `${d}/${m}/${bYear}`;
+    }
+    return ymdStr;
+  };
+
   const getLocationBadgeStyle = (loc: string) => {
     switch (loc) {
       case "ซอย1":
@@ -1084,16 +1098,20 @@ export default function BookingsPage() {
             #a4-booking-sheet {
               font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, sans-serif;
               width: 100%;
-              max-width: 1040px;
+              max-width: 1560px;
               margin: 0 auto;
               background: #ffffff;
               color: #0f172a;
               border: 1px solid #cbd5e1;
               box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.12);
-              border-radius: 8px;
+              border-radius: 12px;
               padding: 20px 24px;
             }
             @media print {
+              @page {
+                size: A4 landscape;
+                margin: 8mm 6mm;
+              }
               nav, header, .no-print { display: none !important; }
               body, html, main {
                 background: #ffffff !important;
@@ -1108,6 +1126,19 @@ export default function BookingsPage() {
                 padding: 0 !important;
                 max-width: 100% !important;
                 width: 100% !important;
+              }
+              table {
+                page-break-inside: auto;
+              }
+              tr {
+                page-break-inside: avoid;
+                break-inside: avoid;
+              }
+              thead {
+                display: table-header-group;
+              }
+              tfoot {
+                display: table-footer-group;
               }
               .page-break { page-break-before: always; }
             }
@@ -1213,24 +1244,24 @@ export default function BookingsPage() {
                         </td>
 
                         {/* ข้อมูลลูกค้าผู้จอง */}
-                        <td className="py-1.5 px-2">
-                          <div className="font-bold text-slate-800 text-[11.5px] leading-tight">
+                        <td className="py-1.5 px-3 min-w-[200px] max-w-[250px]">
+                          <div className="font-bold text-slate-800 text-[11.5px] leading-tight truncate" title={item.guestName}>
                             {item.guestName}
                           </div>
-                          <div className="text-[10px] text-indigo-700 font-semibold leading-tight mt-0.5 flex items-center gap-1.5">
+                          <div className="text-[10px] text-indigo-700 font-semibold leading-tight mt-0.5 flex items-center gap-1.5 whitespace-nowrap">
                             <span>📞 {item.guestPhone}</span>
                             <span>•</span>
                             <span className="text-slate-500">👥 {item.guestCount} ท่าน</span>
                           </div>
                         </td>
 
-                        {/* ระยะเวลาเข้าพัก */}
-                        <td className="py-1.5 px-1.5 text-center leading-tight">
+                        {/* ระยะเวลาเข้าพัก (แสดงวันที่ออกเป็น วว/ดด/ปปปป พ.ศ.) */}
+                        <td className="py-1.5 px-2 text-center leading-tight whitespace-nowrap">
                           <div className="font-bold text-slate-800 text-[11px]">
                             {item.nights} คืน <span className="text-[9.5px] text-emerald-700 font-semibold">(ถึง {item.checkInTimeStr})</span>
                           </div>
-                          <div className="text-[9.5px] text-slate-500">
-                            ออก: {item.checkOutDate.substring(5)}
+                          <div className="text-[9.5px] text-slate-500 font-medium mt-0.5">
+                            ออก: {formatBuddhistSlashDate(item.checkOutDate)}
                           </div>
                         </td>
 
@@ -1370,8 +1401,8 @@ export default function BookingsPage() {
                               <th className="py-2 px-1.5 text-center w-7">ลำดับ</th>
                               <th className="py-2 px-2 text-center w-28">เลขที่จอง (Ref)</th>
                               <th className="py-2 px-2 text-center w-24">ห้อง / ที่ตั้ง</th>
-                              <th className="py-2 px-2.5">ข้อมูลลูกค้าผู้จอง</th>
-                              <th className="py-2 px-2 text-center w-24">ระยะเวลาเข้าพัก</th>
+                              <th className="py-2 px-3 min-w-[200px] w-56">ข้อมูลลูกค้าผู้จอง</th>
+                              <th className="py-2 px-2 text-center w-28">ระยะเวลาเข้าพัก</th>
                               <th className="py-2 px-3 w-56">แจกแจงค่าบริการเสริม (ครั้งเดียว / รายวัน)</th>
                               <th className="py-2 px-2 text-center w-16">ผู้รับจอง</th>
                               <th className="py-2 px-2 text-right w-24">แจกแจงยอดรวม</th>
@@ -1552,7 +1583,7 @@ export default function BookingsPage() {
                         <div className="text-xs text-emerald-600 font-semibold">{b.checkInTimeStr}</div>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="font-bold text-slate-800">{b.checkOutDate}</div>
+                        <div className="font-bold text-slate-800">{formatBuddhistSlashDate(b.checkOutDate)}</div>
                         <div className="text-xs text-slate-500">{b.checkOutTimeStr} ({b.nights} คืน)</div>
                       </td>
                       <td className="px-4 py-3 text-right font-black text-slate-800">

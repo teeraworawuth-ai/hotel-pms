@@ -11,6 +11,7 @@ import CheckoutSummaryModal from "./CheckoutSummaryModal";
 import TransferTimePicker from "./TransferTimePicker";
 import { useShift } from "@/contexts/ShiftContext";
 import { logActivity, fetchActivityLogs, ActivityLogEntry, ACTIVITY_ACTION_LABELS } from "@/lib/activityLog";
+import SignaturePad, { SignaturePadHandle } from "./SignaturePad";
 
 
 export type RatePlan = {
@@ -35,6 +36,8 @@ export type FieldEditEntry = {
 export type BookingMeta = {
   history?: Record<string, FieldEditEntry[]>;
   bookingNote?: string;
+  guestSignature?: string; // ลายเซ็นดิจิทัลของลูกค้าเพื่อยืนยันยอดเงินก่อนเช็คอิน
+  guestSignedAt?: string; // เวลาที่ลงลายเซ็น (ISO String)
   groupInfo?: GroupBookingInfo;
   targetPrices?: {
     totalTargetPrice: number;
@@ -77,6 +80,12 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
   const [extrasPin, setExtrasPin] = useState('');
   const [extrasPinError, setExtrasPinError] = useState('');
   const [bookingMeta, setBookingMeta] = useState<BookingMeta>({});
+  // State สำหรับหน้าจอตรวจสอบยอด & ลายเซ็นลูกค้าก่อนเข้าพัก (Guest Check-in Confirmation)
+  const [pendingSignatureCheckin, setPendingSignatureCheckin] = useState<{
+    mode: 'fresh' | 'reserved';
+    type?: 'overnight' | 'short_stay';
+  } | null>(null);
+  const customerSigPadRef = useRef<SignaturePadHandle>(null);
 
   // State สำหรับแก้ไขประวัติชำระเงินเดิมในหน้านี้
   const [editingPayTxId, setEditingPayTxId] = useState<string | null>(null);
@@ -1167,8 +1176,8 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
       <div className="mt-1 space-y-0.5 pl-1">
         {entries.map((entry, idx) => (
           <div key={idx} className="text-[11px] text-slate-400/90 flex items-center gap-1.5">
-            <span className="line-through">{entry.oldValue || '-'}</span>
-            <span className="text-[10px] text-slate-400/75 no-underline">(แก้โดย {entry.by})</span>
+            <span className="italic text-slate-400" style={{ fontStyle: "italic", textDecoration: "none" }}>{entry.oldValue || '-'}</span>
+            <span className="text-[10px] text-slate-400/75 not-italic font-normal">(แก้โดย {entry.by})</span>
           </div>
         ))}
       </div>
@@ -1385,7 +1394,7 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
     }
   };
 
-  const handleCheckIn = async (type: 'overnight' | 'short_stay', isReservationForToday: boolean = false) => {
+  const handleCheckIn = async (type: 'overnight' | 'short_stay', isReservationForToday: boolean = false, customerSig?: string | null) => {
     if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     if (!activeShift) {
       alert('กรุณาเปิดกะก่อนทำการจองหรือ Check-in');
@@ -1461,8 +1470,7 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
         actual_check_in_time: (dateOffset === 0 && !effectiveIsReservationForToday) ? startDate.toISOString() : null,
         guest_count: Number(guestCount) || 1,
         actual_price: actualPrice === '' ? null : Number(actualPrice),
-        staff_name: effectiveStaffName,
-        notes: bookingNote.trim() || null
+        staff_name: effectiveStaffName
       })
       .select('id')
       .single();
@@ -1498,8 +1506,7 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
             actual_check_in_time: srCheckedInNow ? startDate.toISOString() : null,
             guest_count: 2,
             actual_price: srPrice,
-            staff_name: effectiveStaffName,
-            notes: bookingNote.trim() || null
+            staff_name: effectiveStaffName
           })
           .select('id')
           .single();
@@ -1830,6 +1837,8 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
             value: {
               history: {},
               bookingNote: bookingNote.trim() || undefined,
+              guestSignature: customerSig || undefined,
+              guestSignedAt: customerSig ? new Date().toISOString() : undefined,
               groupInfo: groupInfoPayload,
               targetPrices: {
                 totalTargetPrice: targetTotal,
@@ -1844,6 +1853,8 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
             value: {
               history: {},
               bookingNote: bookingNote.trim() || undefined,
+              guestSignature: customerSig || undefined,
+              guestSignedAt: customerSig ? new Date().toISOString() : undefined,
               groupInfo: groupInfoPayload,
               targetPrices: {
                 totalTargetPrice: sr.price,
@@ -2303,10 +2314,7 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
     // บันทึกหมายเหตุการจอง (หากมีการเพิ่ม/แก้ไขในสถานะจอง)
     if ((bookingMeta.bookingNote || '') !== bookingNote.trim()) {
       const updatedMetaNote: BookingMeta = { ...bookingMeta, bookingNote: bookingNote.trim() || undefined };
-      await Promise.all([
-        supabase.from('system_settings').upsert({ key: `booking_meta_${room.booking_id}`, value: updatedMetaNote }, { onConflict: 'key' }),
-        supabase.from('bookings').update({ notes: bookingNote.trim() || null }).eq('id', room.booking_id)
-      ]);
+      await supabase.from('system_settings').upsert({ key: `booking_meta_${room.booking_id}`, value: updatedMetaNote }, { onConflict: 'key' });
       setBookingMeta(updatedMetaNote);
     }
 
@@ -2490,7 +2498,7 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
     }
   }, [room.booking_id]);
 
-  const handleCheckInReserved = async () => {
+  const handleCheckInReserved = async (customerSig?: string | null) => {
     if (!ensureShiftWritable()) return; // ล็อกกะข้ามวัน (เลย 06:30 น. ต้องปิดกะก่อน)
     if (isCrossLocation) {
       alert(`ขณะนี้คุณเปิดกะอยู่ที่ "${shiftLocation}" ไม่สามารถกด Check-in เข้าพักห้องของ "${roomLocation}" ข้ามสถานที่ได้\n\nกรุณาให้หน้างาน "${roomLocation}" เป็นผู้กด Check-in เมื่อลูกค้าไปถึง (หรือสลับกะไปยัง "${roomLocation}" หากเปิดกะไว้แล้ว)`);
@@ -2501,6 +2509,20 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
       return;
     }
     setLoading(true);
+
+    // บันทึกลายเซ็นลูกค้าลงใน booking_meta (ถ้ามี)
+    if (customerSig) {
+      const updatedMeta: BookingMeta = {
+        ...bookingMeta,
+        guestSignature: customerSig,
+        guestSignedAt: new Date().toISOString(),
+      };
+      await supabase.from('system_settings').upsert({
+        key: `booking_meta_${room.booking_id}`,
+        value: updatedMeta,
+      }, { onConflict: 'key' });
+      setBookingMeta(updatedMeta);
+    }
 
     const cash = Number(payCash) || 0;
     const transfer = Number(payTransfer) || 0;
@@ -3560,7 +3582,11 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
                       onClick={() => {
                         const isRes = pendingCheckInAfterPhone.isReservationForToday;
                         setPendingCheckInAfterPhone(null);
-                        handleCheckIn(activeTab, isRes);
+                        if (!isRes && dateOffset === 0) {
+                          setPendingSignatureCheckin({ mode: 'fresh', type: activeTab });
+                        } else {
+                          handleCheckIn(activeTab, isRes);
+                        }
                       }}
                       disabled={loading}
                       className="w-full py-4 text-white font-bold rounded-2xl text-lg transition-all active:scale-98 bg-indigo-700 hover:bg-indigo-800 shadow-lg shadow-indigo-700/25 flex items-center justify-center gap-2"
@@ -3623,10 +3649,7 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
                         if (!room.booking_id) return;
                         setLoading(true);
                         const nextMeta: BookingMeta = { ...bookingMeta, bookingNote: bookingNote.trim() || undefined };
-                        await Promise.all([
-                          supabase.from('system_settings').upsert({ key: `booking_meta_${room.booking_id}`, value: nextMeta }, { onConflict: 'key' }),
-                          supabase.from('bookings').update({ notes: bookingNote.trim() || null }).eq('id', room.booking_id)
-                        ]);
+                        await supabase.from('system_settings').upsert({ key: `booking_meta_${room.booking_id}`, value: nextMeta }, { onConflict: 'key' });
                         setBookingMeta(nextMeta);
                         setLoading(false);
                         onUpdate();
@@ -5214,7 +5237,14 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
                         </button>
                         <button 
                           type="button"
-                          onClick={handleCheckInReserved} 
+                          onClick={() => {
+                            if (!ensureShiftWritable()) return;
+                            if (isCrossLocation) {
+                              alert(`ขณะนี้คุณเปิดกะอยู่ที่ "${shiftLocation}" ไม่สามารถกด Check-in เข้าพักห้องของ "${roomLocation}" ข้ามสถานที่ได้\n\nกรุณาให้หน้างาน "${roomLocation}" เป็นผู้กด Check-in เมื่อลูกค้าไปถึง (หรือสลับกะไปยัง "${roomLocation}" หากเปิดกะไว้แล้ว)`);
+                              return;
+                            }
+                            setPendingSignatureCheckin({ mode: 'reserved' });
+                          }} 
                           disabled={loading || isCrossLocation}
                           title={isCrossLocation ? `ต้องเช็คอินด้วยกะที่เปิดประจำอยู่ที่ ${roomLocation}` : 'กดเพื่อเช็คอินเข้าพักทันที'}
                           className={`w-1/2 py-3.5 text-white font-bold rounded-2xl text-sm transition-all ${
@@ -5252,7 +5282,23 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
                     <div className="flex flex-col gap-2">
                       <button 
                         type="button"
-                        onClick={() => handleCheckIn(activeTab)} 
+                        onClick={() => {
+                          if (dateOffset === 0) {
+                            if (!ensureShiftWritable()) return;
+                            if (!skipPhone && (!guestPhone.trim() || guestPhone.length !== 10 || !/^\d+$/.test(guestPhone))) {
+                              setPendingCheckInAfterPhone({ isReservationForToday: false });
+                              alert('กรุณากรอกเบอร์โทรศัพท์ลูกค้า (ตัวเลข 10 หลัก) ให้ถูกต้อง\nหรือกด "ไม่ระบุเบอร์" หากลูกค้าไม่สะดวกให้เบอร์');
+                              setTimeout(() => {
+                                phoneInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                phoneInputRef.current?.focus();
+                              }, 50);
+                              return;
+                            }
+                            setPendingSignatureCheckin({ mode: 'fresh', type: activeTab });
+                          } else {
+                            handleCheckIn(activeTab);
+                          }
+                        }} 
                         disabled={loading}
                         className="w-full py-4 text-white font-bold rounded-2xl text-lg transition-all active:scale-98 bg-indigo-700 hover:bg-indigo-800 shadow-lg shadow-indigo-700/25 flex items-center justify-center gap-2"
                       >
@@ -5609,6 +5655,185 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
           onConfirmed={() => { setShowCheckoutSummary(false); handleCheckOut(true); }}
         />
       )}
+
+      {/* ================= โมดัลตรวจสอบยอด & ลงลายเซ็นลูกค้ายืนยันเข้าพักก่อนเช็คอิน ================= */}
+      {pendingSignatureCheckin && (() => {
+        const sigModalRoomRate = pendingSignatureCheckin.mode === 'reserved'
+          ? (Number(room.actual_price) || 0)
+          : (actualPrice === '' ? Number(totalTargetPrice) : Number(actualPrice));
+
+        const sigModalExtras = dailyExtras.filter(e => !e.isVoided);
+        const sigModalExtrasTotal = sigModalExtras.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+        const sigModalKeyDeposit = keyDepositEnabled ? Number(keyDepositAmount || 0) : 0;
+        const sigModalGrandTotal = sigModalRoomRate + sigModalExtrasTotal + sigModalKeyDeposit;
+
+        const sigModalPaid = pendingSignatureCheckin.mode === 'reserved'
+          ? (totalPaid + (Number(payCash) || 0) + (Number(payTransfer) || 0) + (Number(payCredit) || 0))
+          : (isSplitPayment ? ((Number(payCash) || 0) + (Number(payTransfer) || 0) + (Number(payCredit) || 0)) : (paymentMethod === 'none' ? 0 : totalToPay));
+
+        const sigModalDueNow = Math.max(0, sigModalGrandTotal - sigModalPaid);
+
+        return (
+          <div className="fixed inset-0 z-[100] bg-slate-900/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 my-auto animate-in fade-in zoom-in-95 duration-150">
+              {/* หัวกระดาษสรุปยอด */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                <div>
+                  <div className="text-[10.5px] font-bold text-indigo-700 uppercase tracking-widest">
+                    Guest Check-in Confirmation Sheet
+                  </div>
+                  <h3 className="text-base sm:text-lg font-black text-slate-900 mt-0.5 flex items-center gap-1.5">
+                    <span>✍️ ตรวจสอบยอด & ลายเซ็นยืนยันเข้าพัก</span>
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPendingSignatureCheckin(null)}
+                  className="text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* ข้อมูลห้องพักและระยะเวลา */}
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-2 text-xs">
+                <div className="flex justify-between items-center flex-wrap gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-black text-sm px-2.5 py-0.5 rounded-lg bg-indigo-100 text-indigo-900 border border-indigo-200">
+                      ห้อง {room.room_no}
+                    </span>
+                    <span className="text-slate-700 font-bold">({room.room_type || "ห้องพัก"})</span>
+                    <span className="text-slate-400">•</span>
+                    <span className="text-indigo-800 font-bold">สาขา {roomLocation}</span>
+                  </div>
+                  <span className="font-bold text-slate-800 px-2 py-0.5 rounded bg-slate-200/60">
+                    {pendingSignatureCheckin.mode === 'fresh' && activeTab === 'short_stay'
+                      ? `พักชั่วคราว ${hours} ชม.`
+                      : `ค้างคืน ${nights || 1} คืน`}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center text-slate-600 pt-1.5 border-t border-slate-200/60">
+                  <span>ผู้เข้าพัก: <b className="text-slate-900">{guestName.trim() || room.guest_name || 'ไม่ระบุชื่อ'}</b></span>
+                  <span>โทร: <b className="text-slate-900">{guestPhone.trim() || room.guest_phone || '-'}</b></span>
+                </div>
+              </div>
+
+              {/* ตารางแจกแจงค่าใช้จ่ายทั้งหมด */}
+              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden text-xs shadow-2xs">
+                <div className="bg-slate-100/90 px-3 py-2 font-bold text-slate-700 flex justify-between border-b border-slate-200">
+                  <span>รายการค่าใช้จ่าย</span>
+                  <span>จำนวนเงิน</span>
+                </div>
+                <div className="divide-y divide-slate-100 px-3 py-1 space-y-0.5">
+                  <div className="flex justify-between py-1.5 text-slate-700">
+                    <span>1. ค่าห้องพัก ({pendingSignatureCheckin.mode === 'fresh' && activeTab === 'short_stay' ? `${hours} ชม.` : `${nights || 1} คืน`})</span>
+                    <span className="font-bold text-slate-900">฿{sigModalRoomRate.toLocaleString()}</span>
+                  </div>
+                  {sigModalExtras.map((ex, eIdx) => (
+                    <div key={eIdx} className="flex justify-between py-1.5 text-slate-700">
+                      <span className="flex items-center gap-1">
+                        <span>{ex.category === 'bed' ? '🛏️' : ex.category === 'bike' ? '🛵' : '⚡'}</span>
+                        <span>{ex.notes || ex.category}</span>
+                      </span>
+                      <span className="font-bold text-slate-900">+฿{Number(ex.amount).toLocaleString()}</span>
+                    </div>
+                  ))}
+                  {sigModalKeyDeposit > 0 && (
+                    <div className="flex justify-between py-1.5 text-slate-700">
+                      <span>2. เงินมัดจำกุญแจ</span>
+                      <span className="font-bold text-slate-900">+฿{sigModalKeyDeposit.toLocaleString()}</span>
+                    </div>
+                  )}
+                </div>
+                
+                {/* สรุปยอดรวมและยอดคงเหลือที่ต้องชำระ */}
+                <div className="bg-slate-50 p-3 border-t border-slate-200 space-y-1.5">
+                  <div className="flex justify-between text-slate-600 font-semibold">
+                    <span>ยอดรวมทั้งสิ้น (Grand Total):</span>
+                    <span className="font-black text-slate-900">฿{sigModalGrandTotal.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-600 font-semibold">
+                    <span>ชำระแล้ว:</span>
+                    <span className="font-bold text-emerald-600">฿{sigModalPaid.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-sm font-black text-slate-900 pt-1.5 border-t border-slate-200">
+                    <span className="text-amber-800">ยอดที่ต้องชำระทันที:</span>
+                    <span className="text-base text-amber-700 font-black">฿{sigModalDueNow.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* ช่องให้ลูกค้าลงลายเซ็น */}
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-1.5">
+                <SignaturePad
+                  ref={customerSigPadRef}
+                  label="✍️ ลายเซ็นลูกค้า (เซ็นรับทราบยอดเงิน & ยืนยันการเข้าพัก)"
+                  height={125}
+                />
+                <p className="text-[10px] text-slate-500 text-center">
+                  * ใช้นิ้วมือหรือปากกาสไตลัสเซ็น หรือกดปุ่ม "ข้ามขั้นตอนนี้" ได้
+                </p>
+              </div>
+
+              {/* ปุ่มดำเนินการ */}
+              <div className="space-y-2 pt-1">
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={async () => {
+                    const sig = customerSigPadRef.current?.toDataURL() || null;
+                    if (!sig) {
+                      const proceedWithout = confirm("ยังไม่มีการลงลายเซ็น คุณต้องการยืนยันเช็คอินโดยไม่บันทึกลายเซ็นใช่หรือไม่?");
+                      if (!proceedWithout) return;
+                    }
+                    if (pendingSignatureCheckin.mode === 'fresh') {
+                      const reqType = pendingSignatureCheckin.type || activeTab;
+                      setPendingSignatureCheckin(null);
+                      await handleCheckIn(reqType, false, sig);
+                    } else {
+                      setPendingSignatureCheckin(null);
+                      await handleCheckInReserved(sig);
+                    }
+                  }}
+                  className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-2xl shadow-lg shadow-emerald-600/25 transition-all text-sm flex items-center justify-center gap-2 active:scale-98"
+                >
+                  <span>✅ ยืนยันเช็คอินพร้อมบันทึกลายเซ็น</span>
+                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={async () => {
+                      if (pendingSignatureCheckin.mode === 'fresh') {
+                        const reqType = pendingSignatureCheckin.type || activeTab;
+                        setPendingSignatureCheckin(null);
+                        await handleCheckIn(reqType, false, null);
+                      } else {
+                        setPendingSignatureCheckin(null);
+                        await handleCheckInReserved(null);
+                      }
+                    }}
+                    className="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl border border-slate-300 text-xs transition-all active:scale-98"
+                    title="กดข้ามขั้นตอนนี้หากลูกค้าไม่สะดวกลงลายเซ็น"
+                  >
+                    ⏩ ข้ามขั้นตอนนี้ (ยังไม่เซ็น)
+                  </button>
+                  
+                  <button
+                    type="button"
+                    onClick={() => setPendingSignatureCheckin(null)}
+                    className="w-1/2 py-2.5 bg-white hover:bg-slate-50 text-slate-600 font-bold rounded-xl border border-slate-300 text-xs transition-all"
+                  >
+                    ← ย้อนกลับไปแก้ไข
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 

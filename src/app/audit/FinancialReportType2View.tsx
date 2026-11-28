@@ -1329,7 +1329,7 @@ export default function FinancialReportType2View({
   const mgrBankDep = isProto ? 18000 : Number(report.mgrBankDeposit ?? 0);
   const mgrCarried = mgrBrought + mgrNetShifts - mgrOutExp - mgrBankDep;
 
-  // ตัวช่วยแสดงยอดเดิมขีดฆ่าสีจาง + (ชื่อผู้แก้ไข) ทางซ้ายของยอดจริง (เส้นขีดกลางสีขาวบาง ไม่หนา เพื่อให้อ่านตัวเลขเดิมได้อย่างชัดเจน)
+  // ตัวช่วยแสดงยอดเดิมตัวเอียงสีเทา (ไม่มีขีดกลาง) + (ชื่อผู้แก้ไข) แบบตัวตรงปกติทางขวา
   const renderAuditTrail = (editKey: string, compact = false) => {
     if (isProto || !auditEdits) return null;
     const entry = auditEdits[editKey];
@@ -1344,15 +1344,15 @@ export default function FinancialReportType2View({
         }`}
       >
         <span
-          className="line-through text-slate-400"
+          className="italic text-slate-400"
           style={{
-            textDecorationColor: "#ffffff",
-            textDecorationThickness: "0.75px",
+            fontStyle: "italic",
+            textDecoration: "none",
           }}
         >
           {entry.oldDisplay}
         </span>
-        <span className="no-underline ml-[1px]">({entry.editorName})</span>
+        <span className="not-italic font-normal ml-[1px]">({entry.editorName})</span>
       </span>
     );
   };

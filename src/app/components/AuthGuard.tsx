@@ -60,6 +60,18 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             window.location.replace('/checkin');
             return;
           }
+
+          // สิทธิ์ผู้บริหาร (Executive) จำกัดเข้าได้เฉพาะ 3 หน้าหลัก: Dashboard (/), Audit (/audit), Check-in (/checkin)
+          if (
+            normalizedRole === 'executive' &&
+            window.location.pathname !== '/' &&
+            !window.location.pathname.startsWith('/audit') &&
+            !window.location.pathname.startsWith('/checkin')
+          ) {
+            setLoading(false);
+            window.location.replace('/');
+            return;
+          }
         } else {
           localStorage.removeItem('auth_user');
         }
@@ -145,6 +157,13 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         setLoading(false);
         if (authUser.role === 'staff' || authUser.role === 'housekeeper') {
           window.location.replace('/checkin');
+        } else if (
+          authUser.role === 'executive' &&
+          window.location.pathname !== '/' &&
+          !window.location.pathname.startsWith('/audit') &&
+          !window.location.pathname.startsWith('/checkin')
+        ) {
+          window.location.replace('/');
         }
       }
     } catch (err) {

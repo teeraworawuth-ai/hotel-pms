@@ -393,7 +393,7 @@ export default function StaffSettings() {
                       onChange={() => setFormData({...formData, role: 'executive'})}
                       className="w-4 h-4 text-purple-600"
                     />
-                    <span className="text-sm text-purple-900">👁️ ผู้บริหาร (ดูได้ทุกหน้า • ห้ามแก้ไข)</span>
+                    <span className="text-sm text-purple-900">👁️ ผู้บริหาร (ดูได้ 3 หน้าหลัก • ห้ามแก้ไข)</span>
                   </label>
                   <label className={`flex items-center gap-2 cursor-pointer p-2.5 rounded-xl border ${formData.role === 'staff' ? 'bg-amber-50 border-amber-400 font-bold' : 'border-slate-200'}`}>
                     <input 
@@ -424,7 +424,7 @@ export default function StaffSettings() {
                 <div className="bg-purple-50 p-4 rounded-2xl border border-purple-200 text-xs text-purple-900 space-y-1">
                   <div className="font-black text-sm">👁️ สิทธิ์สำหรับผู้บริหาร (Read-Only 100%)</div>
                   <p>
-                    • เข้าเปิดดูข้อมูลได้ครบทุกหน้า (Dashboard, รายงานการเงิน &amp; Audit, Log 30 วัน, Energy, Booking, Check-in, Smart Pricing, Settings) และดูได้ทุกสถานที่
+                    • เข้าเปิดดูข้อมูลได้เฉพาะ 3 หน้าหลัก (Dashboard, Audit &amp; รายงานการเงิน, Check-in) และดูได้ทุกสถานที่
                   </p>
                   <p>
                     • ระบบจะล็อกไม่ให้กดเพิ่ม แก้ไข ลบ เช็คอิน เช็คเอาท์ เปิด/ปิดกะ หรือปรับเปลี่ยนข้อมูลใดๆ ในระบบโดยเด็ดขาด

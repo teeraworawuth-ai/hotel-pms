@@ -256,8 +256,8 @@ export default function BillingModal({ roomId, roomNo, bookingId, onClose, onSuc
       <div className="mt-1 space-y-0.5">
         {entries.map((entry, idx) => (
           <div key={idx} className="text-[11px] text-slate-400/90 flex items-center gap-1.5">
-            <span className="line-through">{entry.oldValue || '-'}</span>
-            <span className="text-[10px] text-slate-400/75 no-underline">(แก้โดย {entry.by})</span>
+            <span className="italic text-slate-400" style={{ fontStyle: "italic", textDecoration: "none" }}>{entry.oldValue || '-'}</span>
+            <span className="text-[10px] text-slate-400/75 not-italic font-normal">(แก้โดย {entry.by})</span>
           </div>
         ))}
       </div>

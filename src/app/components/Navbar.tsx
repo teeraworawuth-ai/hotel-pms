@@ -71,7 +71,15 @@ export default function Navbar() {
 
           {/* Desktop Menu */}
           <nav className="hidden md:flex space-x-5 text-sm">
-            {navLinks.filter(link => userRole !== "staff" || link.href === "/checkin").map((link) => {
+            {navLinks.filter((link) => {
+              if (userRole === "executive") {
+                return link.href === "/" || link.href === "/audit" || link.href === "/checkin";
+              }
+              if (userRole === "staff") {
+                return link.href === "/checkin";
+              }
+              return true;
+            }).map((link) => {
               const isActive =
                 link.href === "/"
                   ? pathname === "/"
@@ -95,7 +103,7 @@ export default function Navbar() {
           <div className="hidden md:flex items-center ml-auto">
             {userRole === "executive" ? (
               <span className="px-2.5 py-1 rounded-lg bg-purple-100 text-purple-900 border border-purple-300 text-xs font-black">
-                👁️ โหมดผู้บริหาร (ดูอย่างเดียว)
+                👁️ ผู้บริหาร (ดูได้ 3 หน้า • ห้ามแก้ไข)
               </span>
             ) : (
               userRole !== "staff" && <ShiftManager />
@@ -135,7 +143,15 @@ export default function Navbar() {
       {isOpen && (
         <div className="md:hidden border-t border-white/20 bg-white/95 backdrop-blur-sm shadow-lg">
           <nav className="flex flex-col px-4 py-3 space-y-1">
-            {navLinks.filter(link => userRole !== "staff" || link.href === "/checkin").map((link) => {
+            {navLinks.filter((link) => {
+              if (userRole === "executive") {
+                return link.href === "/" || link.href === "/audit" || link.href === "/checkin";
+              }
+              if (userRole === "staff") {
+                return link.href === "/checkin";
+              }
+              return true;
+            }).map((link) => {
               const isActive =
                 link.href === "/"
                   ? pathname === "/"
@@ -157,9 +173,11 @@ export default function Navbar() {
             })}
             
             <div className="pt-3 pb-2 border-t border-slate-200 mt-2 space-y-2">
-              <div className="px-1">
-                <ShiftManager />
-              </div>
+              {userRole !== "executive" && userRole !== "staff" && (
+                <div className="px-1">
+                  <ShiftManager />
+                </div>
+              )}
               <button
                 onClick={handleLogout}
                 className="w-full py-2 px-3 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs flex items-center justify-center gap-1.5"
