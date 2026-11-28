@@ -1205,11 +1205,11 @@ export default function BookingsPage() {
                         </td>
 
                         {/* เลขที่จอง (Booking Ref) - คลิกเพื่อดูใบยืนยันการจอง */}
-                        <td className="py-1.5 px-1.5 text-center">
+                        <td className="py-1.5 px-2 text-center whitespace-nowrap">
                           <button
                             type="button"
                             onClick={() => setSelectedVoucher(item)}
-                            className="font-mono font-black text-[10.5px] text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded px-1.5 py-0.2 tracking-wider inline-flex items-center gap-1 cursor-pointer transition-all shadow-2xs"
+                            className="font-mono font-black text-[10.5px] text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded px-2 py-0.5 tracking-wider inline-flex items-center gap-1 cursor-pointer transition-all shadow-2xs whitespace-nowrap"
                             title="แตะเพื่อเปิดดู / พิมพ์ใบยืนยันการจอง"
                           >
                             <span>🔖</span>

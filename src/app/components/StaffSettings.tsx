@@ -132,6 +132,13 @@ export default function StaffSettings() {
       setFormError('กรุณากรอกชื่อ และ รหัส PIN 4 หลัก');
       return;
     }
+    const duplicateStaff = staffList.find(
+      (s) => s.pin === formData.pin && s.id !== editingStaff?.id
+    );
+    if (duplicateStaff) {
+      setFormError(`รหัส PIN "${formData.pin}" ถูกใช้งานโดย "${duplicateStaff.name}" แล้ว กรุณาตั้งรหัส PIN อื่นไม่ให้ซ้ำกัน`);
+      return;
+    }
     if (formData.role === 'staff' && !primaryLocation) {
       setFormError('กรุณาเลือก "⭐ สถานที่หลักประจำตัว" อย่างน้อย 1 แห่งสำหรับพนักงาน');
       return;
