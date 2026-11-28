@@ -835,21 +835,18 @@ export default function CheckinPage() {
     setAdminPinError("");
 
     try {
-      let authorizedName = "Master Admin";
-      if (adminPin.trim() !== "9999") {
-        const { data: staffData, error: staffErr } = await supabase
-          .from("staff")
-          .select("name, role")
-          .eq("pin", adminPin.trim())
-          .maybeSingle();
+      const { data: staffData, error: staffErr } = await supabase
+        .from("staff")
+        .select("name, role")
+        .eq("pin", adminPin.trim())
+        .maybeSingle();
 
-        if (staffErr || !staffData || (staffData.role !== "admin" && staffData.role !== "manager")) {
-          setAdminActionLoading(false);
-          setAdminPinError("รหัส PIN ไม่ถูกต้อง หรือไม่มีสิทธิ์ (ต้องเป็น Admin/Manager เท่านั้น)");
-          return;
-        }
-        authorizedName = staffData.name;
+      if (staffErr || !staffData || (staffData.role !== "admin" && staffData.role !== "manager")) {
+        setAdminActionLoading(false);
+        setAdminPinError("รหัส PIN ไม่ถูกต้อง หรือไม่มีสิทธิ์ (ต้องเป็น Admin/Manager เท่านั้น)");
+        return;
       }
+      const authorizedName = staffData.name;
 
       const nowIso = getNow().toISOString();
       const allLocs = sortedLocations.length > 0 ? sortedLocations : ["ซอย1", "ซอย2", "ซามีญ่า"];

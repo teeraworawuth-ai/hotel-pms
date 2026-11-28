@@ -83,15 +83,6 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     setErrorMsg('');
 
     try {
-      // Master Key fallback
-      if (pinInput === '9999') {
-        const masterUser: AuthUser = { id: 'master', name: 'Master Admin', role: 'admin', pin: '9999' };
-        localStorage.setItem('auth_user', JSON.stringify(masterUser));
-        setUser(masterUser);
-        setLoading(false);
-        return;
-      }
-
       const { data, error } = await supabase
         .from('staff')
         .select('id, name, role, pin')
