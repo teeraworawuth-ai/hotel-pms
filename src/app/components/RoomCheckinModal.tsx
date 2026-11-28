@@ -5531,6 +5531,28 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
               )}
 
               <div className="pt-4 border-t border-slate-100 flex flex-col gap-3">
+                {bookingMeta?.guestSignature && (
+                  <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-black text-indigo-950">
+                        ✍️ ลายเซ็นยืนยันเช็คอินของลูกค้า
+                      </span>
+                      {bookingMeta.guestSignedAt && (
+                        <span className="text-[10.5px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded-md border border-indigo-200">
+                          🕒 {new Date(bookingMeta.guestSignedAt).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })} น.
+                        </span>
+                      )}
+                    </div>
+                    <div className="bg-white rounded-lg border border-indigo-100 p-2 flex justify-center">
+                      <img
+                        src={bookingMeta.guestSignature}
+                        alt="ลายเซ็นยืนยันเช็คอินของลูกค้า"
+                        className="max-h-24 object-contain"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {room.status === 'occupied' && (
                   <button 
                     onClick={() => setShowBilling(true)} disabled={loading || !room.booking_id}
@@ -5674,8 +5696,14 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
         const sigModalDueNow = Math.max(0, sigModalGrandTotal - sigModalPaid);
 
         return (
-          <div className="fixed inset-0 z-[100] bg-slate-900/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-            <div className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 my-auto animate-in fade-in zoom-in-95 duration-150">
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[100] bg-slate-900/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 my-auto animate-in fade-in zoom-in-95 duration-150"
+            >
               {/* หัวกระดาษสรุปยอด */}
               <div className="flex items-center justify-between pb-3 border-b border-slate-200">
                 <div>

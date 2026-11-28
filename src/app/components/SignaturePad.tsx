@@ -87,7 +87,15 @@ const SignaturePad = forwardRef<SignaturePadHandle, Props>(function SignaturePad
     <div>
       <div className="flex justify-between items-center mb-1">
         {label && <span className="block text-sm font-bold text-slate-700">{label}</span>}
-        <button type="button" onClick={clear} className="text-xs text-blue-500 underline">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            clear();
+          }}
+          className="text-xs text-blue-500 underline"
+        >
           ลบและเซ็นใหม่
         </button>
       </div>

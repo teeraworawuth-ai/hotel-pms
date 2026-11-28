@@ -5,6 +5,7 @@ import FinancialReportType2View, {
   AuditLogRowItem,
   ManagerBoxEditTarget,
   RowEditMeta,
+  ShiftExpensesEditTarget,
   ShiftSectionData,
   ShiftSummaryEditTarget,
 } from "./FinancialReportType2View";
@@ -230,7 +231,21 @@ export default function DailyReport({
   const [auditEditsMap, setAuditEditsMap] = useState<Record<string, AuditEditEntry>>({});
   const [editingRow, setEditingRow] = useState<AuditLogRowItem | null>(null);
   const [editingShiftSummary, setEditingShiftSummary] = useState<ShiftSummaryEditTarget | null>(null);
+  const [editingShiftExpenses, setEditingShiftExpenses] = useState<ShiftExpensesEditTarget | null>(null);
+  const [shiftExpRows, setShiftExpRows] = useState<{ id?: string; category: string; amount: string }[]>([]);
   const [editingManagerBox, setEditingManagerBox] = useState<ManagerBoxEditTarget | null>(null);
+  const [viewingSignatureRow, setViewingSignatureRow] = useState<AuditLogRowItem | null>(null);
+  const [sigViewLoading, setSigViewLoading] = useState(false);
+  const [sigViewData, setSigViewData] = useState<{
+    guestName?: string;
+    guestPhone?: string;
+    checkInTime?: string;
+    checkOutTime?: string;
+    actualPrice?: number;
+    guestSignature?: string;
+    guestSignedAt?: string;
+    bookingNote?: string;
+  } | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
   const [editPin, setEditPin] = useState("");
@@ -1921,6 +1936,9 @@ export default function DailyReport({
                 checkInLabel: rowCheckInLabel,
                 roomNo,
                 staffName,
+                bookingStaffName: b.staff_name && String(b.staff_name).trim() !== staffName.trim() ? String(b.staff_name).trim() : null,
+                bookingId: b.id,
+                hasGuestSignature: Boolean((bMeta as any)?.guestSignature),
                 roomRate: baseTargetRoomRate || null,
                 isShortStay: isShortStayRow && baseTargetRoomRate > 0,
                 adjust: rowAdjustAmt !== 0 ? rowAdjustAmt : null,
@@ -2828,6 +2846,134 @@ export default function DailyReport({
     }
   };
 
+  const openShiftExpensesEditModal = (target: ShiftExpensesEditTarget) => {
+    setEditingShiftExpenses(target);
+    const initialRows = (target.expenses || []).map((ex: any) => ({
+      id: ex.id,
+      category: String(ex.category || ""),
+      amount: String(Math.abs(Number(ex.amount || 0))),
+    }));
+    setShiftExpRows(initialRows.length > 0 ? initialRows : [{ category: "", amount: "" }]);
+    setEditError("");
+    setEditPin("");
+  };
+
+  const handleSaveShiftExpensesEdit = async () => {
+    if (!editingShiftExpenses || !editingShiftExpenses.sh) return;
+    setEditError("");
+    setEditSaving(true);
+    const editorName = await resolveEditorName();
+    if (!editorName) {
+      setEditSaving(false);
+      return;
+    }
+
+    const t = editingShiftExpenses;
+    const sh = t.sh!;
+    const validRows = shiftExpRows
+      .map((r) => ({
+        id: r.id,
+        category: r.category.trim(),
+        amount: Math.abs(Number(r.amount || 0)),
+      }))
+      .filter((r) => r.category && r.amount > 0);
+
+    const newSum = validRows.reduce((s, r) => s + r.amount, 0);
+    const newNote = validRows.map((r) => r.category).join("/");
+
+    try {
+      const nowIso = new Date().toISOString();
+      // ลบรายการค่าใช้จ่ายเดิมของกะนี้ แล้วบันทึกชุดใหม่เข้าไป
+      await supabase
+        .from("ledger_transactions")
+        .delete()
+        .eq("shift_id", sh.id)
+        .eq("transaction_type", "expense");
+
+      if (validRows.length > 0) {
+        const inserts = validRows.map((r) => ({
+          shift_id: sh.id,
+          staff_name: t.staffName || sh.staff_name,
+          transaction_type: "expense",
+          category: r.category,
+          amount: -r.amount,
+          notes: `แก้ไขรายการค่าใช้จ่ายในรายงานโดย ${editorName}`,
+        }));
+        const { error: insErr } = await supabase.from("ledger_transactions").insert(inserts);
+        if (insErr) throw insErr;
+      }
+
+      const oldDisp =
+        t.expSum > 0
+          ? `${t.expNote ? `(${t.expNote}) ` : ""}-${t.expSum.toLocaleString()} ฿`
+          : "0 ฿";
+      const newDisp =
+        newSum > 0
+          ? `${newNote ? `(${newNote}) ` : ""}-${newSum.toLocaleString()} ฿`
+          : "0 ฿";
+
+      if (oldDisp !== newDisp) {
+        await persistAuditEdits({
+          [`shift_slot_${t.slotIdx}_row7`]: {
+            oldDisplay: oldDisp,
+            newDisplay: newDisp,
+            editorName,
+            editedAt: nowIso,
+          },
+        });
+        await logActivity({
+          category: "shift",
+          action: "update",
+          staffName: editorName,
+          shiftName: t.staffName,
+          target: `แก้ไขข้อ 7 ค่าใช้จ่ายในกะ ${t.staffName} (${businessDateStr})`,
+          details: `ผู้จัดการ/แอดมิน (${editorName}) แก้ไขค่าใช้จ่ายในกะ ${t.staffName} วันที่ ${businessDateStr}: ${oldDisp} -> ${newDisp}`,
+        });
+      }
+
+      setEditingShiftExpenses(null);
+      setRefreshKey((k) => k + 1);
+    } catch (err: any) {
+      setEditError("บันทึกค่าใช้จ่ายไม่สำเร็จ: " + (err?.message || String(err)));
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const openSignatureViewModal = async (row: AuditLogRowItem) => {
+    setViewingSignatureRow(row);
+    setSigViewData(null);
+    if (!row.bookingId) return;
+    setSigViewLoading(true);
+    try {
+      const [{ data: bRow }, { data: metaRow }] = await Promise.all([
+        supabase
+          .from("bookings")
+          .select("guest_name, guest_phone, check_in_time, check_out_time, actual_price")
+          .eq("id", row.bookingId)
+          .maybeSingle(),
+        supabase
+          .from("system_settings")
+          .select("value")
+          .eq("key", `booking_meta_${row.bookingId}`)
+          .maybeSingle(),
+      ]);
+      const meta = (metaRow?.value as any) || {};
+      setSigViewData({
+        guestName: bRow?.guest_name || row.editMeta?.guestName || "ไม่ระบุชื่อ",
+        guestPhone: bRow?.guest_phone || "-",
+        checkInTime: bRow?.check_in_time,
+        checkOutTime: bRow?.check_out_time,
+        actualPrice: Number(bRow?.actual_price ?? row.totalCharge ?? 0),
+        guestSignature: meta?.guestSignature,
+        guestSignedAt: meta?.guestSignedAt,
+        bookingNote: meta?.bookingNote,
+      });
+    } finally {
+      setSigViewLoading(false);
+    }
+  };
+
   const openManagerBoxEditModal = (target: ManagerBoxEditTarget) => {
     setEditingManagerBox(target);
     setMgrEditBrought(String(target.mgrBrought || 0));
@@ -2949,7 +3095,9 @@ export default function DailyReport({
         canEditReport={currentUser?.role !== "executive"}
         auditEdits={auditEditsMap}
         onClickEditRow={openRowEditModal}
+        onClickViewSignature={openSignatureViewModal}
         onClickEditShiftSummary={openShiftSummaryEditModal}
+        onClickEditShiftExpenses={openShiftExpensesEditModal}
         onClickEditManagerBox={openManagerBoxEditModal}
       />
 
@@ -3669,6 +3817,225 @@ export default function DailyReport({
         locations={availableLocations}
         bankAccounts={bankAccounts}
       />
+
+      {/* ===================== Modal 4: แก้ไขข้อ 7 ค่าใช้จ่ายในกะโดยตรง (เพิ่มได้หลายรายการ) ===================== */}
+      {editingShiftExpenses && (() => {
+        const t = editingShiftExpenses;
+        const currSum = shiftExpRows.reduce((s, r) => s + (r.category.trim() ? Math.abs(Number(r.amount || 0)) : 0), 0);
+        return (
+          <div className="fixed inset-0 z-[130] bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-3">
+            <div className="bg-white rounded-2xl w-full max-w-md max-h-[92vh] overflow-y-auto shadow-2xl border border-slate-200">
+              <div className="px-4 py-3 bg-slate-900 text-white flex items-center justify-between">
+                <div>
+                  <h3 className="font-black text-sm sm:text-base">
+                    ✏️ แก้ไขข้อ 7: ค่าใช้จ่ายในกะ ({t.staffName})
+                  </h3>
+                  <p className="text-[11px] text-slate-300 mt-0.5">
+                    ช่วงเวลา: {t.timeRange} • วันที่ {businessDateStr}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingShiftExpenses(null)}
+                  className="text-slate-400 hover:text-white text-lg font-black px-2 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="p-4 space-y-3 text-xs">
+                {editError && (
+                  <div className="bg-rose-50 border border-rose-200 text-rose-700 p-2.5 rounded-xl font-bold">
+                    {editError}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  {shiftExpRows.map((row, rIdx) => (
+                    <div key={rIdx} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={row.category}
+                        onChange={(e) =>
+                          setShiftExpRows((prev) =>
+                            prev.map((item, i) => (i === rIdx ? { ...item, category: e.target.value } : item))
+                          )
+                        }
+                        placeholder={`รายการที่ ${rIdx + 1} (เช่น ค่าน้ำแข็ง)`}
+                        className="flex-1 p-2 rounded-xl border border-slate-300 font-bold text-slate-900 focus:border-amber-500 outline-none"
+                      />
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={row.amount}
+                        onChange={(e) =>
+                          setShiftExpRows((prev) =>
+                            prev.map((item, i) => (i === rIdx ? { ...item, amount: e.target.value } : item))
+                          )
+                        }
+                        placeholder="฿"
+                        className="w-24 p-2 rounded-xl border border-slate-300 font-black text-rose-700 text-right focus:border-amber-500 outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShiftExpRows((prev) =>
+                            prev.length > 1 ? prev.filter((_, i) => i !== rIdx) : [{ category: "", amount: "" }]
+                          )
+                        }
+                        className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-black cursor-pointer"
+                        title="ลบรายการนี้"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShiftExpRows((prev) => [...prev, { category: "", amount: "" }])}
+                  className="w-full py-2 rounded-xl border-2 border-dashed border-amber-300 bg-amber-50/50 hover:bg-amber-100/70 text-amber-900 font-black cursor-pointer"
+                >
+                  ➕ เพิ่มรายการค่าใช้จ่าย
+                </button>
+
+                <div className="bg-rose-50/70 border border-rose-200 rounded-xl p-2.5 flex items-center justify-between">
+                  <span className="font-bold text-rose-950">ยอดรวมค่าใช้จ่ายในกะ (ข้อ 7):</span>
+                  <b className="text-sm font-black text-rose-700">-{currSum.toLocaleString()} ฿</b>
+                </div>
+
+                {!isManagerOrAdminLoggedIn && (
+                  <div className="pt-2 border-t border-slate-200">
+                    <label className="block font-bold text-slate-700 mb-1">รหัส PIN ผู้จัดการ / แอดมิน</label>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={editPin}
+                      onChange={(e) => setEditPin(e.target.value.replace(/\D/g, ""))}
+                      placeholder="••••"
+                      className="w-full text-center tracking-[0.4em] text-base p-2 rounded-xl border border-slate-300"
+                    />
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingShiftExpenses(null)}
+                    className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold cursor-pointer"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="button"
+                    disabled={editSaving}
+                    onClick={handleSaveShiftExpensesEdit}
+                    className="flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black disabled:opacity-50 cursor-pointer"
+                  >
+                    {editSaving ? "กำลังบันทึก..." : "💾 บันทึกค่าใช้จ่าย"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ===================== Modal 5: ดูใบยืนยันเช็คอิน & ลายเซ็นดิจิทัลของลูกค้า ===================== */}
+      {viewingSignatureRow && (
+        <div
+          onClick={() => setViewingSignatureRow(null)}
+          className="fixed inset-0 z-[130] bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-3"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl w-full max-w-md max-h-[92vh] overflow-y-auto shadow-2xl border border-slate-200"
+          >
+            <div className="px-4 py-3 bg-indigo-950 text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-black text-sm sm:text-base">
+                  ✍️ ใบยืนยันเช็คอิน & ลายเซ็นลูกค้า
+                </h3>
+                <p className="text-[11px] text-indigo-200 mt-0.5">
+                  ห้อง {viewingSignatureRow.roomNo} • พนักงาน: {viewingSignatureRow.staffName}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingSignatureRow(null)}
+                className="text-indigo-200 hover:text-white text-lg font-black px-2 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 text-xs">
+              {sigViewLoading ? (
+                <div className="py-8 text-center text-slate-500 font-bold">กำลังโหลดข้อมูลลายเซ็น...</div>
+              ) : (
+                <>
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1.5">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 font-semibold">ผู้เข้าพัก:</span>
+                      <span className="font-black text-slate-900">
+                        {sigViewData?.guestName || viewingSignatureRow.editMeta?.guestName || "ไม่ระบุชื่อ"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 font-semibold">เบอร์โทร:</span>
+                      <span className="font-bold text-slate-700">{sigViewData?.guestPhone || "-"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 font-semibold">เวลาเช็คอิน:</span>
+                      <span className="font-bold text-slate-800">{viewingSignatureRow.checkInLabel}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 font-semibold">ยอดค่าใช้จ่ายสุทธิในรอบนี้:</span>
+                      <span className="font-black text-indigo-700">
+                        ฿{Number(viewingSignatureRow.totalCharge || sigViewData?.actualPrice || 0).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-black text-indigo-950">ลายเซ็นดิจิทัลของลูกค้า</span>
+                      {sigViewData?.guestSignedAt && (
+                        <span className="text-[10.5px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200">
+                          🕒 {new Date(sigViewData.guestSignedAt).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })} น.
+                        </span>
+                      )}
+                    </div>
+                    {sigViewData?.guestSignature ? (
+                      <div className="bg-white rounded-lg border border-indigo-100 p-2 flex justify-center">
+                        <img
+                          src={sigViewData.guestSignature}
+                          alt="ลายเซ็นยืนยันเช็คอินของลูกค้า"
+                          className="max-h-32 object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="bg-white rounded-lg border border-dashed border-rose-300 p-4 text-center text-rose-600 font-bold">
+                        * ยังไม่มีลายเซ็นดิจิทัล (ลูกค้ากดข้ามการเซ็น หรือเป็นรายการก่อนเปิดใช้งาน)
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setViewingSignatureRow(null)}
+                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-black cursor-pointer"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

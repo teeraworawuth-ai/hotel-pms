@@ -43,6 +43,9 @@ export type AuditLogRowItem = {
   checkInLabel: React.ReactNode;
   roomNo: string;
   staffName: string;
+  bookingStaffName?: string | null;
+  bookingId?: string;
+  hasGuestSignature?: boolean;
   // For checkin / anomaly rows (5 charge columns)
   roomRate?: number | null;
   isShortStay?: boolean;
@@ -152,6 +155,16 @@ export type ShiftSummaryEditTarget = {
   closeHandoverObj: CashHandover | null;
 };
 
+export type ShiftExpensesEditTarget = {
+  slotIdx: 0 | 1 | 2;
+  sh?: Shift;
+  staffName: string;
+  timeRange: string;
+  expenses: any[];
+  expSum: number;
+  expNote: string;
+};
+
 export type ManagerBoxEditTarget = {
   boxType: "box1" | "box3" | "box4";
   mgrBrought: number;
@@ -181,7 +194,9 @@ type Props = {
   canEditReport?: boolean;
   auditEdits?: Record<string, AuditEditEntry>;
   onClickEditRow?: (row: AuditLogRowItem) => void;
+  onClickViewSignature?: (row: AuditLogRowItem) => void;
   onClickEditShiftSummary?: (target: ShiftSummaryEditTarget) => void;
+  onClickEditShiftExpenses?: (target: ShiftExpensesEditTarget) => void;
   onClickEditManagerBox?: (target: ManagerBoxEditTarget) => void;
 };
 
@@ -943,7 +958,9 @@ export default function FinancialReportType2View({
   canEditReport = false,
   auditEdits = {},
   onClickEditRow,
+  onClickViewSignature,
   onClickEditShiftSummary,
+  onClickEditShiftExpenses,
   onClickEditManagerBox,
 }: Props) {
   const [rowFilter, setRowFilter] = useState<"all" | "checkin" | "anomaly" | "booking">("all");
@@ -2060,7 +2077,7 @@ export default function FinancialReportType2View({
         <div className="no-print mb-2 px-2.5 py-1.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-950 text-[11px] font-bold flex items-center justify-between gap-2 shadow-2xs">
           <span>
             ✏️ โหมดแก้ไขรายงานการเงินโดยตรง (ผู้จัดการ/แอดมิน): แตะที่ <b>แถวรายการห้องพัก</b>,{" "}
-            <b>ช่องสรุปกะ (ข้อ 6, 11, 12, 13)</b> หรือ <b>กล่องผู้จัดการ (1, 3, 4)</b> เพื่อแก้ไขข้อมูลด่วน
+            <b>ช่องสรุปกะ (ข้อ 6, 7, 11, 12, 13)</b> หรือ <b>กล่องผู้จัดการ (1, 3, 4)</b> เพื่อแก้ไขข้อมูลด่วน (แตะที่ <b>เวลาเช็คอิน</b> เพื่อดูลายเซ็นลูกค้า)
           </span>
         </div>
       )}
@@ -2774,13 +2791,34 @@ export default function FinancialReportType2View({
                     <td className="border border-slate-300 px-1.5 py-0.5 font-bold text-slate-800">
                       7. หัก ค่าใช้จ่ายในกะ (-)
                     </td>
-                    {[liveS1, liveS2, liveS3].map((s, i) => (
+                    {[liveS1, liveS2, liveS3].map((s, i) => {
+                      const shExpensesForSlot = s.sh ? safeExpenses.filter((e) => e.shift_id === s.sh?.id) : [];
+                      return (
                       <td
                         key={i}
+                        onClick={() =>
+                          canEditReport &&
+                          !isProto &&
+                          s.hasShift &&
+                          onClickEditShiftExpenses?.({
+                            slotIdx: i as 0 | 1 | 2,
+                            sh: s.sh,
+                            staffName: s.staffName,
+                            timeRange: s.timeRange,
+                            expenses: shExpensesForSlot,
+                            expSum: s.expSum,
+                            expNote: s.expNote,
+                          })
+                        }
                         className={`border border-slate-300 px-1.5 py-0.5 text-right ${
                           s.expSum > 0 ? "bg-amber-50/70" : "text-slate-400"
+                        } ${
+                          canEditReport && !isProto && s.hasShift
+                            ? "cursor-pointer hover:bg-amber-100/80 hover:ring-1 hover:ring-amber-400"
+                            : ""
                         }`}
                       >
+                        {renderAuditTrail(`shift_slot_${i}_row7`)}
                         {s.expSum > 0 ? (
                           <>
                             {s.expNote && (
@@ -2792,7 +2830,8 @@ export default function FinancialReportType2View({
                           ""
                         )}
                       </td>
-                    ))}
+                      );
+                    })}
                     <td className="border border-slate-300 px-1 py-0.5 text-right bg-slate-50 font-bold text-rose-700">
                       {liveInExpTotal > 0 ? `-${fmtNum(liveInExpTotal)} ฿` : "0 ฿"}
                     </td>
@@ -3760,11 +3799,26 @@ export default function FinancialReportType2View({
                               {r.rowNo}
                             </td>
                             <td
+                              onClick={(e) => {
+                                if (!isProto && onClickViewSignature) {
+                                  e.stopPropagation();
+                                  onClickViewSignature(r);
+                                }
+                              }}
+                              title={!isProto ? "แตะเพื่อดูใบยืนยันเช็คอินและลายเซ็นดิจิทัลของลูกค้า" : undefined}
                               className={`text-center ${
                                 r.isDebtCollection ? "font-bold text-emerald-800" : ""
-                              }`}
+                              } ${!isProto && onClickViewSignature ? "cursor-pointer hover:underline" : ""}`}
                             >
                               {r.checkInLabel}
+                              {r.kind === "checkin" && !r.isDebtCollection && r.hasGuestSignature === false && (
+                                <span
+                                  className="text-rose-600 font-black ml-[0.5px]"
+                                  title="ลูกค้ายังไม่ได้ลงลายเซ็นยืนยันเช็คอิน (กดข้ามหรือรายการก่อนเปิดใช้งาน)"
+                                >
+                                  *
+                                </span>
+                              )}
                             </td>
                             <td
                               className={`text-center font-black ${
@@ -3773,7 +3827,16 @@ export default function FinancialReportType2View({
                             >
                               {r.roomNo}
                             </td>
-                            <td className="text-center boundary-col-1-prev">{r.staffName}</td>
+                            <td className="text-center boundary-col-1-prev">
+                              {r.bookingStaffName && r.bookingStaffName !== r.staffName ? (
+                                <div className="flex flex-col items-center justify-center leading-[1.02] text-[5.8px]">
+                                  <span className="text-slate-500">{r.bookingStaffName} •</span>
+                                  <span className="font-bold text-slate-800">{r.staffName}</span>
+                                </div>
+                              ) : (
+                                r.staffName
+                              )}
+                            </td>
                             <td
                               className={`${
                                 r.roomRate || auditEdits[`row_${r.id}_roomRate`]

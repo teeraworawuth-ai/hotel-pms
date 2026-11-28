@@ -56,6 +56,7 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
   const [openCashConfirmed, setOpenCashConfirmed] = useState<boolean>(false);
   const [openCashMode, setOpenCashMode] = useState<"matched" | "custom">("matched");
   const [errorMsg, setErrorMsg] = useState("");
+  const preselectedLocRef = useRef<string | null>(null);
 
   // Close Shift State
   const [closeLoading, setCloseLoading] = useState(false);
@@ -101,6 +102,12 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
     if (!showOpenModal) return;
     const defaultName = name || currentUser?.name || "";
     if (!name && currentUser?.name) setName(currentUser.name);
+
+    if (preselectedLocRef.current) {
+      setShiftLocation(preselectedLocRef.current);
+      preselectedLocRef.current = null;
+      return;
+    }
 
     if (currentUser?.role === "staff" && staffPrimaryLocation) {
       setShiftLocation(staffPrimaryLocation);
@@ -681,18 +688,45 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
               </>
             )}
           </div>
-          {isMgr && openShifts.length > 1 && (
+          {isMgr && (
             <select
               value={activeShift.id}
-              onChange={(e) => switchActiveShift(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val.startsWith("OPEN_LOC:")) {
+                  const targetLoc = val.replace("OPEN_LOC:", "");
+                  preselectedLocRef.current = targetLoc;
+                  setShiftLocation(targetLoc);
+                  setShowOpenModal(true);
+                } else {
+                  switchActiveShift(val);
+                }
+              }}
               className="border border-indigo-200 bg-indigo-50 text-indigo-800 rounded-lg px-1.5 py-1 text-[10.5px] font-bold outline-none"
-              title="สลับกะที่กำลังเปิดอยู่"
+              title="สลับสาขา/กะที่กำลังทำงาน หรือเลือกสาขาที่ยังไม่เปิดกะเพื่อเปิดกะทันที"
             >
-              {openShifts.map((s) => (
-                <option key={s.id} value={s.id}>
-                  📍{s.shift_location || "-"} ({s.staff_name})
-                </option>
-              ))}
+              {availableLocations.map((loc) => {
+                const openSh = openShifts.find((s) => s.shift_location === loc);
+                if (openSh) {
+                  return (
+                    <option key={openSh.id} value={openSh.id}>
+                      📍{loc} ({openSh.staff_name})
+                    </option>
+                  );
+                }
+                return (
+                  <option key={`open_${loc}`} value={`OPEN_LOC:${loc}`}>
+                    📍{loc} (ยังไม่เปิดกะ — กดเปิดกะ)
+                  </option>
+                );
+              })}
+              {openShifts
+                .filter((s) => !s.shift_location || !availableLocations.includes(s.shift_location))
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    📍{s.shift_location || "-"} ({s.staff_name})
+                  </option>
+                ))}
             </select>
           )}
           {isMgr && openShifts.length < availableLocations.length && (
@@ -743,18 +777,45 @@ export default function ShiftManager({ compact = false, hideExpense = false }: S
               </div>
             )}
           </div>
-          {isMgr && openShifts.length > 1 && (
+          {isMgr && (
             <select
               value={activeShift.id}
-              onChange={(e) => switchActiveShift(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val.startsWith("OPEN_LOC:")) {
+                  const targetLoc = val.replace("OPEN_LOC:", "");
+                  preselectedLocRef.current = targetLoc;
+                  setShiftLocation(targetLoc);
+                  setShowOpenModal(true);
+                } else {
+                  switchActiveShift(val);
+                }
+              }}
               className="border border-indigo-200 bg-indigo-50 text-indigo-800 rounded-full px-2.5 py-1 text-xs font-bold outline-none"
-              title="สลับกะที่กำลังเปิดอยู่"
+              title="สลับสาขา/กะที่กำลังทำงาน หรือเลือกสาขาที่ยังไม่เปิดกะเพื่อเปิดกะทันที"
             >
-              {openShifts.map((s) => (
-                <option key={s.id} value={s.id}>
-                  📍{s.shift_location || "-"} ({s.staff_name})
-                </option>
-              ))}
+              {availableLocations.map((loc) => {
+                const openSh = openShifts.find((s) => s.shift_location === loc);
+                if (openSh) {
+                  return (
+                    <option key={openSh.id} value={openSh.id}>
+                      📍{loc} ({openSh.staff_name})
+                    </option>
+                  );
+                }
+                return (
+                  <option key={`open_${loc}`} value={`OPEN_LOC:${loc}`}>
+                    📍{loc} (ยังไม่เปิดกะ — กดเปิดกะ)
+                  </option>
+                );
+              })}
+              {openShifts
+                .filter((s) => !s.shift_location || !availableLocations.includes(s.shift_location))
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    📍{s.shift_location || "-"} ({s.staff_name})
+                  </option>
+                ))}
             </select>
           )}
           {isRealShift && (
