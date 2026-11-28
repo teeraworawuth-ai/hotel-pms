@@ -55,22 +55,22 @@ export default function Navbar() {
   }
 
   return (
-    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs no-print print:hidden">
-      <div className="max-w-[1600px] mx-auto px-3 sm:px-5 lg:px-6">
-        <div className="flex justify-between items-center h-14 gap-3">
+    <header className="sticky top-0 z-50 glass border-b border-white/20 no-print print:hidden">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="flex justify-between items-center h-11 sm:h-14">
           {/* Logo */}
           <div className="flex-shrink-0 flex items-center">
             <Link
               href="/"
-              className="text-base sm:text-lg font-black text-slate-800 flex items-center whitespace-nowrap tracking-tight"
+              className="text-base sm:text-xl font-bold text-slate-800 flex items-center"
               onClick={() => setIsOpen(false)}
             >
-              ⚡ Hotel PMS <span className="ml-1.5 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black tracking-wider leading-none">v3.4</span>
+              ⚡ Hotel PMS <span className="ml-1.5 sm:ml-2 px-1.5 sm:px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] sm:text-[10px] font-black tracking-widest leading-none">v3.4</span>
             </Link>
           </div>
 
           {/* Desktop Menu */}
-          <nav className="hidden md:flex items-center gap-1 bg-slate-100/80 p-1 rounded-xl border border-slate-200/70 overflow-x-auto no-scrollbar">
+          <nav className="hidden md:flex space-x-5 text-sm">
             {navLinks.filter((link) => {
               if (userRole === "executive") {
                 return link.href === "/" || link.href === "/audit" || link.href === "/checkin";
@@ -88,10 +88,10 @@ export default function Navbar() {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs lg:text-[13px] font-bold whitespace-nowrap transition-all ${
+                  className={`font-medium transition-colors ${
                     isActive
-                      ? "bg-white text-blue-700 shadow-xs border border-blue-200/80"
-                      : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+                      ? "text-blue-600 border-b-2 border-blue-600"
+                      : "text-slate-600 hover:text-blue-600"
                   }`}
                 >
                   {link.label}
@@ -100,15 +100,15 @@ export default function Navbar() {
             })}
           </nav>
           
-          <div className="hidden md:flex items-center flex-shrink-0 gap-2">
+          <div className="hidden md:flex items-center ml-auto">
             {userRole === "executive" ? (
-              <span className="px-2.5 py-1 rounded-lg bg-purple-100 text-purple-900 border border-purple-300 text-xs font-black whitespace-nowrap">
+              <span className="px-2.5 py-1 rounded-lg bg-purple-100 text-purple-900 border border-purple-300 text-xs font-black">
                 👁️ ผู้บริหาร (ดูได้ 3 หน้า • ห้ามแก้ไข)
               </span>
             ) : (
               userRole !== "staff" && <ShiftManager />
             )}
-            <button onClick={handleLogout} className="text-red-600 font-bold text-xs px-2.5 py-1.5 rounded-lg border border-red-200 bg-red-50/70 hover:bg-red-100 transition-colors whitespace-nowrap">🚪 Logout</button>
+            <button onClick={handleLogout} className="text-red-600 font-bold text-xs ml-3 px-2.5 py-1.5 rounded-lg border border-red-200 bg-red-50/60 hover:bg-red-100 transition-colors">🚪 Logout</button>
           </div>
 
           {/* Mobile Menu & Quick Logout Button */}
