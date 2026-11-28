@@ -1454,6 +1454,36 @@ export default function FinancialReportType2View({
     },
   ].filter((item) => item.amount > 0);
 
+  // ตัวช่วยจัดรูปแบบวันที่และเวลาสำหรับการเซ็นรับ/ส่งมอบเงิน
+  const formatSignTime = (isoString?: string | null) => {
+    if (!isoString) return null;
+    try {
+      const d = new Date(isoString);
+      if (isNaN(d.getTime())) return null;
+      const day = d.getDate();
+      const monthNames = [
+        "ม.ค.",
+        "ก.พ.",
+        "มี.ค.",
+        "เม.ย.",
+        "พ.ค.",
+        "มิ.ย.",
+        "ก.ค.",
+        "ส.ค.",
+        "ก.ย.",
+        "ต.ค.",
+        "พ.ย.",
+        "ธ.ค.",
+      ];
+      const month = monthNames[d.getMonth()];
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      return `${day} ${month} ${hh}:${mm} น.`;
+    } catch {
+      return null;
+    }
+  };
+
   // ตัวช่วยแสดงลายเซ็นในโหมด Live / Prototype
   const renderLiveSignatureCell = (
     h: CashHandover | null,
@@ -1462,7 +1492,7 @@ export default function FinancialReportType2View({
   ) => {
     if (!h) {
       return (
-        <div className="flex items-center h-[23px] w-full text-center justify-center">
+        <div className="flex items-center min-h-[25px] w-full text-center justify-center">
           <span className="text-[8.5px] font-bold text-slate-400 italic">ไม่มีการส่งมอบ (-)</span>
         </div>
       );
@@ -1471,8 +1501,10 @@ export default function FinancialReportType2View({
     const amt = Math.abs(Number(h.actual_amount || h.required_amount || 0));
     const senderName = isNeg ? h.manager_name || "ผู้จัดการ" : h.staff_name || h.shift_staff_name;
     const senderSig = isNeg ? h.manager_signature : h.staff_signature;
+    const senderTime = formatSignTime(isNeg ? h.manager_signed_at : (h.staff_signed_at || h.created_at));
     const receiverName = isNeg ? h.staff_name || h.shift_staff_name : h.manager_name;
     const receiverSig = isNeg ? h.staff_signature : h.manager_signature;
+    const receiverTime = formatSignTime(isNeg ? (h.staff_signed_at || h.created_at) : h.manager_signed_at);
     const borderCol =
       theme === "amber"
         ? "border-amber-300"
@@ -1483,12 +1515,17 @@ export default function FinancialReportType2View({
         : "border-blue-300";
 
     return (
-      <div className="flex items-center h-[23px] w-full">
-        <div className="flex-1 text-center flex items-center justify-center overflow-hidden">
+      <div className="flex items-center min-h-[25px] py-0.5 w-full">
+        <div className="flex-1 text-center flex flex-col items-center justify-center overflow-hidden px-0.5">
           {senderSig ? (
-            <img src={senderSig} alt={senderName} className="h-[20px] object-contain" />
+            <img src={senderSig} alt={senderName} className="h-[18px] max-w-full object-contain" />
           ) : (
-            <span className="sig-canvas text-[12px]">{senderName || "-"}</span>
+            <span className="sig-canvas text-[11px] leading-tight truncate">{senderName || "-"}</span>
+          )}
+          {senderTime && (
+            <span className="text-[6.2px] font-semibold text-slate-500 leading-none mt-0.5 whitespace-nowrap">
+              {senderTime}
+            </span>
           )}
         </div>
         <div className={`w-[38px] shrink-0 border-x ${borderCol} text-center flex flex-col justify-center items-center px-0.5`}>
@@ -1497,11 +1534,11 @@ export default function FinancialReportType2View({
           </span>
           <span className="text-[6.5px] font-bold text-slate-600 leading-none mt-0.5">{subLabel}</span>
         </div>
-        <div className="flex-1 text-center flex items-center justify-center overflow-hidden">
+        <div className="flex-1 text-center flex flex-col items-center justify-center overflow-hidden px-0.5">
           {receiverSig ? (
-            <img src={receiverSig} alt={receiverName || ""} className="h-[20px] object-contain" />
+            <img src={receiverSig} alt={receiverName || ""} className="h-[18px] max-w-full object-contain" />
           ) : receiverName ? (
-            <span className="sig-canvas text-[12px] text-amber-900">{receiverName}</span>
+            <span className="sig-canvas text-[11px] text-amber-900 leading-tight truncate">{receiverName}</span>
           ) : onRequestManagerSign ? (
             <button
               type="button"
@@ -1512,6 +1549,11 @@ export default function FinancialReportType2View({
             </button>
           ) : (
             <span className="text-[7.5px] text-amber-700 font-bold">รอผู้จัดการเซ็น</span>
+          )}
+          {receiverTime && (
+            <span className="text-[6.2px] font-semibold text-slate-500 leading-none mt-0.5 whitespace-nowrap">
+              {receiverTime}
+            </span>
           )}
         </div>
       </div>
@@ -2452,9 +2494,10 @@ export default function FinancialReportType2View({
                       </div>
                     </td>
                     <td className="border border-slate-300 px-1 py-0.5 bg-amber-50/50">
-                      <div className="flex items-center h-[23px] w-full">
-                        <div className="flex-1 text-center flex items-center justify-center overflow-hidden">
-                          <span className="sig-canvas text-[13px]">Ann T.</span>
+                      <div className="flex items-center min-h-[25px] py-0.5 w-full">
+                        <div className="flex-1 text-center flex flex-col items-center justify-center overflow-hidden px-0.5">
+                          <span className="sig-canvas text-[11px] leading-tight">Ann T.</span>
+                          <span className="text-[6.2px] font-semibold text-slate-500 leading-none mt-0.5">27 พ.ย. 14:10 น.</span>
                         </div>
                         <div className="w-[38px] shrink-0 border-x border-amber-300 text-center flex flex-col justify-center items-center px-0.5">
                           <span className="font-black text-amber-950 text-[8.2px] leading-tight whitespace-nowrap">
@@ -2462,13 +2505,14 @@ export default function FinancialReportType2View({
                           </span>
                           <span className="text-[6.5px] font-bold text-amber-800 leading-none mt-0.5">(เก็บ)</span>
                         </div>
-                        <div className="flex-1 text-center flex items-center justify-center overflow-hidden">
-                          <span className="sig-canvas text-[13px] text-amber-900">Monthira K.</span>
+                        <div className="flex-1 text-center flex flex-col items-center justify-center overflow-hidden px-0.5">
+                          <span className="sig-canvas text-[11px] text-amber-900 leading-tight">Monthira K.</span>
+                          <span className="text-[6.2px] font-semibold text-slate-500 leading-none mt-0.5">27 พ.ย. 14:15 น.</span>
                         </div>
                       </div>
                     </td>
                     <td className="border border-slate-300 px-1 py-0.5 bg-slate-50 text-slate-400">
-                      <div className="flex items-center h-[23px] w-full text-center justify-center">
+                      <div className="flex items-center min-h-[25px] w-full text-center justify-center">
                         <span className="text-[8.5px] font-bold text-slate-400 italic">ไม่มีการส่งมอบ (-)</span>
                       </div>
                     </td>
@@ -2484,14 +2528,15 @@ export default function FinancialReportType2View({
                       <span className="font-black text-rose-950 text-[9.8px]">(12) ลายเซ็น ส่งเงินปิดกะ</span>
                     </td>
                     <td className="border border-slate-300 px-1 py-0.5 bg-slate-50 text-slate-400">
-                      <div className="flex items-center h-[23px] w-full text-center justify-center">
+                      <div className="flex items-center min-h-[25px] w-full text-center justify-center">
                         <span className="text-[8.5px] font-bold text-slate-400 italic">ไม่มีการส่งมอบ (-)</span>
                       </div>
                     </td>
                     <td className="border border-slate-300 px-1 py-0.5 bg-rose-50/50">
-                      <div className="flex items-center h-[23px] w-full">
-                        <div className="flex-1 text-center flex items-center justify-center overflow-hidden">
-                          <span className="sig-canvas text-[13px]">Ann T.</span>
+                      <div className="flex items-center min-h-[25px] py-0.5 w-full">
+                        <div className="flex-1 text-center flex flex-col items-center justify-center overflow-hidden px-0.5">
+                          <span className="sig-canvas text-[11px] leading-tight">Ann T.</span>
+                          <span className="text-[6.2px] font-semibold text-slate-500 leading-none mt-0.5">27 พ.ย. 15:02 น.</span>
                         </div>
                         <div className="w-[38px] shrink-0 border-x border-rose-300 text-center flex flex-col justify-center items-center px-0.5">
                           <span className="font-black text-rose-900 text-[8.2px] leading-tight whitespace-nowrap">
@@ -2499,15 +2544,17 @@ export default function FinancialReportType2View({
                           </span>
                           <span className="text-[6.5px] font-bold text-rose-700 leading-none mt-0.5">(เก็บ)</span>
                         </div>
-                        <div className="flex-1 text-center flex items-center justify-center overflow-hidden">
-                          <span className="sig-canvas text-[13px] text-rose-900">Monthira K.</span>
+                        <div className="flex-1 text-center flex flex-col items-center justify-center overflow-hidden px-0.5">
+                          <span className="sig-canvas text-[11px] text-rose-900 leading-tight">Monthira K.</span>
+                          <span className="text-[6.2px] font-semibold text-slate-500 leading-none mt-0.5">27 พ.ย. 15:05 น.</span>
                         </div>
                       </div>
                     </td>
                     <td className="border border-slate-300 px-1 py-0.5 bg-emerald-50/50">
-                      <div className="flex items-center h-[23px] w-full">
-                        <div className="flex-1 text-center flex items-center justify-center overflow-hidden">
-                          <span className="sig-canvas text-[13px] text-slate-700">Monthira K.</span>
+                      <div className="flex items-center min-h-[25px] py-0.5 w-full">
+                        <div className="flex-1 text-center flex flex-col items-center justify-center overflow-hidden px-0.5">
+                          <span className="sig-canvas text-[11px] text-slate-700 leading-tight">Monthira K.</span>
+                          <span className="text-[6.2px] font-semibold text-slate-500 leading-none mt-0.5">27 พ.ย. 23:05 น.</span>
                         </div>
                         <div className="w-[38px] shrink-0 border-x border-emerald-300 text-center flex flex-col justify-center items-center px-0.5">
                           <span className="font-black text-emerald-800 text-[8.2px] leading-tight whitespace-nowrap">
@@ -2515,8 +2562,9 @@ export default function FinancialReportType2View({
                           </span>
                           <span className="text-[6.5px] font-bold text-emerald-700 leading-none mt-0.5">(เบิก)</span>
                         </div>
-                        <div className="flex-1 text-center flex items-center justify-center overflow-hidden">
-                          <span className="sig-canvas text-[13px] text-emerald-900">Bee S.</span>
+                        <div className="flex-1 text-center flex flex-col items-center justify-center overflow-hidden px-0.5">
+                          <span className="sig-canvas text-[11px] text-emerald-900 leading-tight">Bee S.</span>
+                          <span className="text-[6.2px] font-semibold text-slate-500 leading-none mt-0.5">27 พ.ย. 23:10 น.</span>
                         </div>
                       </div>
                     </td>
@@ -2534,9 +2582,10 @@ export default function FinancialReportType2View({
                       </span>
                     </td>
                     <td className="border border-slate-300 px-1 py-0.5 bg-amber-50/60">
-                      <div className="flex items-center h-[23px] w-full">
-                        <div className="flex-1 text-center flex items-center justify-center overflow-hidden">
-                          <span className="sig-canvas text-[13px]">May P.</span>
+                      <div className="flex items-center min-h-[25px] py-0.5 w-full">
+                        <div className="flex-1 text-center flex flex-col items-center justify-center overflow-hidden px-0.5">
+                          <span className="sig-canvas text-[11px] leading-tight">May P.</span>
+                          <span className="text-[6.2px] font-semibold text-slate-500 leading-none mt-0.5">27 พ.ย. 07:00 น.</span>
                         </div>
                         <div className="w-[38px] shrink-0 border-x border-amber-300 text-center flex flex-col justify-center items-center px-0.5">
                           <span className="font-black text-emerald-700 text-[8.2px] leading-tight whitespace-nowrap">
@@ -2544,8 +2593,9 @@ export default function FinancialReportType2View({
                           </span>
                           <span className="text-[6.5px] font-bold text-slate-500 leading-none mt-0.5">(ส่งต่อ)</span>
                         </div>
-                        <div className="flex-1 text-center flex items-center justify-center overflow-hidden">
-                          <span className="sig-canvas text-[13px] text-amber-900">Ann T.</span>
+                        <div className="flex-1 text-center flex flex-col items-center justify-center overflow-hidden px-0.5">
+                          <span className="sig-canvas text-[11px] text-amber-900 leading-tight">Ann T.</span>
+                          <span className="text-[6.2px] font-semibold text-slate-500 leading-none mt-0.5">27 พ.ย. 07:05 น.</span>
                         </div>
                       </div>
                     </td>
@@ -3085,7 +3135,17 @@ export default function FinancialReportType2View({
                     </td>
                     {[liveS1, liveS2, liveS3].map((s, i) => {
                       const nextStaff =
-                        i === 0 ? liveS2.staffName : i === 1 ? liveS3.staffName : "-";
+                        s.closeHandoverObj?.next_shift_receiver_name ||
+                        (i === 0 ? liveS2.staffName : i === 1 ? liveS3.staffName : "-");
+                      const senderSig = s.closeHandoverObj?.staff_signature;
+                      const senderTime = formatSignTime(
+                        s.closeHandoverObj?.staff_signed_at || s.closeHandoverObj?.created_at
+                      );
+                      const receiverSig = s.closeHandoverObj?.next_shift_receiver_signature;
+                      const receiverTime = formatSignTime(
+                        s.closeHandoverObj?.next_shift_receiver_signed_at
+                      );
+
                       return (
                         <td
                           key={i}
@@ -3094,9 +3154,24 @@ export default function FinancialReportType2View({
                           }`}
                         >
                           {s.carriedOut > 0 ? (
-                            <div className="flex items-center h-[23px] w-full">
-                              <div className="flex-1 text-center flex items-center justify-center overflow-hidden">
-                                <span className="sig-canvas text-[12px]">{s.staffName}</span>
+                            <div className="flex items-center min-h-[25px] py-0.5 w-full">
+                              <div className="flex-1 text-center flex flex-col items-center justify-center overflow-hidden px-0.5">
+                                {senderSig ? (
+                                  <img
+                                    src={senderSig}
+                                    alt={s.staffName}
+                                    className="h-[18px] max-w-full object-contain"
+                                  />
+                                ) : (
+                                  <span className="sig-canvas text-[11px] leading-tight truncate">
+                                    {s.staffName}
+                                  </span>
+                                )}
+                                {senderTime && (
+                                  <span className="text-[6.2px] font-semibold text-slate-500 leading-none mt-0.5 whitespace-nowrap">
+                                    {senderTime}
+                                  </span>
+                                )}
                               </div>
                               <div className="w-[38px] shrink-0 border-x border-amber-300 text-center flex flex-col justify-center items-center px-0.5">
                                 <span className="font-black text-emerald-700 text-[8.2px] leading-tight whitespace-nowrap">
@@ -3106,12 +3181,27 @@ export default function FinancialReportType2View({
                                   (ส่งต่อ)
                                 </span>
                               </div>
-                              <div className="flex-1 text-center flex items-center justify-center overflow-hidden">
-                                <span className="sig-canvas text-[12px] text-amber-900">{nextStaff}</span>
+                              <div className="flex-1 text-center flex flex-col items-center justify-center overflow-hidden px-0.5">
+                                {receiverSig ? (
+                                  <img
+                                    src={receiverSig}
+                                    alt={nextStaff}
+                                    className="h-[18px] max-w-full object-contain"
+                                  />
+                                ) : (
+                                  <span className="sig-canvas text-[11px] text-amber-900 leading-tight truncate">
+                                    {nextStaff}
+                                  </span>
+                                )}
+                                {receiverTime && (
+                                  <span className="text-[6.2px] font-semibold text-slate-500 leading-none mt-0.5 whitespace-nowrap">
+                                    {receiverTime}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           ) : (
-                            <div className="flex items-center h-[23px] w-full text-center justify-center">
+                            <div className="flex items-center min-h-[25px] w-full text-center justify-center">
                               <span className="text-[8.5px] font-bold text-slate-400 italic">
                                 ไม่มีการส่งมอบ (-)
                               </span>
