@@ -1329,7 +1329,7 @@ export default function FinancialReportType2View({
   const mgrBankDep = isProto ? 18000 : Number(report.mgrBankDeposit ?? 0);
   const mgrCarried = mgrBrought + mgrNetShifts - mgrOutExp - mgrBankDep;
 
-  // ตัวช่วยแสดงยอดเดิมขีดฆ่าสีจาง + (ชื่อผู้แก้ไข) ทางซ้ายของยอดจริง (เส้นขีดกลางสีจางกว่าตัวเลขเดิมเพื่อให้อ่านข้อมูลเดิมได้ชัดเจน)
+  // ตัวช่วยแสดงยอดเดิมขีดฆ่าสีจาง + (ชื่อผู้แก้ไข) ทางซ้ายของยอดจริง (เส้นขีดกลางสีขาวบาง ไม่หนา เพื่อให้อ่านตัวเลขเดิมได้อย่างชัดเจน)
   const renderAuditTrail = (editKey: string, compact = false) => {
     if (isProto || !auditEdits) return null;
     const entry = auditEdits[editKey];
@@ -1346,7 +1346,7 @@ export default function FinancialReportType2View({
         <span
           className="line-through text-slate-400"
           style={{
-            textDecorationColor: "rgba(148, 163, 184, 0.42)",
+            textDecorationColor: "#ffffff",
             textDecorationThickness: "0.75px",
           }}
         >
