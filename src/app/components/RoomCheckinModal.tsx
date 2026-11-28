@@ -1461,7 +1461,8 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
         actual_check_in_time: (dateOffset === 0 && !effectiveIsReservationForToday) ? startDate.toISOString() : null,
         guest_count: Number(guestCount) || 1,
         actual_price: actualPrice === '' ? null : Number(actualPrice),
-        staff_name: effectiveStaffName
+        staff_name: effectiveStaffName,
+        notes: bookingNote.trim() || null
       })
       .select('id')
       .single();
@@ -1497,7 +1498,8 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
             actual_check_in_time: srCheckedInNow ? startDate.toISOString() : null,
             guest_count: 2,
             actual_price: srPrice,
-            staff_name: effectiveStaffName
+            staff_name: effectiveStaffName,
+            notes: bookingNote.trim() || null
           })
           .select('id')
           .single();
@@ -2301,7 +2303,10 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
     // บันทึกหมายเหตุการจอง (หากมีการเพิ่ม/แก้ไขในสถานะจอง)
     if ((bookingMeta.bookingNote || '') !== bookingNote.trim()) {
       const updatedMetaNote: BookingMeta = { ...bookingMeta, bookingNote: bookingNote.trim() || undefined };
-      await supabase.from('system_settings').upsert({ key: `booking_meta_${room.booking_id}`, value: updatedMetaNote }, { onConflict: 'key' });
+      await Promise.all([
+        supabase.from('system_settings').upsert({ key: `booking_meta_${room.booking_id}`, value: updatedMetaNote }, { onConflict: 'key' }),
+        supabase.from('bookings').update({ notes: bookingNote.trim() || null }).eq('id', room.booking_id)
+      ]);
       setBookingMeta(updatedMetaNote);
     }
 
@@ -3618,7 +3623,10 @@ export default function RoomCheckinModal({ room, allRooms = [], dateOffset, onCl
                         if (!room.booking_id) return;
                         setLoading(true);
                         const nextMeta: BookingMeta = { ...bookingMeta, bookingNote: bookingNote.trim() || undefined };
-                        await supabase.from('system_settings').upsert({ key: `booking_meta_${room.booking_id}`, value: nextMeta }, { onConflict: 'key' });
+                        await Promise.all([
+                          supabase.from('system_settings').upsert({ key: `booking_meta_${room.booking_id}`, value: nextMeta }, { onConflict: 'key' }),
+                          supabase.from('bookings').update({ notes: bookingNote.trim() || null }).eq('id', room.booking_id)
+                        ]);
                         setBookingMeta(nextMeta);
                         setLoading(false);
                         onUpdate();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, Fragment } from "react";
 import { supabase } from "@/lib/supabase";
 
 export interface ExtraServiceItem {
@@ -20,7 +20,7 @@ export interface BookingReportItem {
   roomIndexInGroup?: string; // เช่น ห้อง 1/2, ห้อง 2/2
   roomNo: string;
   roomType: string;
-  location: string;
+  location: string; // "ซอย1" | "ซอย2" | "ซามีญ่า"
   guestName: string;
   guestPhone: string;
   guestCount: number;
@@ -45,11 +45,13 @@ export interface BookingReportItem {
 }
 
 // ข้อมูลตัวอย่างจำลองการจอง (Mock Data) ครอบคลุม:
-// 1. ลูกค้าคนเดียวกันจองหลายห้อง (คุณนภา จองคู่ห้อง 205 และ 206)
-// 2. การแจกแจงบริการครั้งเดียว vs บริการรายวัน/ทุกวัน (เตียงเสริม, เตาปิ้งย่าง, มอเตอร์ไซค์, รถยนต์)
-// 3. แสดงเฉพาะชื่อพนักงานผู้รับจอง (ไม่นำช่องทางการจองมาปน)
-// 4. รองรับการพิมพ์สำรองข้อมูลกรณีระบบขัดข้องหรือออฟไลน์
+// 1. วันเดียวกัน (28 พ.ย. 69) มีการจองพร้อมกันทั้ง 3 สถานที่ (ซอย 1, ซอย 2, ซามีญ่า)
+// 2. ลูกค้าคนเดียวกันจองหลายห้อง (คุณนภา จองคู่ห้อง 205 และ 206)
+// 3. การแจกแจงบริการครั้งเดียว vs บริการรายวัน/ทุกวัน (เตียงเสริม, เตาปิ้งย่าง, มอเตอร์ไซค์, รถยนต์)
+// 4. แสดงเฉพาะชื่อพนักงานผู้รับจอง (ไม่นำช่องทางการจองมาปน)
+// 5. รองรับการจัดกลุ่มแยกตามสถานที่ หรือ รวมตารางเดียวในวันเดียวกัน
 const MOCK_BOOKINGS: BookingReportItem[] = [
+  // =================== วันที่ 28 พ.ย. 2569: สาขา ซอย 1 ===================
   {
     id: "mock-1",
     bookingRef: "BK-261128-01",
@@ -158,18 +160,20 @@ const MOCK_BOOKINGS: BookingReportItem[] = [
     note: "ห้องติดกับ 205 • ใช้รหัสจองกลุ่มเดียวกัน",
     bookedAtDateStr: "27 พ.ย. 69",
   },
+
+  // =================== วันที่ 28 พ.ย. 2569: สาขา ซอย 2 ===================
   {
     id: "mock-4",
-    bookingRef: "BK-261129-01",
+    bookingRef: "BK-261128-03",
     roomNo: "108",
     roomType: "เตียงเดี่ยว",
     location: "ซอย2",
     guestName: "คุณมานพ วัฒนาเจริญ",
     guestPhone: "085-777-8899",
     guestCount: 1,
-    checkInDate: "2026-11-29",
+    checkInDate: "2026-11-28",
     checkInTimeStr: "13:00 น.",
-    checkOutDate: "2026-12-01",
+    checkOutDate: "2026-11-30",
     checkOutTimeStr: "12:00 น.",
     nights: 2,
     staffName: "เต้ย",
@@ -198,16 +202,16 @@ const MOCK_BOOKINGS: BookingReportItem[] = [
   },
   {
     id: "mock-5",
-    bookingRef: "BK-261129-02",
+    bookingRef: "BK-261128-04",
     roomNo: "204",
     roomType: "เตียงคู่",
     location: "ซอย2",
     guestName: "คุณอัญชลี ศรีสุข",
     guestPhone: "089-444-5566",
     guestCount: 2,
-    checkInDate: "2026-11-29",
+    checkInDate: "2026-11-28",
     checkInTimeStr: "15:00 น.",
-    checkOutDate: "2026-11-30",
+    checkOutDate: "2026-11-29",
     checkOutTimeStr: "12:00 น.",
     nights: 1,
     staffName: "เมย์",
@@ -224,18 +228,20 @@ const MOCK_BOOKINGS: BookingReportItem[] = [
     note: "ชำระเต็มจำนวนแล้ว แจ้งว่าจะมาถึงประมาณ 15:00",
     bookedAtDateStr: "28 พ.ย. 69",
   },
+
+  // =================== วันที่ 28 พ.ย. 2569: สาขา ซามีญ่า ===================
   {
     id: "mock-6",
-    bookingRef: "BK-261205-01",
+    bookingRef: "BK-261128-05",
     roomNo: "บ้าน 1",
-    roomType: "บ้านเดี่ยว",
+    roomType: "บ้านเดี่ยวริมสวน",
     location: "ซามีญ่า",
     guestName: "คุณธีระ รัตนประเสริฐ (ครอบครัว)",
     guestPhone: "081-999-0011",
     guestCount: 4,
-    checkInDate: "2026-12-05",
+    checkInDate: "2026-11-28",
     checkInTimeStr: "14:00 น.",
-    checkOutDate: "2026-12-07",
+    checkOutDate: "2026-11-30",
     checkOutTimeStr: "12:00 น.",
     nights: 2,
     staffName: "แอล",
@@ -251,15 +257,6 @@ const MOCK_BOOKINGS: BookingReportItem[] = [
         scheduleNote: "บริการครั้งเดียว",
         icon: "🔥",
       },
-      {
-        name: "ค่าทำความสะอาดพิเศษ",
-        amount: 150,
-        chargeType: "one_time",
-        unitPrice: 150,
-        quantity: 1,
-        scheduleNote: "บริการครั้งเดียว",
-        icon: "🧹",
-      },
     ],
     dailyServices: [
       {
@@ -273,16 +270,112 @@ const MOCK_BOOKINGS: BookingReportItem[] = [
       },
     ],
     keyDeposit: 500,
-    totalPrice: 4550,
-    depositPaid: 2300,
+    totalPrice: 4400,
+    depositPaid: 2200,
     paymentMethod: "โอน PromptPay",
-    remainingBalance: 2250,
+    remainingBalance: 2200,
     status: "reserved",
-    note: "ครอบครัว 4 ท่าน • วันหยุดยาว • เตียงเสริม + เตาปิ้งย่างบาร์บีคิว",
+    note: "ครอบครัว 4 ท่าน • เตียงเสริม + เตาปิ้งย่างบาร์บีคิว",
     bookedAtDateStr: "25 พ.ย. 69",
   },
   {
     id: "mock-7",
+    bookingRef: "BK-261128-06",
+    roomNo: "บ้าน 2",
+    roomType: "บ้านเดี่ยววิวสระ",
+    location: "ซามีญ่า",
+    guestName: "คุณพิมพา ชัยมงคล (คณะเพื่อน)",
+    guestPhone: "083-456-7890",
+    guestCount: 3,
+    checkInDate: "2026-11-28",
+    checkInTimeStr: "16:00 น.",
+    checkOutDate: "2026-11-29",
+    checkOutTimeStr: "12:00 น.",
+    nights: 1,
+    staffName: "บี",
+    baseRoomPrice: 2300,
+    roomRatePerNight: 2300,
+    oneTimeServices: [
+      {
+        name: "ค่าทำความสะอาดพิเศษ",
+        amount: 150,
+        chargeType: "one_time",
+        unitPrice: 150,
+        quantity: 1,
+        scheduleNote: "บริการครั้งเดียว",
+        icon: "🧹",
+      },
+    ],
+    dailyServices: [],
+    keyDeposit: 500,
+    totalPrice: 2450,
+    depositPaid: 1400,
+    paymentMethod: "โอน KBank",
+    remainingBalance: 1050,
+    status: "reserved",
+    note: "ขอเช็คอินช่วงเย็น 16:00 • สั่งน้ำแข็งเพิ่ม 1 ถัง",
+    bookedAtDateStr: "27 พ.ย. 69",
+  },
+
+  // =================== วันอื่นๆ (อนาคต) ===================
+  {
+    id: "mock-8",
+    bookingRef: "BK-261129-01",
+    roomNo: "104",
+    roomType: "เตียงเดี่ยว",
+    location: "ซอย1",
+    guestName: "คุณปรีชา สมบูรณ์สุข",
+    guestPhone: "087-222-3344",
+    guestCount: 2,
+    checkInDate: "2026-11-29",
+    checkInTimeStr: "14:00 น.",
+    checkOutDate: "2026-11-30",
+    checkOutTimeStr: "12:00 น.",
+    nights: 1,
+    staffName: "เต้ย",
+    baseRoomPrice: 600,
+    roomRatePerNight: 600,
+    oneTimeServices: [],
+    dailyServices: [],
+    keyDeposit: 200,
+    totalPrice: 600,
+    depositPaid: 300,
+    paymentMethod: "โอน SCB",
+    remainingBalance: 300,
+    status: "reserved",
+    note: "ขอห้องใกล้บันได",
+    bookedAtDateStr: "27 พ.ย. 69",
+  },
+  {
+    id: "mock-9",
+    bookingRef: "BK-261129-02",
+    roomNo: "201",
+    roomType: "เตียงคู่",
+    location: "ซอย2",
+    guestName: "คุณศิริพร บุญส่ง",
+    guestPhone: "089-666-7788",
+    guestCount: 2,
+    checkInDate: "2026-11-29",
+    checkInTimeStr: "15:30 น.",
+    checkOutDate: "2026-12-01",
+    checkOutTimeStr: "12:00 น.",
+    nights: 2,
+    staffName: "เมย์",
+    baseRoomPrice: 1600,
+    roomRatePerNight: 800,
+    oneTimeServices: [],
+    dailyServices: [],
+    keyDeposit: 200,
+    totalPrice: 1600,
+    depositPaid: 800,
+    paymentMethod: "โอน KBank",
+    remainingBalance: 800,
+    status: "reserved",
+    note: "เข้าพัก 2 คืน",
+    bookedAtDateStr: "28 พ.ย. 69",
+  },
+  {
+    id: "mock-10",
     bookingRef: "BK-261230-01",
     roomNo: "112",
     roomType: "เตียงเดี่ยว",
@@ -320,7 +413,45 @@ const MOCK_BOOKINGS: BookingReportItem[] = [
     bookedAtDateStr: "20 พ.ย. 69",
   },
   {
-    id: "mock-8",
+    id: "mock-11",
+    bookingRef: "BK-261230-02",
+    roomNo: "บ้าน 1",
+    roomType: "บ้านเดี่ยว",
+    location: "ซามีญ่า",
+    guestName: "คุณเอกชัย มั่งคั่ง (เคาท์ดาวน์ปีใหม่)",
+    guestPhone: "081-333-5566",
+    guestCount: 6,
+    checkInDate: "2026-12-30",
+    checkInTimeStr: "15:00 น.",
+    checkOutDate: "2027-01-02",
+    checkOutTimeStr: "12:00 น.",
+    nights: 3,
+    staffName: "แอล",
+    baseRoomPrice: 6000,
+    roomRatePerNight: 2000,
+    oneTimeServices: [
+      {
+        name: "เตาปิ้งย่างบาร์บีคิวชุดใหญ่",
+        amount: 300,
+        chargeType: "one_time",
+        unitPrice: 300,
+        quantity: 1,
+        scheduleNote: "บริการครั้งเดียว",
+        icon: "🔥",
+      },
+    ],
+    dailyServices: [],
+    keyDeposit: 500,
+    totalPrice: 6300,
+    depositPaid: 4000,
+    paymentMethod: "โอน SCB",
+    remainingBalance: 2300,
+    status: "reserved",
+    note: "ปีใหม่ 6 ท่าน • เตาปิ้งย่างชุดใหญ่",
+    bookedAtDateStr: "21 พ.ย. 69",
+  },
+  {
+    id: "mock-12",
     bookingRef: "BK-270214-01",
     roomNo: "210",
     roomType: "เตียงคู่พิเศษ",
@@ -375,6 +506,8 @@ export default function BookingsPage() {
   const [locationFilter, setLocationFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("reserved");
   const [searchTerm, setSearchTerm] = useState("");
+  // โหมดการจัดกลุ่มในแต่ละวัน: "by_location" (แยกหมวดตามสถานที่) หรือ "unified" (รวมตารางเดียว)
+  const [groupModeInDate, setGroupModeInDate] = useState<"by_location" | "unified">("by_location");
   const [liveBookings, setLiveBookings] = useState<BookingReportItem[]>([]);
   const [loadingLive, setLoadingLive] = useState(false);
   const [selectedVoucher, setSelectedVoucher] = useState<BookingReportItem | null>(null);
@@ -573,7 +706,8 @@ export default function BookingsPage() {
           const matchRef = b.bookingRef.toLowerCase().includes(q);
           const matchGroup = b.groupBookingRef?.toLowerCase().includes(q);
           const matchStaff = b.staffName.toLowerCase().includes(q);
-          return matchName || matchPhone || matchRoom || matchRef || matchGroup || matchStaff;
+          const matchLocation = b.location.toLowerCase().includes(q);
+          return matchName || matchPhone || matchRoom || matchRef || matchGroup || matchStaff || matchLocation;
         }
         return true;
       })
@@ -582,19 +716,63 @@ export default function BookingsPage() {
         const timeA = new Date(a.checkInDate).getTime();
         const timeB = new Date(b.checkInDate).getTime();
         if (timeA !== timeB) return timeA - timeB;
+        // เรียงตามสถานที่ก่อน (ซอย1 -> ซอย2 -> ซามีญ่า) แล้วตามด้วยเบอร์ห้อง
+        if (a.location !== b.location) {
+          const locOrder: Record<string, number> = { ซอย1: 1, ซอย2: 2, ซามีญ่า: 3 };
+          return (locOrder[a.location] || 99) - (locOrder[b.location] || 99);
+        }
         return a.roomNo.localeCompare(b.roomNo, undefined, { numeric: true });
       });
   }, [rawList, locationFilter, statusFilter, searchTerm]);
 
-  // จัดกลุ่มตามวันที่มีการจองจริง
+  // จัดกลุ่มตามวันที่มีการจองจริง พร้อมจัดกลุ่มย่อยตามสถานที่ในแต่ละวัน
   const groupedByDate = useMemo(() => {
-    const map = new Map<string, BookingReportItem[]>();
+    const dateMap = new Map<string, BookingReportItem[]>();
     filteredBookings.forEach((item) => {
-      const arr = map.get(item.checkInDate) || [];
+      const arr = dateMap.get(item.checkInDate) || [];
       arr.push(item);
-      map.set(item.checkInDate, arr);
+      dateMap.set(item.checkInDate, arr);
     });
-    return Array.from(map.entries()).sort(([dateA], [dateB]) => dateA.localeCompare(dateB));
+
+    const sortedDates = Array.from(dateMap.entries()).sort(([dateA], [dateB]) => dateA.localeCompare(dateB));
+
+    return sortedDates.map(([dateKey, items]) => {
+      const dayTotal = items.reduce((s, it) => s + it.totalPrice, 0);
+      const dayDeposit = items.reduce((s, it) => s + it.depositPaid, 0);
+      const dayRemaining = items.reduce((s, it) => s + it.remainingBalance, 0);
+
+      // จัดกลุ่มย่อยตามสถานที่ในวันนี้ (ซอย 1, ซอย 2, ซามีญ่า)
+      const locOrder = ["ซอย1", "ซอย2", "ซามีญ่า"];
+      const locMap = new Map<string, BookingReportItem[]>();
+      items.forEach((item) => {
+        const arr = locMap.get(item.location) || [];
+        arr.push(item);
+        locMap.set(item.location, arr);
+      });
+
+      const locationGroups = Array.from(locMap.entries())
+        .sort(([locA], [locB]) => {
+          const idxA = locOrder.indexOf(locA) !== -1 ? locOrder.indexOf(locA) : 99;
+          const idxB = locOrder.indexOf(locB) !== -1 ? locOrder.indexOf(locB) : 99;
+          return idxA - idxB;
+        })
+        .map(([loc, locItems]) => ({
+          location: loc,
+          items: locItems,
+          total: locItems.reduce((s, it) => s + it.totalPrice, 0),
+          deposit: locItems.reduce((s, it) => s + it.depositPaid, 0),
+          remaining: locItems.reduce((s, it) => s + it.remainingBalance, 0),
+        }));
+
+      return {
+        dateKey,
+        items,
+        dayTotal,
+        dayDeposit,
+        dayRemaining,
+        locationGroups,
+      };
+    });
   }, [filteredBookings]);
 
   // คำนวณยอดรวมสรุป
@@ -634,6 +812,32 @@ export default function BookingsPage() {
     if (diffDays === 2) return "มะรืนนี้";
     if (diffDays > 0) return `อีก ${diffDays} วัน`;
     return `ผ่านมา ${Math.abs(diffDays)} วัน`;
+  };
+
+  const getLocationLabel = (loc: string) => {
+    switch (loc) {
+      case "ซอย1":
+        return "ซอย 1";
+      case "ซอย2":
+        return "ซอย 2";
+      case "ซามีญ่า":
+        return "ซามีญ่า";
+      default:
+        return loc;
+    }
+  };
+
+  const getLocationBadgeStyle = (loc: string) => {
+    switch (loc) {
+      case "ซอย1":
+        return "bg-blue-100 text-blue-800 border-blue-200";
+      case "ซอย2":
+        return "bg-purple-100 text-purple-800 border-purple-200";
+      case "ซามีญ่า":
+        return "bg-emerald-100 text-emerald-800 border-emerald-200";
+      default:
+        return "bg-slate-100 text-slate-800 border-slate-200";
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -686,7 +890,7 @@ export default function BookingsPage() {
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              จัดลำดับวันเข้าพักเร็วที่สุด แจกแจงบริการครั้งเดียว vs บริการรายวัน/ทุกวัน บันทึกชื่อผู้รับจอง และพิมพ์สำรองข้อมูลกรณีระบบขัดข้อง
+              จัดลำดับวันเข้าพักเร็วที่สุด รองรับหลายสถานที่ในวันเดียวกัน (ซอย 1, ซอย 2, ซามีญ่า) แจกแจงบริการครั้งเดียว vs รายวัน และพิมพ์สำรองข้อมูลออฟไลน์
             </p>
           </div>
 
@@ -756,15 +960,15 @@ export default function BookingsPage() {
           </div>
         </div>
 
-        {/* ตัวกรองสถานที่ และคำค้นหา */}
+        {/* ตัวกรองสถานที่, โหมดการจัดกลุ่มในวัน, และคำค้นหา */}
         <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2.5 text-xs">
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-bold text-slate-500">สถานที่:</span>
             {[
-              { key: "ALL", label: "🌐 ทั้งหมด" },
+              { key: "ALL", label: "🌐 ทั้งหมด (รวม 3 สาขา)" },
               { key: "ซอย1", label: "🏨 ซอย 1" },
               { key: "ซอย2", label: "🏨 ซอย 2" },
-              { key: "ซามีญ่า", label: "🏨 ซามีญ่า" },
+              { key: "ซามีญ่า", label: "🏡 ซามีญ่า" },
             ].map((loc) => (
               <button
                 key={loc.key}
@@ -780,25 +984,38 @@ export default function BookingsPage() {
               </button>
             ))}
 
-            <span className="font-bold text-slate-500 ml-2">สถานะ:</span>
-            {[
-              { key: "reserved", label: "รอกำหนดเข้าพัก" },
-              { key: "checked_in", label: "เข้าพักแล้ว" },
-              { key: "all", label: "รวมทุกสถานะ" },
-            ].map((st) => (
-              <button
-                key={st.key}
-                type="button"
-                onClick={() => setStatusFilter(st.key)}
-                className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
-                  statusFilter === st.key
-                    ? "bg-indigo-600 text-white"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
-              >
-                {st.label}
-              </button>
-            ))}
+            {/* ปุ่มสลับรูปแบบการจัดกลุ่มสถานที่ในวันเดียวกัน */}
+            {viewMode === "document" && (
+              <div className="flex items-center gap-1 ml-1 sm:ml-2 pl-2 border-l border-slate-300">
+                <span className="font-bold text-slate-500">จัดกลุ่มในวัน:</span>
+                <button
+                  type="button"
+                  onClick={() => setGroupModeInDate("by_location")}
+                  className={`px-2 py-1 rounded-lg font-bold text-[11px] transition-all flex items-center gap-1 ${
+                    groupModeInDate === "by_location"
+                      ? "bg-indigo-700 text-white shadow-2xs font-black"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                  title="แยกหมวดหมู่ตามสถานที่ (ซอย 1 / ซอย 2 / ซามีญ่า) ใต้หัววันที่เดียวกัน"
+                >
+                  <span>🏢</span>
+                  <span>แยกตามสถานที่</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGroupModeInDate("unified")}
+                  className={`px-2 py-1 rounded-lg font-bold text-[11px] transition-all flex items-center gap-1 ${
+                    groupModeInDate === "unified"
+                      ? "bg-indigo-700 text-white shadow-2xs font-black"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                  title="รวมรายการทุกสถานที่ในตารางเดียวต่อเนื่องกัน"
+                >
+                  <span>📋</span>
+                  <span>รวมตารางเดียว</span>
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="w-full sm:w-80">
@@ -806,7 +1023,7 @@ export default function BookingsPage() {
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="🔍 ค้นเลขที่จอง (เช่น BK-01), ชื่อลูกค้า, เบอร์โทร, ผู้รับจอง..."
+              placeholder="🔍 ค้นเลขที่จอง, ชื่อลูกค้า, ห้อง, สถานที่, ผู้รับจอง..."
               className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"
             />
           </div>
@@ -867,7 +1084,7 @@ export default function BookingsPage() {
             #a4-booking-sheet {
               font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, sans-serif;
               width: 100%;
-              max-width: 1020px;
+              max-width: 1040px;
               margin: 0 auto;
               background: #ffffff;
               color: #0f172a;
@@ -934,16 +1151,183 @@ export default function BookingsPage() {
               </div>
             ) : (
               <div className="space-y-6">
-                {groupedByDate.map(([dateKey, items]) => {
-                  const dayTotal = items.reduce((s, it) => s + it.totalPrice, 0);
-                  const dayDeposit = items.reduce((s, it) => s + it.depositPaid, 0);
-                  const dayRemaining = items.reduce((s, it) => s + it.remainingBalance, 0);
+                {groupedByDate.map((dateObj) => {
+                  const { dateKey, items, dayTotal, dayDeposit, dayRemaining, locationGroups } = dateObj;
+
+                  // ฟังก์ชันเรนเดอร์แถวของรายการจอง (ปรับความสูงแถวให้กระชับ เพื่อกวาดสายตาง่าย)
+                  const renderRow = (item: BookingReportItem, idx: number) => {
+                    const isMultiRoomGroup = Boolean(item.groupBookingRef);
+                    const hasOneTime = item.oneTimeServices && item.oneTimeServices.length > 0;
+                    const hasDaily = item.dailyServices && item.dailyServices.length > 0;
+                    const hasExtras = hasOneTime || hasDaily;
+
+                    return (
+                      <tr
+                        key={item.id}
+                        className={`transition-colors ${
+                          isMultiRoomGroup ? "bg-indigo-50/30 hover:bg-indigo-50/60" : "hover:bg-blue-50/40"
+                        }`}
+                      >
+                        {/* ลำดับ */}
+                        <td className="py-1.5 px-1 text-center text-slate-400 font-bold text-[11px]">
+                          {idx + 1}
+                        </td>
+
+                        {/* เลขที่จอง (Booking Ref) - คลิกเพื่อดูใบยืนยันการจอง */}
+                        <td className="py-1.5 px-1.5 text-center">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedVoucher(item)}
+                            className="font-mono font-black text-[10.5px] text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded px-1.5 py-0.2 tracking-wider inline-flex items-center gap-1 cursor-pointer transition-all shadow-2xs"
+                            title="แตะเพื่อเปิดดู / พิมพ์ใบยืนยันการจอง"
+                          >
+                            <span>🔖</span>
+                            <span>{item.bookingRef}</span>
+                          </button>
+
+                          {/* ป้ายแสดงกลุ่มเมื่อลูกค้าคนเดียวกันจองหลายห้อง */}
+                          {item.groupBookingRef && (
+                            <div className="mt-0.5">
+                              <span className="inline-block px-1 py-0 rounded text-[8.5px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200 whitespace-nowrap">
+                                👥 {item.roomIndexInGroup || "จองกลุ่ม"}
+                              </span>
+                            </div>
+                          )}
+                        </td>
+
+                        {/* ห้องพัก / ที่ตั้ง */}
+                        <td className="py-1.5 px-1.5 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <span className="font-black text-xs text-slate-900 bg-slate-100 border border-slate-300 rounded px-1.5 py-0.2">
+                              {item.roomNo}
+                            </span>
+                            <span
+                              className={`inline-block px-1 py-0 rounded text-[9px] font-bold border ${getLocationBadgeStyle(
+                                item.location
+                              )}`}
+                            >
+                              {getLocationLabel(item.location)}
+                            </span>
+                          </div>
+                          <div className="text-[9px] text-slate-400 font-medium leading-none mt-0.5">{item.roomType}</div>
+                        </td>
+
+                        {/* ข้อมูลลูกค้าผู้จอง */}
+                        <td className="py-1.5 px-2">
+                          <div className="font-bold text-slate-800 text-[11.5px] leading-tight">
+                            {item.guestName}
+                          </div>
+                          <div className="text-[10px] text-indigo-700 font-semibold leading-tight mt-0.5 flex items-center gap-1.5">
+                            <span>📞 {item.guestPhone}</span>
+                            <span>•</span>
+                            <span className="text-slate-500">👥 {item.guestCount} ท่าน</span>
+                          </div>
+                        </td>
+
+                        {/* ระยะเวลาเข้าพัก */}
+                        <td className="py-1.5 px-1.5 text-center leading-tight">
+                          <div className="font-bold text-slate-800 text-[11px]">
+                            {item.nights} คืน <span className="text-[9.5px] text-emerald-700 font-semibold">(ถึง {item.checkInTimeStr})</span>
+                          </div>
+                          <div className="text-[9.5px] text-slate-500">
+                            ออก: {item.checkOutDate.substring(5)}
+                          </div>
+                        </td>
+
+                        {/* แจกแจงค่าบริการเสริม (ครั้งเดียว vs รายวัน/ทุกวัน) */}
+                        <td className="py-1.5 px-2.5">
+                          {hasExtras ? (
+                            <div className="flex flex-wrap items-center gap-1">
+                              {/* 1. บริการครั้งเดียว (One-time) */}
+                              {hasOneTime &&
+                                item.oneTimeServices.map((ex, eIdx) => (
+                                  <span
+                                    key={`ot-${eIdx}`}
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-50 text-amber-900 border border-amber-200 text-[9px] font-semibold"
+                                  >
+                                    <span>{ex.icon || "⚡"}</span>
+                                    <span>{ex.name}</span>
+                                    <b className="text-amber-800">(+{ex.amount.toLocaleString()}฿)</b>
+                                  </span>
+                                ))}
+
+                              {/* 2. บริการตามวัน / ทุกวัน / ต่อคืน (Daily / Per-Night) */}
+                              {hasDaily &&
+                                item.dailyServices.map((ex, eIdx) => (
+                                  <span
+                                    key={`dl-${eIdx}`}
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-blue-50 text-blue-900 border border-blue-200 text-[9px] font-semibold"
+                                  >
+                                    <span>{ex.icon || "🔄"}</span>
+                                    <span>{ex.name}</span>
+                                    <b className="text-blue-800">({ex.scheduleNote || `+${ex.amount.toLocaleString()}฿`})</b>
+                                  </span>
+                                ))}
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 text-[10px] italic">- ไม่มี -</span>
+                          )}
+                        </td>
+
+                        {/* ผู้รับจอง (แสดงชื่อพนักงานผู้รับจองอย่างชัดเจน ไม่นำช่องทางมาปน) */}
+                        <td className="py-1.5 px-1.5 text-center">
+                          <div className="inline-block px-1.5 py-0.5 rounded text-[10.5px] font-black bg-slate-100 text-slate-800 border border-slate-300">
+                            {item.staffName}
+                          </div>
+                        </td>
+
+                        {/* แจกแจงยอดรวม */}
+                        <td className="py-1.5 px-1.5 text-right leading-tight">
+                          <div className="font-black text-slate-900 text-[11.5px]">
+                            ฿{item.totalPrice.toLocaleString()}
+                          </div>
+                          <div className="text-[9px] text-slate-500 font-medium">
+                            (ห้อง ฿{item.baseRoomPrice.toLocaleString()})
+                          </div>
+                        </td>
+
+                        {/* มัดจำแล้ว */}
+                        <td className="py-1.5 px-1.5 text-right leading-tight">
+                          <div className="font-black text-emerald-700 text-[11.5px]">
+                            ฿{item.depositPaid.toLocaleString()}
+                          </div>
+                          <div className="text-[9px] text-emerald-600 font-medium">
+                            {item.paymentMethod}
+                          </div>
+                        </td>
+
+                        {/* คงเหลือเก็บหน้างาน */}
+                        <td className="py-1.5 px-1.5 text-right leading-tight">
+                          <div className={`font-black text-[11.5px] ${item.remainingBalance > 0 ? "text-amber-700" : "text-slate-400"}`}>
+                            ฿{item.remainingBalance.toLocaleString()}
+                          </div>
+                          {item.remainingBalance > 0 ? (
+                            <span className="text-[8.5px] text-amber-600 font-bold">เก็บหน้างาน</span>
+                          ) : (
+                            <span className="text-[8.5px] text-emerald-600 font-bold">ชำระครบ</span>
+                          )}
+                        </td>
+
+                        {/* หมายเหตุ / คำขอพิเศษ (แสดงไฮไลต์เด่นชัด) */}
+                        <td className="py-1.5 px-2 text-[10.5px] leading-snug">
+                          {item.note ? (
+                            <div className="inline-flex items-start gap-1 bg-amber-50 border border-amber-200 text-amber-950 px-1.5 py-0.5 rounded text-[10px] font-semibold max-w-[240px]">
+                              <span>💬</span>
+                              <span className="break-words">{item.note}</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 text-[10px]">-</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  };
 
                   return (
                     <div key={dateKey} className="border border-slate-300 rounded-xl overflow-hidden shadow-xs">
                       {/* แถบหัววันที่ของกลุ่มนี้ */}
-                      <div className="bg-slate-900 text-white px-3.5 py-2 flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
+                      <div className="bg-slate-900 text-white px-3.5 py-2.5 flex flex-col md:flex-row md:items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="px-2 py-0.5 rounded bg-blue-600 text-white font-black text-xs">
                             {formatRelativeDay(dateKey)}
                           </span>
@@ -951,8 +1335,22 @@ export default function BookingsPage() {
                             {formatThaiDate(dateKey)}
                           </span>
                           <span className="text-xs text-slate-400 font-semibold">
-                            ({items.length} ห้องจอง)
+                            (รวม {items.length} ห้องจอง)
                           </span>
+
+                          {/* แสดงป้ายสรุปจำนวนห้องตามสถานที่ในแถบหัววัน */}
+                          <div className="flex items-center gap-1.5 ml-1">
+                            {locationGroups.map((lg) => (
+                              <span
+                                key={lg.location}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/10 text-slate-200 border border-white/20"
+                              >
+                                <span>{lg.location === "ซามีญ่า" ? "🏡" : "🏨"}</span>
+                                <span>{getLocationLabel(lg.location)}:</span>
+                                <b className="text-white">{lg.items.length} ห้อง</b>
+                              </span>
+                            ))}
+                          </div>
                         </div>
 
                         <div className="text-xs text-slate-300 flex items-center gap-3 font-semibold">
@@ -969,7 +1367,7 @@ export default function BookingsPage() {
                             <tr className="bg-slate-100 text-slate-700 font-black border-b border-slate-300 text-[11px]">
                               <th className="py-2 px-1.5 text-center w-7">ลำดับ</th>
                               <th className="py-2 px-2 text-center w-28">เลขที่จอง (Ref)</th>
-                              <th className="py-2 px-2 text-center w-20">ห้อง / ที่ตั้ง</th>
+                              <th className="py-2 px-2 text-center w-24">ห้อง / ที่ตั้ง</th>
                               <th className="py-2 px-2.5">ข้อมูลลูกค้าผู้จอง</th>
                               <th className="py-2 px-2 text-center w-24">ระยะเวลาเข้าพัก</th>
                               <th className="py-2 px-3 w-56">แจกแจงค่าบริการเสริม (ครั้งเดียว / รายวัน)</th>
@@ -981,182 +1379,42 @@ export default function BookingsPage() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-200">
-                            {items.map((item, idx) => {
-                              const isMultiRoomGroup = Boolean(item.groupBookingRef);
-                              const hasOneTime = item.oneTimeServices && item.oneTimeServices.length > 0;
-                              const hasDaily = item.dailyServices && item.dailyServices.length > 0;
-                              const hasExtras = hasOneTime || hasDaily;
-
-                              return (
-                                <tr
-                                  key={item.id}
-                                  className={`transition-colors ${
-                                    isMultiRoomGroup ? "bg-indigo-50/30 hover:bg-indigo-50/60" : "hover:bg-blue-50/40"
-                                  }`}
-                                >
-                                  {/* ลำดับ */}
-                                  <td className="py-2 px-1.5 text-center text-slate-400 font-bold">
-                                    {idx + 1}
-                                  </td>
-
-                                  {/* เลขที่จอง (Booking Ref) - คลิกเพื่อดูใบยืนยันการจอง */}
-                                  <td className="py-2 px-2 text-center">
-                                    <button
-                                      type="button"
-                                      onClick={() => setSelectedVoucher(item)}
-                                      className="font-mono font-black text-[11px] text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded px-1.5 py-0.5 tracking-wider inline-flex items-center gap-1 cursor-pointer transition-all shadow-2xs"
-                                      title="แตะเพื่อเปิดดู / พิมพ์ใบยืนยันการจอง"
-                                    >
-                                      <span>🔖</span>
-                                      <span>{item.bookingRef}</span>
-                                    </button>
-
-                                    {/* ป้ายแสดงกลุ่มเมื่อลูกค้าคนเดียวกันจองหลายห้อง */}
-                                    {item.groupBookingRef && (
-                                      <div className="mt-1">
-                                        <span className="inline-block px-1.5 py-0.2 rounded text-[9px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200 whitespace-nowrap">
-                                          👥 {item.roomIndexInGroup || "จองกลุ่ม"}
-                                        </span>
+                            {/* รูปแบบที่ 1: แยกหมวดหมู่ตามสถานที่ (ซอย 1 / ซอย 2 / ซามีญ่า) */}
+                            {groupModeInDate === "by_location" && locationGroups.length > 0 ? (
+                              locationGroups.map((lg) => (
+                                <Fragment key={`${dateKey}-${lg.location}`}>
+                                  {/* แถบคั่นหมวดสถานที่พร้อมสรุปยอดของสาขานั้น */}
+                                  <tr className="bg-slate-200/90 text-slate-900 font-black border-y-2 border-slate-300">
+                                    <td colSpan={11} className="py-1 px-3">
+                                      <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-sm">
+                                            {lg.location === "ซามีญ่า" ? "🏡" : "🏨"}
+                                          </span>
+                                          <span className="font-black text-slate-900 tracking-wide">
+                                            สาขา {getLocationLabel(lg.location)}
+                                          </span>
+                                          <span className="px-2 py-0.2 rounded-full text-[10px] font-bold bg-white text-slate-800 border border-slate-300 shadow-2xs">
+                                            {lg.items.length} ห้อง
+                                          </span>
+                                        </div>
+                                        <div className="text-[10.5px] text-slate-700 font-semibold flex items-center gap-3">
+                                          <span>ยอดรวมสาขา: <b className="text-slate-900">฿{lg.total.toLocaleString()}</b></span>
+                                          <span>มัดจำ: <b className="text-emerald-700">฿{lg.deposit.toLocaleString()}</b></span>
+                                          <span>คงเหลือเก็บ: <b className="text-amber-700">฿{lg.remaining.toLocaleString()}</b></span>
+                                        </div>
                                       </div>
-                                    )}
-                                  </td>
+                                    </td>
+                                  </tr>
 
-                                  {/* ห้องพัก / ที่ตั้ง */}
-                                  <td className="py-2 px-2 text-center">
-                                    <div className="font-black text-sm text-slate-900 bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5">
-                                      {item.roomNo}
-                                    </div>
-                                    <div className="text-[10px] text-slate-500 font-semibold mt-0.5">
-                                      {item.location} • {item.roomType}
-                                    </div>
-                                  </td>
-
-                                  {/* ข้อมูลลูกค้าผู้จอง */}
-                                  <td className="py-2 px-2.5">
-                                    <div className="font-bold text-slate-800 text-[12px] leading-tight">
-                                      {item.guestName}
-                                    </div>
-                                    <div className="text-[11px] text-indigo-700 font-semibold mt-0.5 flex items-center gap-1.5">
-                                      <span>📞 {item.guestPhone}</span>
-                                      <span>•</span>
-                                      <span className="text-slate-500">👥 {item.guestCount} ท่าน</span>
-                                    </div>
-                                  </td>
-
-                                  {/* ระยะเวลาเข้าพัก */}
-                                  <td className="py-2 px-2 text-center">
-                                    <div className="font-bold text-slate-800">
-                                      {item.nights} คืน
-                                    </div>
-                                    <div className="text-[10px] text-slate-500 font-medium">
-                                      ออก: {item.checkOutDate.substring(5)}
-                                    </div>
-                                    <div className="text-[9.5px] text-emerald-700 font-semibold mt-0.5">
-                                      ถึง: {item.checkInTimeStr}
-                                    </div>
-                                  </td>
-
-                                  {/* แจกแจงค่าบริการเสริม (ครั้งเดียว vs รายวัน/ทุกวัน) */}
-                                  <td className="py-2 px-3">
-                                    {hasExtras ? (
-                                      <div className="space-y-1.5">
-                                        {/* 1. บริการครั้งเดียว (One-time) */}
-                                        {hasOneTime && (
-                                          <div>
-                                            <div className="text-[9.5px] font-black text-amber-800 uppercase flex items-center gap-1">
-                                              <span>⚡ บริการครั้งเดียว:</span>
-                                            </div>
-                                            <div className="space-y-0.5 mt-0.5">
-                                              {item.oneTimeServices.map((ex, eIdx) => (
-                                                <div
-                                                  key={eIdx}
-                                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 text-[9.5px] font-semibold mr-1"
-                                                >
-                                                  <span>{ex.icon || "•"}</span>
-                                                  <span>{ex.name}</span>
-                                                  <span className="text-amber-700 font-black">
-                                                    (+{ex.amount.toLocaleString()} ฿)
-                                                  </span>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          </div>
-                                        )}
-
-                                        {/* 2. บริการตามวัน / ทุกวัน / ต่อคืน (Daily / Per-Night) */}
-                                        {hasDaily && (
-                                          <div>
-                                            <div className="text-[9.5px] font-black text-blue-800 uppercase flex items-center gap-1">
-                                              <span>🔄 บริการรายวัน/ทุกวัน:</span>
-                                            </div>
-                                            <div className="space-y-0.5 mt-0.5">
-                                              {item.dailyServices.map((ex, eIdx) => (
-                                                <div
-                                                  key={eIdx}
-                                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-900 border border-blue-200 text-[9.5px] font-semibold mr-1"
-                                                >
-                                                  <span>{ex.icon || "•"}</span>
-                                                  <span>{ex.name}</span>
-                                                  <span className="text-blue-700 font-black">
-                                                    {ex.scheduleNote || `+${ex.amount.toLocaleString()} ฿`}
-                                                  </span>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          </div>
-                                        )}
-                                      </div>
-                                    ) : (
-                                      <span className="text-slate-400 text-[10.5px] italic">- ไม่มีบริการเสริม -</span>
-                                    )}
-                                  </td>
-
-                                  {/* ผู้รับจอง (แสดงชื่อพนักงานผู้รับจองอย่างชัดเจน ไม่นำช่องทางมาปน) */}
-                                  <td className="py-2 px-2 text-center">
-                                    <div className="inline-block px-2 py-1 rounded-md text-[11px] font-black bg-slate-100 text-slate-800 border border-slate-300">
-                                      {item.staffName}
-                                    </div>
-                                  </td>
-
-                                  {/* แจกแจงยอดรวม */}
-                                  <td className="py-2 px-2 text-right">
-                                    <div className="font-black text-slate-900 text-xs">
-                                      ฿{item.totalPrice.toLocaleString()}
-                                    </div>
-                                    <div className="text-[9.5px] text-slate-500 font-medium">
-                                      (ห้อง ฿{item.baseRoomPrice.toLocaleString()})
-                                    </div>
-                                  </td>
-
-                                  {/* มัดจำแล้ว */}
-                                  <td className="py-2 px-2 text-right">
-                                    <div className="font-black text-emerald-700">
-                                      ฿{item.depositPaid.toLocaleString()}
-                                    </div>
-                                    <div className="text-[9.5px] text-emerald-600 font-medium">
-                                      {item.paymentMethod}
-                                    </div>
-                                  </td>
-
-                                  {/* คงเหลือเก็บหน้างาน */}
-                                  <td className="py-2 px-2 text-right">
-                                    <div className={`font-black ${item.remainingBalance > 0 ? "text-amber-700" : "text-slate-400"}`}>
-                                      ฿{item.remainingBalance.toLocaleString()}
-                                    </div>
-                                    {item.remainingBalance > 0 ? (
-                                      <span className="text-[9px] text-amber-600 font-semibold">เก็บหน้างาน</span>
-                                    ) : (
-                                      <span className="text-[9px] text-emerald-600 font-semibold">ชำระครบ</span>
-                                    )}
-                                  </td>
-
-                                  {/* หมายเหตุ */}
-                                  <td className="py-2 px-2.5 text-slate-600 text-[10.5px] leading-snug">
-                                    {item.note || "-"}
-                                  </td>
-                                </tr>
-                              );
-                            })}
+                                  {/* แถวรายการของสาขานี้ */}
+                                  {lg.items.map((item, idx) => renderRow(item, idx))}
+                                </Fragment>
+                              ))
+                            ) : (
+                              /* รูปแบบที่ 2: รวมทุกสถานที่ในตารางเดียว */
+                              items.map((item, idx) => renderRow(item, idx))
+                            )}
                           </tbody>
                         </table>
                       </div>
@@ -1209,6 +1467,7 @@ export default function BookingsPage() {
                 <tr>
                   <th className="px-4 py-3 text-center">เลขที่จอง</th>
                   <th className="px-4 py-3 text-center">ห้อง</th>
+                  <th className="px-4 py-3 text-center">สถานที่</th>
                   <th className="px-4 py-3">ลูกค้า / ข้อมูลติดต่อ</th>
                   <th className="px-4 py-3">ผู้รับจอง</th>
                   <th className="px-4 py-3">แจกแจงบริการครั้งเดียว / รายวัน</th>
@@ -1223,7 +1482,7 @@ export default function BookingsPage() {
               <tbody className="divide-y divide-slate-100">
                 {filteredBookings.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="px-6 py-12 text-center text-slate-400 font-bold">
+                    <td colSpan={12} className="px-6 py-12 text-center text-slate-400 font-bold">
                       ไม่พบข้อมูลการจอง
                     </td>
                   </tr>
@@ -1248,7 +1507,15 @@ export default function BookingsPage() {
                         <span className="px-2 py-1 rounded bg-slate-100 border border-slate-200">
                           {b.roomNo}
                         </span>
-                        <div className="text-[10px] text-slate-400 mt-1">{b.location}</div>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded text-xs font-bold border ${getLocationBadgeStyle(
+                            b.location
+                          )}`}
+                        >
+                          {getLocationLabel(b.location)}
+                        </span>
                       </td>
                       <td className="px-4 py-3">
                         <div className="font-bold text-slate-800">{b.guestName}</div>
@@ -1370,7 +1637,7 @@ export default function BookingsPage() {
                 <div className="bg-blue-50/60 p-2.5 rounded-2xl border border-blue-200">
                   <div className="text-[10px] text-blue-700 font-bold">ห้องพักที่จัดสรร</div>
                   <div className="text-lg font-black text-blue-950 mt-0.5">ห้อง {selectedVoucher.roomNo}</div>
-                  <div className="text-[10px] text-blue-800 font-medium">{selectedVoucher.location} • {selectedVoucher.roomType}</div>
+                  <div className="text-[10px] text-blue-800 font-medium">{getLocationLabel(selectedVoucher.location)} • {selectedVoucher.roomType}</div>
                 </div>
                 <div className="bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
                   <div className="text-[10px] text-slate-500 font-bold">จำนวนเข้าพัก</div>
